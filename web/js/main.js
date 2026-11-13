@@ -285,7 +285,7 @@ async function boot() {
   if (!db.uid()) return login();
   await loadMe();
   if (!S.me) { await db.signOut(); return login(); }
-  if (db.DEMO && !S.ranks.length) { await seed(); await loadMe(); }
+  if ((db.DEMO || lvl() >= 5) && !S.ranks.length) { await seed(); await loadMe(); }
   db.rpc('daily_tick', {}).catch(() => {}); // cierre del día (nómina, despidos, intereses); solo corre una vez al día
   if (S.me.banned) return wait('🔨', 'Tu cuenta está baneada. Puedes apelar desde soporte.');
   if (!S.chars.length) return lifeWizard(root, { onDone: boot }); // lo primero: crear tu vida
