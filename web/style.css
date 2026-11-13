@@ -494,3 +494,58 @@ tr.click{cursor:pointer}tr.click:hover{background:#ffffff08}
 .post,.prop{content-visibility:auto;contain-intrinsic-size:auto 120px}
 @media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
 .ck-rules{background:#fff8e6;border:1px solid #f0d58a;border-radius:10px;padding:12px 16px;margin:0 0 18px;color:#3a2e0a}.ck-rules summary{font-weight:700;cursor:pointer}.ck-rules ol{margin:10px 0 0;padding-left:20px;display:grid;gap:6px;font-size:14px}
+.acct{display:grid;gap:10px}.acct .kv{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.acct .kv small{width:100%;color:var(--muted,#999)}.acct .pw{font-family:ui-monospace,monospace;letter-spacing:.06em}
+/* ---------- Instagram ---------- */
+.ig{background:#fff;color:#000;margin:-16px;min-height:calc(100% + 32px);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;display:flex;flex-direction:column}
+.ig .muted{color:#737373}.ig .empty{color:#737373}
+.ig-top{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:4px;padding:10px 14px;background:#fff;border-bottom:1px solid #dbdbdb}
+.ig-word{font-family:"Brush Script MT","Snell Roundhand","Segoe Script",cursive;font-size:30px;line-height:1}
+.sa{background:none;border:0;color:inherit;padding:6px;display:inline-flex;align-items:center;gap:6px;cursor:pointer;border-radius:50%;transition:transform .12s}
+.sa:active{transform:scale(.85)}.sa .i{width:24px;height:24px}
+.ig-stories{display:flex;gap:14px;overflow-x:auto;padding:16px 14px 12px;border-bottom:1px solid #efefef}
+.ig-st{background:none;border:0;display:grid;justify-items:center;gap:4px;cursor:pointer;color:#000;max-width:68px}
+.ig-st small{font-size:11px;max-width:66px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ig .ring{padding:2.5px;border-radius:50%;background:conic-gradient(from 200deg,#feda75,#fa7e1e,#d62976,#962fbf,#4f5bd5,#feda75)}
+.ig .ring .av{width:58px;height:58px;border:3px solid #fff;display:block}
+.ig-sub{display:flex;gap:12px;align-items:center;padding:10px 14px;border-bottom:1px solid #efefef}
+.ig-feed{max-width:470px;width:100%;margin:0 auto;flex:1}
+.ig-post{background:#fff;border:0;border-bottom:1px solid #efefef;border-radius:0;padding:0 0 12px;margin:0}
+.ig-h{display:flex;align-items:center;gap:8px;padding:10px 4px;font-size:14px}.ig-h .av{width:32px;height:32px}
+.ig .verif,.xa .verif{width:15px;height:15px;color:#fff;fill:#0095f6;stroke:#fff;stroke-width:2.2}.xa .verif{fill:#1d9bf0}
+.ig-media{position:relative;aspect-ratio:1;background:#000;cursor:pointer;overflow:hidden;border-radius:4px}
+.ig-media img{width:100%;height:100%;object-fit:cover;display:block}
+.ig-media .pop{position:absolute;inset:0;display:grid;place-items:center;opacity:0;pointer-events:none}
+.ig-media .pop .i{width:96px;height:96px;fill:#fff;stroke:#fff;filter:drop-shadow(0 4px 12px #0006)}
+.ig-media.beat .pop{animation:igpop .8s ease}
+@keyframes igpop{0%{opacity:0;transform:scale(.3)}15%{opacity:1;transform:scale(1.15)}30%{transform:scale(.95)}45%{transform:scale(1)}80%{opacity:1}100%{opacity:0}}
+.ig-act{display:flex;align-items:center;padding:4px 0}
+.ig .sa.on[data-act=like] .i{fill:#ff3040;stroke:#ff3040;animation:likebeat .35s}
+.sa.on[data-act=save] .i{fill:currentColor}
+@keyframes likebeat{50%{transform:scale(1.25)}}
+.ig-likes{font-weight:600;font-size:14px;padding:0 4px}
+.ig-cap{font-size:14px;margin:4px 4px 0;line-height:1.4}
+.ig-nav{position:sticky;bottom:0;display:flex;justify-content:space-around;padding:6px;background:#fff;border-top:1px solid #dbdbdb}
+.ig-nav .av.xs{width:26px;height:26px}
+/* ---------- X ---------- */
+.xa{background:#000;color:#e7e9ea;margin:-16px;min-height:calc(100% + 32px);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.xa .muted{color:#71767b}
+.xa-top{position:sticky;top:0;z-index:2;background:#000c;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid #2f3336;text-align:center}
+.xa-logo{display:block;font-size:24px;padding:10px 0 2px}
+.xa-tabs{display:flex}.xa-tabs button{flex:1;background:none;border:0;color:#71767b;font-weight:500;padding:14px 0;cursor:pointer;position:relative;font-size:15px}
+.xa-tabs button:hover{background:#ffffff0d}.xa-tabs button.on{color:#e7e9ea;font-weight:700}
+.xa-tabs button.on::after{content:'';position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:56px;height:4px;border-radius:2px;background:#1d9bf0}
+.xa-compose{display:flex;gap:12px;padding:12px 16px;border-bottom:1px solid #2f3336}
+.xa-compose textarea{width:100%;background:none;border:0;color:#e7e9ea;font-size:20px;resize:none;outline:0;padding:6px 0}
+.xa-compose .sa{color:#1d9bf0}.xa .av{width:40px;height:40px;flex:none}
+.xa-btn{background:#eff3f4;color:#0f1419;border:0;border-radius:999px;font-weight:700;padding:8px 18px;cursor:pointer}
+.xa-btn:hover{background:#d7dbdc}
+.xa-post{display:flex;gap:12px;padding:12px 16px;border:0;border-bottom:1px solid #2f3336;border-radius:0;margin:0;background:none;transition:background .15s}
+.xa-post:hover{background:#ffffff08}
+.xa-h{display:flex;align-items:center;gap:4px;flex-wrap:wrap;font-size:15px}
+.xa-post p{margin:2px 0 8px;font-size:15px;line-height:1.4;white-space:pre-wrap;word-break:break-word}
+.xa-media{width:100%;max-height:510px;object-fit:cover;border-radius:16px;border:1px solid #2f3336;cursor:zoom-in;margin-bottom:6px}
+.xa-act{display:flex;gap:28px;color:#71767b}.xa-act .i{width:19px;height:19px}.xa-act .sa{border-radius:999px;font-size:13px}
+.xa-act .sa[data-act=like]:hover,.xa .sa.on[data-act=like]{color:#f91880}.xa .sa.on[data-act=like] .i{fill:#f91880;animation:likebeat .35s}
+.xa-act .sa[data-act=save]:hover,.xa .sa.on[data-act=save]{color:#1d9bf0}
+.xa-act .sa[data-act=del]:hover{color:#f4212e}
+.xa .empty{color:#71767b}

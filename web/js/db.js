@@ -29,6 +29,7 @@ const SB = {
   async signUp(u, p) { const d = ok(await sb.auth.signUp({ email: u + DOMAIN, password: p })); if (!d.session) throw new Error('Desactiva "Confirm email" en Supabase (ver LEEME)'); myId = d.user.id; },
   async signIn(u, p) { myId = ok(await sb.auth.signInWithPassword({ email: u + DOMAIN, password: p })).user.id; },
   async signOut() { await sb.auth.signOut(); myId = null; },
+  async setPassword(p) { ok(await sb.auth.updateUser({ password: p })); },
   async list(t, o = {}) {
     let q = sb.from(t).select('*');
     for (const [k, v] of Object.entries(o.eq || {})) q = v === null ? q.is(k, null) : q.eq(k, v);
@@ -295,6 +296,7 @@ const LOCAL = {
   },
   async signIn(u, p) { const x = mem.users.find(x => x.u === u && x.p === p); if (!x) throw new Error('Usuario o contraseña incorrectos'); mem.session = myId = x.id; save(); },
   async signOut() { mem.session = myId = null; save(); },
+  async setPassword(p) { const u = mem.users.find(x => x.id === myId); if (u) { u.p = p; save(); } },
   async list(t, o = {}) {
     let r = T(t).filter(x => has(x, o));
     const k = o.order === undefined ? 'created_at' : o.order;

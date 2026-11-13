@@ -38,10 +38,10 @@ function login(mode = 'in') {
     <button class="link" data-act="sw">${mode === 'in' ? '¿No tienes cuenta? Regístrate' : '¿Ya tienes cuenta? Inicia sesión'}</button></div></div>`, {
     sw: () => login(mode === 'in' ? 'up' : 'in'),
     async go(d) {
-      const u = d.u.toLowerCase();
-      if (mode === 'in') { await db.signIn(u, d.p); return boot(); }
+      const u = d.u.toLowerCase(), keep = () => localStorage.setItem('rp_login', JSON.stringify({ u, p: d.p })); // solo en este dispositivo, para verla en Ajustes
+      if (mode === 'in') { await db.signIn(u, d.p); keep(); return boot(); }
       if (await db.get('profiles', u, 'username')) throw new Error('Ese usuario ya existe');
-      await db.signUp(u, d.p);
+      await db.signUp(u, d.p); keep();
       await db.insert('profiles', { id: db.uid(), username: u, roblox: d.roblox, discord: d.discord, avatar_url: d.avatar, avatar_full: d.avatar });
       boot();
     },

@@ -264,29 +264,61 @@ const mensajes = { id: 'mensajes', name: 'Mensajes', icon: '💬', bg: '#34c759,
   } };
 
 // ============ REDES SOCIALES ============
+// Instagram y X con el aspecto de las apps reales (feed, likes, guardados)
+const handle = id => { const c = S.all.find(x => x.id === id); return c ? (c.first_name + '.' + c.last_name).toLowerCase().normalize('NFD').replace(/[^a-z0-9.]/g, '') : 'anonimo'; };
+const ago = t => { const s = (Date.now() - new Date(t)) / 1000; return s < 60 ? 'ahora' : s < 3600 ? Math.floor(s / 60) + ' min' : s < 86400 ? Math.floor(s / 3600) + ' h' : s < 604800 ? Math.floor(s / 86400) + ' d' : fdate(t); };
+const verified = id => S.all.find(c => c.id === id)?.roles?.includes('Influencer') ? ico('s_verified', 'verif') : '';
+const savedPosts = () => { try { return JSON.parse(localStorage.getItem('rp_saved') || '[]'); } catch { return []; } };
 function social(id, name, icon, bg, needMedia) {
-  return { id, name, icon, bg, show: () => true,
-    async render(el) {
+  const app = { id, name, icon, bg, show: () => true,
+    async render(el, tab = 'feed') {
+      if (typeof tab === 'object') tab = 'feed';
       if (!needChar(el)) return;
-      const posts = await db.list('posts', { eq: { app: id }, limit: 100 });
-      const card = p => `<article class="post ${id}">
-        <div class="row">${av(skin(p.character_id), 'av sm')}<b>${p.anonimo ? 'Anónimo' : esc(cname(p.character_id))}</b><span class="muted">${fdate(p.created_at)}</span></div>
-        ${p.media_url ? (/^https?:\/\/(www\.)?(youtube|youtu\.be|medal|tiktok|streamable)/.test(p.media_url) ? `<a href="${esc(p.media_url)}" target="_blank" rel="noopener" class="vid">▶ Ver video</a>` : `<img src="${esc(p.media_url)}" alt="" class="media" data-act="zoom" data-src="${esc(p.media_url)}">`) : ''}
-        ${p.body ? `<p>${esc(p.body)}</p>` : ''}
-        <div class="row"><button class="like" data-act="like" data-id="${p.id}">♥ ${p.likes}</button>${S.chars.some(c => c.id === p.character_id) || lvl() >= 2 ? `<button class="link" data-act="del" data-id="${p.id}">Borrar</button>` : ''}</div></article>`;
-      view(el, `<form data-form="post" class="compose">${fieldsHTML([
-        { k: 'body', label: needMedia ? 'Descripción' : '¿Qué está pasando en Los Ángeles?', type: 'textarea', req: !needMedia },
-        { k: 'media_url', label: needMedia ? 'Foto (obligatoria)' : 'Foto', type: 'file', req: needMedia }])}
-        <button class="btn" type="submit">Publicar</button></form><div class="feed ${id}">${posts.map(card).join('') || '<p class="empty">Sé el primero en publicar.</p>'}</div>`, {
-        post: async d => {
-          await db.insert('posts', { app: id, character_id: S.char.id, body: d.body, media_url: d.media_url || null });
-          this.render(el);
-        },
-        like: async d => { await db.rpc('like_post', { id: d.id }); this.render(el); },
-        del: async d => { await db.remove('posts', d.id); this.render(el); },
-        zoom,
+      const [all, likes] = await Promise.all([db.list('posts', { eq: { app: id }, limit: 150 }), db.list('post_likes', { eq: { user_id: S.me.id }, order: null, limit: 2000 }).catch(() => [])]);
+      const liked = new Set(likes.map(l => l.post_id)), saved = savedPosts(), mine = p => S.chars.some(c => c.id === p.character_id) || lvl() >= 2;
+      const posts = tab === 'saved' ? all.filter(p => saved.includes(p.id)) : tab === 'me' ? all.filter(p => p.character_id === S.char.id) : all;
+      const who = p => p.anonimo ? 'anonimo' : handle(p.character_id), nm = p => p.anonimo ? 'Anónimo' : esc(cname(p.character_id));
+      const heart = p => `<button class="sa ${liked.has(p.id) ? 'on' : ''}" data-act="like" data-id="${p.id}" aria-label="Me gusta">${ico('s_heart', 'i')}${id === 'x' ? `<span>${p.likes || ''}</span>` : ''}</button>`;
+      const save = p => `<button class="sa ${saved.includes(p.id) ? 'on' : ''}" data-act="save" data-id="${p.id}" aria-label="Guardar">${ico('s_save', 'i')}</button>`;
+      const del = p => mine(p) ? `<button class="sa" data-act="del" data-id="${p.id}" aria-label="Borrar">${ico('s_trash', 'i')}</button>` : '';
+      let html;
+      if (id === 'insta') {
+        const stories = [...new Map(all.filter(p => Date.now() - new Date(p.created_at) < 864e5 && !p.anonimo).map(p => [p.character_id, p])).values()].slice(0, 15);
+        html = `<div class="ig"><header class="ig-top"><span class="ig-word">Instagram</span><span class="grow"></span>
+            <button class="sa" data-act="nuevo" aria-label="Nueva publicación">${ico('s_new', 'i')}</button><button class="sa" data-act="tab" data-t="saved" aria-label="Guardados">${ico('s_save', 'i')}</button></header>
+          ${tab === 'feed' && stories.length ? `<div class="ig-stories">${stories.map(p => `<button class="ig-st" data-act="zoom" data-src="${esc(p.media_url || '')}"><span class="ring">${av(skin(p.character_id), 'av')}</span><small>${esc(handle(p.character_id))}</small></button>`).join('')}</div>` : ''}
+          ${tab !== 'feed' ? `<div class="ig-sub"><button class="link" data-act="tab" data-t="feed">‹ Inicio</button><b>${tab === 'saved' ? 'Guardado' : '@' + esc(handle(S.char.id))}</b></div>` : ''}
+          <div class="ig-feed">${posts.map(p => `<article class="ig-post post">
+            <div class="ig-h">${av(skin(p.character_id), 'av sm ring-s')}<b>${esc(who(p))}</b>${verified(p.character_id)}<span class="muted">· ${ago(p.created_at)}</span><span class="grow"></span>${del(p)}</div>
+            ${p.media_url ? `<div class="ig-media" data-act="dbl" data-id="${p.id}"><img src="${esc(p.media_url)}" alt=""><i class="pop">${ico('s_heart', 'i')}</i></div>` : ''}
+            <div class="ig-act">${heart(p)}<span class="grow"></span>${save(p)}</div>
+            <div class="ig-likes">${p.likes ? `${p.likes.toLocaleString('es-MX')} Me gusta` : 'Sé el primero en dar Me gusta'}</div>
+            ${p.body ? `<p class="ig-cap"><b>${esc(who(p))}</b> ${esc(p.body)}</p>` : ''}</article>`).join('') || '<p class="empty">Todavía no hay publicaciones.</p>'}</div>
+          <nav class="ig-nav"><button class="sa" data-act="tab" data-t="feed">${ico('s_home', 'i')}</button><button class="sa" data-act="nuevo">${ico('s_new', 'i')}</button>
+            <button class="sa" data-act="tab" data-t="me">${av(skin(S.char.id), 'av xs')}</button></nav></div>`;
+      } else {
+        html = `<div class="xa"><header class="xa-top"><b class="xa-logo">𝕏</b><nav class="xa-tabs"><button class="${tab === 'feed' ? 'on' : ''}" data-act="tab" data-t="feed">Para ti</button><button class="${tab === 'me' ? 'on' : ''}" data-act="tab" data-t="me">Mis posts</button><button class="${tab === 'saved' ? 'on' : ''}" data-act="tab" data-t="saved">Guardados</button></nav></header>
+          <form data-form="post" class="xa-compose">${av(skin(S.char.id), 'av')}<div class="grow"><textarea name="body" rows="2" maxlength="280" placeholder="¿Qué está pasando?" required></textarea>
+            <div class="row"><label class="sa" title="Foto">${ico('s_photo', 'i')}<input type="file" name="media_url" accept="image/*" hidden></label><span class="grow"></span><button class="xa-btn" type="submit">Postear</button></div></div></form>
+          ${posts.map(p => `<article class="xa-post post">${av(skin(p.character_id), 'av')}<div class="grow">
+            <div class="xa-h"><b>${nm(p)}</b>${verified(p.character_id)}<span class="muted">@${esc(who(p))} · ${ago(p.created_at)}</span></div>
+            ${p.body ? `<p>${esc(p.body)}</p>` : ''}${p.media_url ? `<img class="xa-media" src="${esc(p.media_url)}" alt="" data-act="zoom" data-src="${esc(p.media_url)}">` : ''}
+            <div class="xa-act">${heart(p)}${save(p)}${del(p)}</div></div></article>`).join('') || '<p class="empty">Sé el primero en postear.</p>'}</div>`;
+      }
+      const again = () => app.render(el, tab);
+      view(el, html, {
+        tab: d => app.render(el, d.t),
+        post: async d => { await db.insert('posts', { app: id, character_id: S.char.id, body: d.body, media_url: d.media_url || null }); again(); },
+        nuevo: () => modal('Nueva publicación', form('pub', [{ k: 'media_url', label: 'Foto', type: 'file', req: 1 }, { k: 'body', label: 'Escribe un pie de foto…', type: 'textarea' }], {}, 'Compartir'), {
+          pub: async (d, f, close) => { await db.insert('posts', { app: id, character_id: S.char.id, body: d.body, media_url: d.media_url }); close(); again(); } }),
+        like: async d => { if (liked.has(d.id)) return; await db.rpc('like_post', { id: d.id }); again(); },
+        dbl: async (d, t) => { t.classList.remove('beat'); void t.offsetWidth; t.classList.add('beat'); if (!liked.has(d.id)) { await db.rpc('like_post', { id: d.id }); setTimeout(again, 500); } },
+        save: d => { const s = savedPosts(), k = s.indexOf(d.id); k < 0 ? s.push(d.id) : s.splice(k, 1); localStorage.setItem('rp_saved', JSON.stringify(s)); again(); },
+        del: async d => { if (!confirm('¿Borrar esta publicación?')) return; await db.remove('posts', d.id); again(); },
+        zoom: d => d.src && zoom(d),
       });
     } };
+  return app;
 }
 
 // ============ PERIÓDICO ============
@@ -798,16 +830,25 @@ const robstore = { id: 'robstore', name: 'App Store', icon: '🛍️', bg: '#1fa
 // ============ AJUSTES ============
 const ajustes = { id: 'ajustes', name: 'Ajustes', icon: '⚙️', bg: '#8e8e93,#636366', show: () => true,
   async render(el) {
+    let saved = {}; try { saved = JSON.parse(localStorage.getItem('rp_login') || '{}'); if (saved.u !== S.me.username) saved = {}; } catch {}
     view(el, `<div class="card row">${av(S.me.avatar_url)}<div><b>${esc(S.me.username)}</b><div class="muted">Roblox: ${esc(S.me.roblox)} · Discord: ${esc(S.me.discord)}</div>
       ${S.me.staff_role ? `<span class="tag on">${STAFF_NAME[S.me.staff_role]}</span>` : ''}</div></div>
       <h3>Fondo de pantalla</h3><div class="walls">${WALLPAPERS.map(w => `<button class="wall" style="background:${esc(w)} center/cover" data-act="wall" data-w="${esc(w)}" aria-label="Fondo"></button>`).join('')}</div>
       <form data-form="foto" class="row"><input type="file" name="img" accept="image/*" required><button class="btn sm">Usar mi foto de fondo</button></form>
       <h3>Foto de perfil</h3><form data-form="avatar" class="row"><input type="file" name="img" accept="image/*" required><button class="btn sm">Cambiar</button></form>
-      <h3>Cuenta</h3><button class="btn bad" data-act="salir">Cerrar sesión</button>`, {
+      <h3>Mi cuenta</h3><div class="card acct"><div class="kv"><small>Usuario para iniciar sesión</small><b>${esc(S.me.username)}</b></div>
+        <div class="kv"><small>Contraseña</small><b class="pw">${saved.p ? '•'.repeat(Math.min(saved.p.length, 12)) : '<span class="muted">No guardada en este dispositivo</span>'}</b>
+          ${saved.p ? '<button class="btn sm ghost" data-act="ver">Mostrar</button>' : ''}</div>
+        <small class="muted">Por seguridad tu contraseña no se guarda en el servidor: solo la recordamos en este dispositivo para que puedas consultarla. Si la olvidas, cámbiala aquí.</small>
+        ${form('pass', [{ k: 'p', label: 'Nueva contraseña', type: 'password', req: 1 }, { k: 'p2', label: 'Repítela', type: 'password', req: 1 }], {}, 'Cambiar contraseña')}</div>
+      <button class="btn bad" data-act="salir">Cerrar sesión</button>`, {
+      ver: (_, b) => { const s = el.querySelector('.pw'), on = b.textContent === 'Mostrar'; s.textContent = on ? saved.p : '•'.repeat(Math.min(saved.p.length, 12)); b.textContent = on ? 'Ocultar' : 'Mostrar'; },
+      async pass(d) { if (d.p.length < 6) throw new Error('Mínimo 6 caracteres'); if (d.p !== d.p2) throw new Error('No coinciden');
+        await db.setPassword(d.p); localStorage.setItem('rp_login', JSON.stringify({ u: S.me.username, p: d.p })); toast('Contraseña cambiada 🔒'); ajustes.render(el); },
       wall: async d => { await db.update('profiles', S.me.id, { wallpaper: d.w }); location.reload(); },
       foto: async d => { await db.update('profiles', S.me.id, { wallpaper: `url("${d.img}")` }); location.reload(); },
       avatar: async d => { await db.update('profiles', S.me.id, { avatar_url: d.img }); location.reload(); },
-      salir: async () => { await db.signOut(); location.reload(); },
+      salir: async () => { localStorage.removeItem('rp_login'); await db.signOut(); location.reload(); },
     });
   } };
 
@@ -1010,7 +1051,11 @@ export async function seed() {
   const key = (b, m) => (b + '|' + m).toLowerCase(), want = new Set(SEED_MODELS.map(([b, m]) => key(b, m)));
   for (const m of models) if (!want.has(key(m.brand, m.model)) && !used.has(m.id) && !m.custom) await db.remove('vehicle_models', m.id); // quita los de ejemplo viejos
   const have = new Set(models.map(m => key(m.brand, m.model)));
-  for (const [brand, model, category, price] of SEED_MODELS) if (!have.has(key(brand, model))) await db.insert('vehicle_models', { brand, model, category, price });
+  for (const [brand, model, category, price, img] of SEED_MODELS) {
+    const cur = models.find(m => key(m.brand, m.model) === key(brand, model));
+    if (!cur) await db.insert('vehicle_models', { brand, model, category, price, img: img || null });
+    else if (img && !cur.custom && cur.img !== img) await db.update('vehicle_models', cur.id, { img }); // foto real del juego
+  }
   const props = await db.list('properties', { order: null, limit: 1000 });
   const OLD = ['Casa Springfield #1', 'Casa Springfield #2', 'Casa River City #1', 'Casa River City #2', 'Mansión Hills', 'Departamento Centro']; // casas de ejemplo de versiones anteriores
   for (const p of props) if (OLD.includes(p.name) && !p.owner_char && !p.owner_company) await db.remove('properties', p.id);
