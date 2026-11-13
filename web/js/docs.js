@@ -53,14 +53,14 @@ export function idCard(c, dni, lic) {
   const cls = lic?.data?.clase?.split(' ')[0] || '';
   return `<div class="idc ${dl ? 'dl' : ''}" style="background-image:${guilloche(dl ? '#c9a85f' : '#7fa6c9', 220, 110, 26)}">
     <div class="idc-h"><b>California</b><span>${dl ? 'DRIVER LICENSE' : 'IDENTIFICATION CARD'}</span><i class="usa">USA</i></div>
-    <div class="idc-b"><div class="idc-photo"><img src="${esc(dni.data.foto)}" alt=""><span class="signature">${esc(c.first_name)} ${esc(c.last_name)}</span></div>
+    <div class="idc-b"><div class="idc-photo"><img src="${esc(dni.data.foto || c.skin_url)}" alt=""><span class="signature">${esc(c.first_name)} ${esc(c.last_name)}</span></div>
       <div class="idc-f"><div class="r"><small>${dl ? 'DL' : 'ID'}</small><b class="red">${n}</b></div><div class="r"><small>EXP</small><b class="red">${fdate(exp.toISOString().slice(0, 10))}</b></div>
         <div class="r"><small>LN</small><b>${up(c.last_name)}</b></div><div class="r"><small>FN</small><b>${up(c.first_name)}</b></div>
         <div class="addr">${up(dni.data.direccion)}<br>${up(String(c.city || '').split('·').pop().trim())}, CA ${90000 + hash(c.id) % 1000}</div>
         <div class="r"><small>DOB</small><b class="red">${fdate(c.dob)}</b>${dl ? `<small>CLASS</small><b>${esc(cls)}</b>` : ''}</div>
         <div class="r4"><span><small>SEX</small>${up(c.sex?.[0])}</span><span><small>HGT</small>${esc(dni.data.altura)}</span><span><small>EYES</small>${up(String(dni.data.ojos).slice(0, 3))}</span><span><small>HAIR</small>${up(String(dni.data.cabello).slice(0, 3))}</span></div>
         <div class="r"><small>ISS</small><b>${fdate((lic || dni).reviewed_at?.slice(0, 10) || dni.created_at?.slice(0, 10))}</b>${dni.data.donador ? '<span class="donor">♥ DONOR</span>' : ''}</div></div>
-      <img class="ghost" src="${esc(dni.data.foto)}" alt=""></div>
+      <img class="ghost" src="${esc(dni.data.foto || c.skin_url)}" alt=""></div>
     <div class="idc-micro">${RP.repeat(3)}</div></div>`;
 }
 
@@ -76,7 +76,7 @@ export function passport(c, req, foreign) {
   const f = (l, v) => `<div><small>${l}</small><b>${v}</b></div>`;
   return `<div class="pass" style="background-image:${guilloche('#9db5d8', 260, 130, 24)}">
     <div class="pass-h"><b>${foreign ? 'PASSPORT · ' + esc(req.data.pais).toUpperCase() : 'UNITED STATES OF AMERICA'}</b><span>PASSPORT · PASSEPORT · PASAPORTE</span></div>
-    <div class="pass-b"><img class="pass-photo" src="${esc(req.data.foto)}" alt="">
+    <div class="pass-b"><img class="pass-photo" src="${esc(req.data.foto || c.skin_url)}" alt="">
       <div class="pass-f">${f('Type / Tipo', 'P')}${f('Code / Código', code)}${f('Passport No. / No. de pasaporte', no)}
         <div class="w">${f('Surname / Apellidos', up(c.last_name))}</div><div class="w">${f('Given Names / Nombres', up(c.first_name))}</div>
         <div class="w">${f('Nationality / Nacionalidad', up(c.nationality))}</div>${f('Date of birth', fdate(c.dob))}${f('Sex / Sexo', up(c.sex?.[0]))}

@@ -31,6 +31,7 @@ export async function loadMe() {
   S.jobs = (await db.list('employments', { order: null, limit: 5000 })).filter(e => e.status !== 'fired' && S.chars.some(c => c.id === e.character_id && c.status === 'active'));
   S.jobs.forEach(e => S.ranks.find(r => r.dept === e.dept && r.rank === e.rank)?.manage && t.add('mgr:' + e.dept));
   S.tags = [...t];
+  S.docs = S.char ? (await db.list('requests', { eq: { character_id: S.char.id, status: 'approved' }, order: null, limit: 500 })).map(r => r.type) : []; // para mostrar Documentos/Licencias en el escritorio
 }
 
 // ---------- toasts y modales ----------
@@ -62,9 +63,10 @@ export function view(el, html, acts = {}, close) {
     const f = e.target, fn = acts[f.dataset.form];
     if (!fn) return;
     e.preventDefault();
-    const b = f.querySelector('[type=submit]'); if (b) b.disabled = true;
+    const b = f.querySelector('[type=submit]'), txt = b?.innerHTML; // evita doble envío y muestra que está trabajando
+    if (b) { b.disabled = true; b.classList.add('busy'); b.innerHTML = '<span class="bspin"></span> Procesando…'; }
     try { await fn(await readForm(f), f, close); } catch (err) { toast(err.message, 'err'); }
-    finally { if (b) b.disabled = false; }
+    finally { if (b) { b.disabled = false; b.classList.remove('busy'); b.innerHTML = txt; } }
   };
 }
 

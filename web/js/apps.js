@@ -219,31 +219,44 @@ const trabajo = { id: 'trabajo', name: 'Workday', icon: '💼', bg: '#f5a623,#e5
   } };
 
 // ============ DOCUMENTOS (wallet) ============
-const docs = { id: 'docs', name: 'Wallet', icon: '🪪', bg: '#1c1c1e,#3a3a3c', show: () => true,
-  async render(el) {
-    if (!needChar(el)) return;
-    const reqs = await myRequests(), c = S.char, ok = t => approvedOf(reqs, t), name = `${c.first_name} ${c.last_name}`;
-    const dni = ok('dni')[0], when = r => r.reviewed_at || r.created_at, wrap = (h, k) => `<div class="doc" data-act="zoom" data-k="${k}">${h}</div>`;
-    const all = [];
-    const add = (title, html) => all.push([title, html]);
-    add('Acta de nacimiento', birthCert(c));
-    if (dni) add('Identificación (California ID)', idCard(c, dni));
-    if (dni) ok('licencia_conducir').forEach(l => add('Licencia de conducir · ' + l.data.clase, idCard(c, dni, l)));
-    ok('pasaporte').forEach(p => add('Pasaporte', passport(c, p, false)));
-    ok('visa').forEach(v => add('Pasaporte y visa', passport(c, v, true)));
-    ok('titulo').forEach(t => add('Título universitario', diploma(t.data.carrera, name, 'por haber concluido satisfactoriamente sus estudios profesionales', t.data.universidad, when(t))));
-    ok('licencia_abogado').forEach(t => add('Licencia de abogado', diploma('Licencia para ejercer la abogacía', name, 'admitido(a) para ejercer ante los tribunales de Los Ángeles', 'State Bar of Los Angeles RP', when(t))));
-    ok('licencia_juez').forEach(t => add('Nombramiento de juez', diploma('Nombramiento judicial', name, 'como Juez de Distrito de la Corte de Los Ángeles', 'Corte Superior de Los Ángeles RP', when(t))));
-    ok('licencia_armas').forEach(t => add('Licencia de armas', diploma('Licencia de portación · ' + t.data.tipo, name, 'autorizado(a) a portar armas de la categoría indicada', 'LAPD · Departamento de Licencias', when(t))));
-    ok('servicio_militar').forEach(t => add('Servicio militar', diploma('Certificado de servicio militar', name, 'por su ingreso a ' + t.data.rama, 'Departamento de Defensa · LA RP', when(t))));
-    const regs = [...ok('placa').map(r => [ico('placa'), `Placa ${esc(r.data.placa.toUpperCase())}`, `${esc(r.data.tipo)} · ${esc(r.data.estado)}`]),
-      ...ok('registro_arma').map(r => [ico('registro_arma'), esc(r.data.arma), 'Serie ' + esc(r.data.serie)]),
-      ...ok('registro_herramienta').map(r => [ico('registro_herramienta'), esc(r.data.herramienta), 'Registrada'])];
-    view(el, `${all.map(([t, h], i) => `<h3>${t}</h3>${wrap(h, i)}`).join('')}
-      ${!dni ? `<div class="card row"><span class="grow">Aún no tienes tu identificación (DNI).</span><button class="btn sm" data-act="t" data-k="dni">Tramitarla</button></div>` : ''}
-      <h3>Registros</h3><ul class="list">${regs.map(([i, a, b]) => `<li><span class="li-ico">${i}</span><div class="grow"><b>${a}</b><div class="muted">${b}</div></div></li>`).join('') || '<li class="muted">Sin registros</li>'}</ul>`,
-    { t: d => openTramite(d.k, {}, () => this.render(el)), zoom: d => modal(all[d.k][0], `<div class="doc big">${all[d.k][1]}</div>`) });
-  } };
+// Documentos personales y licencias: Wallet los junta todos; Documentos y Licencias salen en el escritorio cuando tienes alguno
+const LIC_TYPES = ['licencia_conducir', 'licencia_armas', 'licencia_abogado', 'licencia_juez'];
+function myDocs(c, reqs) {
+  const ok = t => approvedOf(reqs, t), name = `${c.first_name} ${c.last_name}`, when = r => r.reviewed_at || r.created_at, dni = ok('dni')[0], out = [];
+  const add = (kind, title, html) => out.push({ kind, title, html });
+  add('doc', 'Acta de nacimiento', birthCert(c));
+  if (dni) add('doc', 'Identificación (California ID)', idCard(c, dni));
+  ok('pasaporte').forEach(p => add('doc', 'Pasaporte', passport(c, p, false)));
+  ok('visa').forEach(v => add('doc', 'Pasaporte y visa', passport(c, v, true)));
+  ok('titulo').forEach(t => add('doc', 'Título universitario', diploma(t.data.carrera, name, 'por haber concluido satisfactoriamente sus estudios profesionales', t.data.universidad, when(t))));
+  ok('servicio_militar').forEach(t => add('doc', 'Servicio militar', diploma('Certificado de servicio militar', name, 'por su ingreso a ' + t.data.rama, 'Departamento de Defensa · LA RP', when(t))));
+  if (dni) ok('licencia_conducir').forEach(l => add('lic', 'Licencia de conducir · ' + l.data.clase, idCard(c, dni, l)));
+  ok('licencia_armas').forEach(t => add('lic', 'Licencia de armas', diploma('Licencia de portación · ' + t.data.tipo, name, 'autorizado(a) a portar armas de la categoría indicada', 'LAPD · Departamento de Licencias', when(t))));
+  ok('licencia_abogado').forEach(t => add('lic', 'Licencia de abogado', diploma('Licencia para ejercer la abogacía', name, 'admitido(a) para ejercer ante los tribunales de Los Ángeles', 'State Bar of Los Angeles RP', when(t))));
+  ok('licencia_juez').forEach(t => add('lic', 'Nombramiento de juez', diploma('Nombramiento judicial', name, 'como Juez de Distrito de la Corte de Los Ángeles', 'Corte Superior de Los Ángeles RP', when(t))));
+  return { list: out, dni };
+}
+function docApp(id, name, bg, kind, show) {
+  const app = { id, name, icon: '🪪', bg, show,
+    async render(el) {
+      if (!needChar(el)) return;
+      const reqs = await myRequests(), ok = t => approvedOf(reqs, t), { list, dni } = myDocs(S.char, reqs), all = kind ? list.filter(d => d.kind === kind) : list;
+      const regs = kind ? [] : [...ok('placa').map(r => [ico('placa'), `Placa ${esc(r.data.placa.toUpperCase())}`, `${esc(r.data.tipo)} · ${esc(r.data.estado)}`]),
+        ...ok('registro_arma').map(r => [ico('registro_arma'), esc(r.data.arma), 'Serie ' + esc(r.data.serie)]),
+        ...ok('registro_herramienta').map(r => [ico('registro_herramienta'), esc(r.data.herramienta), 'Registrada'])];
+      const tiles = all.map((d, i) => `<button class="dfile" data-act="zoom" data-k="${i}"><div class="dthumb"><div class="doc">${d.html}</div></div><b>${esc(d.title)}</b></button>`).join('');
+      view(el, `<p class="muted">${kind === 'lic' ? 'Tus licencias vigentes. Toca una para verla en grande.' : kind === 'doc' ? 'Tus documentos oficiales. Toca uno para verlo en grande.' : 'Todos tus documentos, licencias y registros.'}</p>
+        <div class="dgrid">${tiles || `<p class="empty">${kind === 'lic' ? 'Todavía no tienes licencias. Tramítalas en el portal del gobierno.' : 'Sin documentos.'}</p>`}</div>
+        ${!dni && kind !== 'lic' ? `<div class="card row"><span class="grow">Aún no tienes tu identificación (DNI).</span><button class="btn sm" data-act="t" data-k="dni">Tramitarla</button></div>` : ''}
+        ${kind === 'lic' ? `<div class="row gap">${LIC_TYPES.map(t => `<button class="btn sm ghost" data-act="t" data-k="${t}">${esc(TRAMITES[t].name)}</button>`).join('')}</div>` : ''}
+        ${kind ? '' : `<h3>Registros</h3><ul class="list">${regs.map(([i, a, b]) => `<li><span class="li-ico">${i}</span><div class="grow"><b>${a}</b><div class="muted">${b}</div></div></li>`).join('') || '<li class="muted">Sin registros</li>'}</ul>`}`,
+      { t: d => openTramite(d.k, {}, () => app.render(el)), zoom: d => modal(esc(all[d.k].title), `<div class="doc big">${all[d.k].html}</div>`) });
+    } };
+  return app;
+}
+const docs = docApp('docs', 'Wallet', '#1c1c1e,#3a3a3c', null, () => true);
+const documentos = docApp('documentos', 'Documentos', '#1f6feb,#0b4fb3', 'doc', () => !!S.char);
+const licencias = docApp('licencias', 'Licencias', '#0f9d58,#0a7a43', 'lic', () => !!S.docs?.some(t => LIC_TYPES.includes(t)));
 
 // ============ MENSAJES ============
 const mensajes = { id: 'mensajes', name: 'Mensajes', icon: '💬', bg: '#34c759,#30b350', show: () => true,
@@ -1045,32 +1058,33 @@ const staffApp = { id: 'staff', name: 'Panel Staff', icon: '🛡️', bg: '#8e2d
 const rolesPicker = cur => `<div class="roles">${Object.entries(ROLES).map(([g, rs]) => `<fieldset><legend>${g}</legend>${rs.map(r => `<label class="chk"><input type="checkbox" name="role" value="${esc(r)}" ${cur.includes(r) || r === 'Ciudadano' ? 'checked' : ''} ${r === 'Ciudadano' ? 'disabled title="Toda vida es ciudadana"' : ''}> ${esc(r)}</label>`).join('')}</fieldset>`).join('')}</div>`;
 
 export async function seed() {
-  for (const [type, t] of Object.entries(TRAMITES)) await db.upsert('tramite_depts', { type, dept: t.dept }, 'type');
-  for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) if (S.settings[key] === undefined) await db.upsert('settings', { key, value });
+  const all = ps => Promise.all(ps); // en paralelo: el primer arranque pasa de ~1 min a pocos segundos
+  await all(Object.entries(TRAMITES).map(([type, t]) => db.upsert('tramite_depts', { type, dept: t.dept }, 'type')));
+  await all(Object.entries(DEFAULT_SETTINGS).filter(([key]) => S.settings[key] === undefined).map(([key, value]) => db.upsert('settings', { key, value })));
   const models = await db.list('vehicle_models', { order: null, limit: 1000 }), used = new Set((await db.list('vehicles', { limit: 5000 })).map(v => v.model_id));
   const key = (b, m) => (b + '|' + m).toLowerCase(), want = new Set(SEED_MODELS.map(([b, m]) => key(b, m)));
   for (const m of models) if (!want.has(key(m.brand, m.model)) && !used.has(m.id) && !m.custom) await db.remove('vehicle_models', m.id); // quita los de ejemplo viejos
   const have = new Set(models.map(m => key(m.brand, m.model)));
-  for (const [brand, model, category, price, img] of SEED_MODELS) {
+  await all(SEED_MODELS.map(([brand, model, category, price, img]) => {
     const cur = models.find(m => key(m.brand, m.model) === key(brand, model));
-    if (!cur) await db.insert('vehicle_models', { brand, model, category, price, img: img || null });
-    else if (img && !cur.custom && cur.img !== img) await db.update('vehicle_models', cur.id, { img }); // foto real del juego
-  }
+    if (!cur) return db.insert('vehicle_models', { brand, model, category, price, img: img || null });
+    if (img && !cur.custom && cur.img !== img) return db.update('vehicle_models', cur.id, { img }); // foto real del juego
+  }));
   const props = await db.list('properties', { order: null, limit: 1000 });
   const OLD = ['Casa Springfield #1', 'Casa Springfield #2', 'Casa River City #1', 'Casa River City #2', 'Mansión Hills', 'Departamento Centro']; // casas de ejemplo de versiones anteriores
   for (const p of props) if (OLD.includes(p.name) && !p.owner_char && !p.owner_company) await db.remove('properties', p.id);
   for (const [name, zone, price, img] of SEED_PROPS) { const p = props.find(x => x.name === name); p ? p.img !== img && await db.update('properties', p.id, { img }) : await db.insert('properties', { name, zone, price, img, kind: 'casa' }); }
-  for (const [dept, list] of Object.entries(DEPTS)) for (const [i, [rank, salary, manage]] of list.entries())
-    if (!S.ranks.some(r => r.dept === dept && r.rank === rank)) await db.upsert('dept_ranks', { dept, rank, ord: i, salary, manage: !!manage }, 'dept,rank');
+  await all(Object.entries(DEPTS).flatMap(([dept, list]) => list.map(([rank, salary, manage], i) =>
+    !S.ranks.some(r => r.dept === dept && r.rank === rank) && db.upsert('dept_ranks', { dept, rank, ord: i, salary, manage: !!manage }, 'dept,rank'))));
   const jobs = await db.list('jobs', { limit: 1000 });
   for (const [title, employer, role_tag] of SEED_JOBS) if (!jobs.some(j => j.role_tag === role_tag)) await db.insert('jobs', { title, employer, role_tag, description: 'Trabajo de gobierno con sueldo diario. Al ser aceptado entras con el rango más bajo; tus mandos te pueden ascender.' });
   const pc = await db.list('penal_code', { order: null, limit: 1000 });
-  for (const [code, title, kind, fine, years] of PENAL_CODE) if (!pc.some(x => x.code === code)) await db.upsert('penal_code', { code, title, kind, fine, years }, 'code');
+  await all(PENAL_CODE.filter(([code]) => !pc.some(x => x.code === code)).map(([code, title, kind, fine, years]) => db.upsert('penal_code', { code, title, kind, fine, years }, 'code')));
   if (!(await db.list('companies', { eq: { industry: 'ETF' } })).length) await db.insert('companies', { name: 'LA500 ETF', industry: 'ETF', owners: [], description: 'Fondo que sigue el promedio de todas las empresas de Los Ángeles.' });
   const g = (await db.list('accounts', { eq: { kind: 'gov' } }))[0];
   if (g && Number(g.balance) === 0) await db.rpc('staff_pay', { acc: g.id, amount: 13950000000, concept: 'Presupuesto inicial FY 2025-26', mint: true });
 }
 
-export const APPS = [vida, banco, gobierno, safari, docs, trabajo, mensajes,
+export const APPS = [vida, banco, gobierno, safari, docs, documentos, licencias, trabajo, mensajes,
   social('x', 'X', '𝕏', '#000000,#1c1c1c', false), social('insta', 'Instagram', '📸', '#833ab4,#fd1d1d,#fcb045', true),
   news, buscar, empleos, bolsa, casas, autos, fec, corte, policia, prision, taxi, soporte, resenas, robstore, staffApp, ajustes];

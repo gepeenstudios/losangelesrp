@@ -41,7 +41,7 @@ function login(mode = 'in') {
       const u = d.u.toLowerCase(), keep = () => localStorage.setItem('rp_login', JSON.stringify({ u, p: d.p })); // solo en este dispositivo, para verla en Ajustes
       if (mode === 'in') { await db.signIn(u, d.p); keep(); return boot(); }
       if (await db.get('profiles', u, 'username')) throw new Error('Ese usuario ya existe');
-      await db.signUp(u, d.p); keep();
+      await db.signUp(u, d.p); keep(); toast('¡Cuenta creada! Bienvenido a Los Ángeles ✅');
       d.avatar = await db.upload(d.avatar);
       await db.insert('profiles', { id: db.uid(), username: u, roblox: d.roblox, discord: d.discord, avatar_url: d.avatar, avatar_full: d.avatar });
       boot();
@@ -174,6 +174,7 @@ async function shell() {
         <button class="wdg w-life" data-act="open" data-id="vida">${c ? `<img src="${esc(c.skin_url)}" alt=""><div><b>${esc(cname(c.id))}</b><span>${c.status === 'active' ? 'Ciudadano activo' : 'En aprobación'}</span>
           <small>${(c.roles || []).slice(0, 3).map(esc).join(' · ')}</small></div>` : '<div><b>Sin vida activa</b><span>Tu vida está en aprobación o crea una nueva</span></div>'}</button>
       </section>
+      <section class="desk">${apps.filter(a => ['documentos', 'licencias'].includes(a.id)).map(a => `<button class="dfold" data-act="open" data-id="${a.id}"><span class="ic" style="background:linear-gradient(135deg,${a.bg})">${glyph(a)}</span><span>${esc(a.name)}</span></button>`).join('')}</section>
       <div class="grid">${apps.map(icon).join('')}</div>
     </main>
     <nav class="dock">${favs.map(a => dockIcon(a)).join('')}<span class="extra"></span><span class="sep"></span>
@@ -282,11 +283,13 @@ async function dutyLoop() {
   paint(); if (open) dutyTimer = setInterval(paint, 1000);
 }
 
+const loading = msg => { root.innerHTML = `<div class="boot-load"><img src="img/logo.png" alt=""><div class="spinner"></div><p>${msg}</p></div>`; };
 async function boot() {
   if (!db.uid()) return login();
+  loading('Entrando a Los Ángeles…');
   await loadMe();
   if (!S.me) { await db.signOut(); return login(); }
-  if ((db.DEMO || lvl() >= 5) && !S.ranks.length) { await seed(); await loadMe(); }
+  if ((db.DEMO || lvl() >= 5) && !S.ranks.length) { loading('Preparando la ciudad por primera vez…<br><small>Cargando autos, casas, trabajos y leyes. Tarda unos segundos.</small>'); await seed(); await loadMe(); }
   db.rpc('daily_tick', {}).catch(() => {}); // cierre del día (nómina, despidos, intereses); solo corre una vez al día
   if (S.me.banned) return wait('🔨', 'Tu cuenta está baneada. Puedes apelar desde soporte.');
   if (!S.chars.length) return lifeWizard(root, { onDone: boot }); // lo primero: crear tu vida
