@@ -31,7 +31,7 @@ function login(mode = 'in') {
     : [{ k: 'u', label: 'Usuario de la web (3-20, letras/números)', req: 1, pattern: '[A-Za-z0-9_.]{3,20}' },
        { k: 'p', label: 'Contraseña (mín. 6)', type: 'password', req: 1, pattern: '.{6,}' },
        { k: 'roblox', label: 'Usuario de Roblox', req: 1 }, { k: 'discord', label: 'Usuario de Discord', req: 1 },
-       { k: 'avatar', label: 'Foto de tu avatar de Roblox (será tu foto de perfil)', type: 'file', req: 1 }];
+       { k: 'avatar', label: 'Foto de tu avatar de Roblox (será tu foto de perfil)', type: 'file', req: 1, raw: 1 }]; // se sube después de crear la cuenta (antes no hay permiso)
   view(root, `<div class="lock" style="--wall:${wallCss(WALLPAPERS[1])}">${bigClock()}
     <div class="lock-c ${mode}"><img class="lock-logo" src="img/logo.png" alt="Los Angeles Roleplay"><h1 class="sr">${esc(CIUDAD)}</h1><p class="muted">Portal oficial de la Ciudad de Los Ángeles ${demoTag}</p>
     <form data-form="go" class="form">${fieldsHTML(fields)}<button class="btn big" type="submit">${mode === 'in' ? 'Entrar' : 'Crear cuenta'}</button></form>
@@ -42,6 +42,7 @@ function login(mode = 'in') {
       if (mode === 'in') { await db.signIn(u, d.p); keep(); return boot(); }
       if (await db.get('profiles', u, 'username')) throw new Error('Ese usuario ya existe');
       await db.signUp(u, d.p); keep();
+      d.avatar = await db.upload(d.avatar);
       await db.insert('profiles', { id: db.uid(), username: u, roblox: d.roblox, discord: d.discord, avatar_url: d.avatar, avatar_full: d.avatar });
       boot();
     },

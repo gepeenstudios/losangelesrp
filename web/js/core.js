@@ -91,7 +91,7 @@ export function fieldsHTML(fields, v = {}) {
     }).join('')}</select>`;
     else if (f.type === 'file' || f.type === 'textfile') i = `<div class="drop">${val && f.type === 'file' ? `<img class="drop-prev" src="${esc(val)}" alt="">` : ''}
       <div class="drop-ui"><span class="drop-ico">${f.type === 'file' ? '🖼️' : '📄'}</span><b>Arrastra ${f.type === 'file' ? 'tu imagen' : 'tu archivo'} aquí</b><small>o toca para elegir</small></div>
-      <input type="file" name="${f.k}" ${f.type === 'textfile' ? 'data-text="1"' : ''} accept="${f.accept || (f.type === 'file' ? 'image/*' : '.html,text/html')}" ${req}></div>`;
+      <input type="file" name="${f.k}" ${f.type === 'textfile' ? 'data-text="1"' : ''} ${f.raw ? 'data-raw="1"' : ''} accept="${f.accept || (f.type === 'file' ? 'image/*' : '.html,text/html')}" ${req}></div>`;
     else if (f.type === 'check') return `<label class="chk"><input type="checkbox" name="${f.k}" ${val ? 'checked' : ''} ${req}> ${esc(f.label)}: ${esc(f.text || '')}</label>`;
     else i = `<input name="${f.k}" type="${f.type || 'text'}" value="${esc(val)}" ${req} ${f.pattern ? `pattern="${f.pattern}"` : ''}
       ${f.min != null ? `min="${f.min}"` : ''} ${f.max != null ? `max="${f.max}"` : ''} ${f.type === 'number' ? 'step="any"' : ''} placeholder="${esc(f.ph || '')}">`;
@@ -102,7 +102,7 @@ export async function readForm(fm) {
   const o = {};
   for (const el of fm.elements) {
     if (!el.name || (el.type === 'radio' && !el.checked)) continue;
-    if (el.type === 'file') { if (el.files[0]) o[el.name] = el.dataset.text ? await el.files[0].text() : await db.upload(el.files[0]); }
+    if (el.type === 'file') { if (el.files[0]) o[el.name] = el.dataset.text ? await el.files[0].text() : el.dataset.raw ? el.files[0] : await db.upload(el.files[0]); }
     else if (el.type === 'checkbox') o[el.name] = el.checked;
     else if (el.type === 'number') o[el.name] = el.value === '' ? null : Number(el.value);
     else o[el.name] = el.value.trim();
