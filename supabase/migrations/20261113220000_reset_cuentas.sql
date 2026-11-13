@@ -6,4 +6,3 @@ do $$ declare t text; begin
   end loop;
 end $$;
 delete from auth.users;
-delete from storage.objects where bucket_id='uploads';
