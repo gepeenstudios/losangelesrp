@@ -1,7 +1,7 @@
 // Todas las apps del sistema. Cada una: { id, name, icon, bg, show(), render(el) }
 import * as db from './db.js';
 import { sharePrice } from './db.js';
-import { S, cpi, esc, money, fdate, lvl, has, isPolice, set, cname, charOpts, toast, modal, view, form, fieldsHTML, readForm,
+import { S, cpi, esc, money, fdate, lvl, has, isPolice, set, cname, charOpts, toast, modal, view, form, fieldsHTML, readForm, downloadImage,
   myRequests, approvedOf, requestHTML, reviewQueue, tabs, needChar, myAccounts, accSelect, stars, addRole } from './core.js';
 import { openWizardOverlay } from './vida.js';
 import { openTramite } from './portal.js';
@@ -250,7 +250,9 @@ function docApp(id, name, bg, kind, show) {
         ${!dni && kind !== 'lic' ? `<div class="card row"><span class="grow">Aún no tienes tu identificación (DNI).</span><button class="btn sm" data-act="t" data-k="dni">Tramitarla</button></div>` : ''}
         ${kind === 'lic' ? `<div class="row gap">${LIC_TYPES.map(t => `<button class="btn sm ghost" data-act="t" data-k="${t}">${esc(TRAMITES[t].name)}</button>`).join('')}</div>` : ''}
         ${kind ? '' : `<h3>Registros</h3><ul class="list">${regs.map(([i, a, b]) => `<li><span class="li-ico">${i}</span><div class="grow"><b>${a}</b><div class="muted">${b}</div></div></li>`).join('') || '<li class="muted">Sin registros</li>'}</ul>`}`,
-      { t: d => openTramite(d.k, {}, () => app.render(el)), zoom: d => modal(esc(all[d.k].title), `<div class="doc big">${all[d.k].html}</div>`) });
+      { t: d => openTramite(d.k, {}, () => app.render(el)), zoom: d => modal(esc(all[d.k].title), `<div class="doc big">${all[d.k].html}</div><div class="row"><span class="grow"></span><button class="btn" data-act="dl">${ico('descargar', 'i sm')} Descargar imagen</button></div>`, {
+        async dl(_, b) { b.disabled = true; b.textContent = 'Generando…'; try { await downloadImage(b.closest('.modal-b').querySelector('.doc.big > *'), `${all[d.k].title} - ${S.char.first_name} ${S.char.last_name}`); toast('Imagen descargada ✅'); }
+          catch (e) { console.error(e); toast('No se pudo generar la imagen', 'err'); } finally { b.disabled = false; b.innerHTML = `${ico('descargar', 'i sm')} Descargar imagen`; } } }) });
     } };
   return app;
 }

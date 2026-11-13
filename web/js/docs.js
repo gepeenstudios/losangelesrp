@@ -9,9 +9,10 @@ const fdate = d => d ? new Date(d + (String(d).length === 10 ? 'T12:00:00' : '')
 const up = s => esc(String(s || '').toUpperCase());
 
 // fondo de seguridad (guilloché) hecho con elipses rotadas
-export const guilloche = (color, w = 260, h = 130, n = 22) => `url("data:image/svg+xml,${encodeURIComponent(
+// comillas simples y %27: va dentro de style="..." (con comillas dobles se cortaba el atributo)
+export const guilloche = (color, w = 260, h = 130, n = 22) => `url('data:image/svg+xml,${encodeURIComponent(
   `<svg xmlns='http://www.w3.org/2000/svg' width='${w}' height='${h}'>${Array.from({ length: n }, (_, i) =>
-    `<ellipse cx='${w / 2}' cy='${h / 2}' rx='${w / 2 - i * 2.5}' ry='${h / 6 + i * 1.6}' fill='none' stroke='${color}' stroke-width='.45' transform='rotate(${i * 8.2} ${w / 2} ${h / 2})'/>`).join('')}</svg>`)}")`;
+    `<ellipse cx='${w / 2}' cy='${h / 2}' rx='${w / 2 - i * 2.5}' ry='${h / 6 + i * 1.6}' fill='none' stroke='${color}' stroke-width='.45' transform='rotate(${i * 8.2} ${w / 2} ${h / 2})'/>`).join('')}</svg>`).replace(/'/g, '%27')}')`;
 
 const seal = (top, bottom, color = '#1d3b6e') => `<svg class="seal" viewBox="0 0 120 120" aria-hidden="true"><defs><path id="sc" d="M60 60m-46 0a46 46 0 1 1 92 0a46 46 0 1 1-92 0"/></defs>
   <circle cx="60" cy="60" r="57" fill="none" stroke="${color}" stroke-width="2"/><circle cx="60" cy="60" r="52" fill="none" stroke="${color}" stroke-width=".8"/>
@@ -51,7 +52,7 @@ export function idCard(c, dni, lic) {
   const dl = !!lic, n = docNumber(c, dl ? 'D' : 'I'), born = new Date(c.dob + 'T12:00:00');
   const exp = new Date(born); exp.setFullYear(new Date().getFullYear() + 5);
   const cls = lic?.data?.clase?.split(' ')[0] || '';
-  return `<div class="idc ${dl ? 'dl' : ''}" style="background-image:${guilloche(dl ? '#c9a85f' : '#7fa6c9', 220, 110, 26)}">
+  return `<div class="idc ${dl ? 'drv' : ''}" style="background-image:${guilloche(dl ? '#c9a85f' : '#7fa6c9', 220, 110, 26)}">
     <div class="idc-h"><b>California</b><span>${dl ? 'DRIVER LICENSE' : 'IDENTIFICATION CARD'}</span><i class="usa">USA</i></div>
     <div class="idc-b"><div class="idc-photo"><img src="${esc(dni.data.foto || c.skin_url)}" alt=""><span class="signature">${esc(c.first_name)} ${esc(c.last_name)}</span></div>
       <div class="idc-f"><div class="r"><small>${dl ? 'DL' : 'ID'}</small><b class="red">${n}</b></div><div class="r"><small>EXP</small><b class="red">${fdate(exp.toISOString().slice(0, 10))}</b></div>

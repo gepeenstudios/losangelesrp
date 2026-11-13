@@ -70,6 +70,14 @@ export function view(el, html, acts = {}, close) {
   };
 }
 
+// Descarga un elemento de la página como imagen PNG (para documentos y licencias)
+let h2i;
+export async function downloadImage(node, name) {
+  h2i ??= new Promise((ok, bad) => { const s = document.createElement('script'); s.src = 'js/vendor/html-to-image.js'; s.onload = () => ok(window.htmlToImage); s.onerror = bad; document.head.append(s); });
+  const url = await (await h2i).toPng(node, { pixelRatio: 3, cacheBust: true, skipFonts: true, imagePlaceholder: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=' }); // si una foto no carga, se pone transparente en vez de fallar
+  Object.assign(document.createElement('a'), { href: url, download: name.replace(/[^\w\sáéíóúñÁÉÍÓÚÑ.-]/g, '').trim() + '.png' }).click();
+}
+
 // ---------- formularios ----------
 export async function resolveFields(fields) {
   const dyn = {
