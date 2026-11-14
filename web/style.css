@@ -814,3 +814,9 @@ tr.click{cursor:pointer}tr.click:hover{background:#ffffff08}
 .win.narrow .sl-list{grid-auto-flow:column;grid-auto-columns:110px;border-right:0;border-bottom:1px solid #ffffff14}
 .win.narrow .fx-page{padding:24px 18px}
 .win.narrow .grid-cards{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
+/* ---------- Spotify: aleatorio/repetir claros · Instagram: reposts y comentarios ---------- */
+.sp-ctl button .i{width:20px;height:20px}.sp-ctl button.on{color:#1ed760;opacity:1;filter:none;position:relative}
+.sp-ctl button.on::after{content:'';position:absolute;left:50%;bottom:-7px;width:5px;height:5px;margin-left:-2.5px;border-radius:50%;background:#1ed760}
+.ig-rp{display:flex;align-items:center;gap:8px;padding:10px 14px 0;color:#a8a8a8;font-size:13px}.ig-rp .i{width:16px;height:16px}
+.ig .sa.rp.on{color:#00ba7c}.ig-more{display:block;padding:2px 14px 10px;color:#a8a8a8;font-size:14px;text-align:left}
+.ig-cms{padding:4px 14px 12px}.ig-cms p{margin:8px 0;display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;font-size:14px}.ig-cms .sa{margin-left:auto}.ig-cms .sa .i{width:14px;height:14px}

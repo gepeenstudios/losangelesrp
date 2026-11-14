@@ -268,11 +268,15 @@ const RPC = {
     T('post_likes').push({ post_id: id, user_id: myId }); const p = T('posts').find(p => p.id === id); p.likes++;
     const au = T('characters').find(c => c.id === p.character_id);
     if (au && au.user_id !== myId && au.status === 'active' && au.roles.includes('Influencer')) {
-      const a = personal(au.id); if (a) try { move(gov(), a, Math.round(Number(setting('influencer_like_pay', 15)) * cpi() * 100) / 100, 'Influencer · pago por like'); } catch {}
+      const a = personal(au.id); if (a) try { move(gov(), a, Math.round(Number(setting('influencer_like_pay', 15)) * cpi() * Math.min(5, 1 + T('follows').filter(f => f.followed === au.id).length / 20) * 100) / 100, 'Influencer · pago por like'); } catch {}
     }
   },
   join_jam({ jam_code, c }) { const j = T('jams').find(x => x.code === String(jam_code).trim().toUpperCase()); guard(j, 'No existe una Jam con ese código'); j.members = [...j.members.filter(m => m !== c), c]; return j.id; },
   server_now() { return new Date().toISOString(); },
+  song_play({ s, c }) { const day = now().slice(0, 10); if (T('song_plays').some(p => p.song_id === s && p.character_id === c && p.day === day)) return;
+    T('song_plays').push({ song_id: s, character_id: c, day }); const sg = T('songs').find(x => x.id === s); if (!sg) return; sg.plays = (sg.plays || 0) + 1;
+    const up = T('characters').find(x => x.id === sg.uploader_char); if (!sg.approved || !up || up.user_id === myId) return;
+    const a = personal(up.id); if (a) try { move(gov(), a, Math.round(Number(setting('spotify_play_pay', 2)) * cpi() * 100) / 100, 'Spotify · regalías por reproducción'); } catch {} },
   signup_check({ u, d }) { const n = x => String(x || '').trim().replace(/^@/, '').toLowerCase(); return T('profiles').some(p => p.username === n(u)) ? 'Ese usuario de la web ya existe' : T('profiles').some(p => n(p.discord) === n(d)) ? 'Ese Discord ya tiene una cuenta. Solo se permite una cuenta por Discord.' : null; },
   new_bot_key() { guard(lvlLocal() >= 5, 'Solo el Owner'); return 'demo-' + crypto.randomUUID().replace(/-/g, ''); },
   pay_gov({ c, amount, concept }) {

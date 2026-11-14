@@ -324,6 +324,8 @@ function social(id, name, icon, bg) {
       const me = S.char.id;
       const [all, likes] = await Promise.all([db.list('posts', { eq: { app: id }, limit: 200 }), db.list('post_likes', { eq: { user_id: S.me.id }, order: null, limit: 2000 }).catch(() => [])]);
       const liked = new Set(likes.map(l => l.post_id)), saved = savedPosts(), canDel = p => S.chars.some(c => c.id === p.character_id) || lvl() >= 2;
+      const [cm, fo] = ig ? await Promise.all([db.list('post_comments', { order: 'created_at', asc: true, limit: 3000 }).catch(() => []), db.list('follows', { order: null, limit: 5000 }).catch(() => [])]) : [[], []];
+      const myRp = new Set(all.filter(p => p.repost_of && p.character_id === me).map(p => p.repost_of)), nC = p => cm.filter(c => c.post_id === p.id).length;
       const stories = all.filter(p => p.section === 'story' && Date.now() - new Date(p.created_at) < DAY).reverse();
       const posts = all.filter(p => p.section !== 'story');
       const who = p => p.anonimo ? 'anonimo' : handle(p.character_id), nm = p => p.anonimo ? 'Anónimo' : esc(cname(p.character_id));
@@ -335,22 +337,23 @@ function social(id, name, icon, bg) {
       if (ig) {
         const igPost = p => `<article class="ig-post post"><div class="ig-h">${av(skin(p.character_id), 'av sm')}<button class="link" data-act="perfil" data-id="${p.character_id}"><b>${esc(who(p))}</b></button>${verified(p.character_id)}<span class="muted">· ${ago(p.created_at)}</span>${p.section === 'reel' ? '<span class="tag">Reel</span>' : ''}<span class="grow"></span>${del(p)}</div>
           ${p.media_url ? `<div class="ig-media" data-act="dbl" data-id="${p.id}">${media(p.media_url, '', isVideo(p.media_url))}<i class="pop">${ico('s_heart', 'i')}</i></div>` : ''}
-          <div class="ig-act">${heart(p)}<button class="sa" data-act="dm" data-id="${p.character_id}" aria-label="Enviar mensaje">${ico('s_send', 'i')}</button><span class="grow"></span>${save(p)}</div>
-          <div class="ig-likes">${p.likes ? `${p.likes.toLocaleString('es-MX')} Me gusta` : 'Sé el primero en dar Me gusta'}</div>${p.body ? `<p class="ig-cap"><b>${esc(who(p))}</b> ${esc(p.body)}</p>` : ''}</article>`;
+          <div class="ig-act">${heart(p)}<button class="sa" data-act="ver" data-id="${p.id}" aria-label="Comentar">${ico('s_comment', 'i')}</button><button class="sa rp ${myRp.has(p.id) ? 'on' : ''}" data-act="repost" data-id="${p.id}" aria-label="Repostear" title="${myRp.has(p.id) ? 'Quitar repost' : 'Repostear'}">${ico('s_repost', 'i')}</button><button class="sa" data-act="dm" data-id="${p.character_id}" aria-label="Enviar mensaje">${ico('s_send', 'i')}</button><span class="grow"></span>${save(p)}</div>
+          <div class="ig-likes">${p.likes ? `${p.likes.toLocaleString('es-MX')} Me gusta` : 'Sé el primero en dar Me gusta'}</div>${p.body ? `<p class="ig-cap"><b>${esc(who(p))}</b> ${esc(p.body)}</p>` : ''}${nC(p) ? `<button class="link ig-more" data-act="ver" data-id="${p.id}">Ver ${nC(p) === 1 ? 'el comentario' : 'los ' + nC(p) + ' comentarios'}</button>` : ''}</article>`;
+        const feedItem = p => { if (!p.repost_of) return igPost(p); const o = all.find(x => x.id === p.repost_of); return o ? `<div class="ig-rp">${ico('s_repost', 'i')}<span><b>${esc(handle(p.character_id))}</b> lo reposteó</span></div>` + igPost(o) : ''; };
         const byUser = [...new Map(stories.map(s => [s.character_id, s])).keys()];
         const head = t => `<header class="ig-top">${t}<span class="grow"></span><button class="sa" data-act="crear" aria-label="Crear">${ico('s_new', 'i')}</button><button class="sa" data-act="tab" data-t="dms" aria-label="Mensajes">${ico('s_send', 'i')}</button></header>`;
         let body;
         if (tab === 'feed') body = head('<span class="ig-word">Instagram</span>') + `<div class="ig-stories"><button class="ig-st" data-act="crear" data-k="story"><span class="ring add">${av(skin(me), 'av')}<i>+</i></span><small>Tu historia</small></button>
             ${byUser.map(u => `<button class="ig-st" data-act="story" data-id="${u}"><span class="ring">${av(skin(u), 'av')}</span><small>${esc(handle(u))}</small></button>`).join('')}</div>
-          <div class="ig-feed">${posts.map(igPost).join('') || '<p class="empty">Todavía no hay publicaciones. ¡Sé el primero!</p>'}</div>`;
+          <div class="ig-feed">${posts.map(feedItem).join('') || '<p class="empty">Todavía no hay publicaciones. ¡Sé el primero!</p>'}</div>`;
         else if (tab === 'reels') { const reels = posts.filter(p => p.section === 'reel' || isVideo(p.media_url));
           body = `<div class="ig-reels">${reels.map(p => `<section class="reel">${media(p.media_url, 'reel-v', true)}<div class="reel-info"><div class="row">${av(skin(p.character_id), 'av sm')}<b>${esc(who(p))}</b>${verified(p.character_id)}</div>${p.body ? `<p>${esc(p.body)}</p>` : ''}</div>
             <div class="reel-act">${heart(p)}<small>${p.likes || 0}</small><button class="sa" data-act="dm" data-id="${p.character_id}">${ico('s_send', 'i')}</button>${save(p)}</div></section>`).join('') || '<p class="empty light">Aún no hay reels. Sube un video con el botón +.</p>'}</div>`; }
-        else if (tab === 'perfil') { const u = arg || me, mine = posts.filter(p => p.character_id === u), c = S.all.find(x => x.id === u);
+        else if (tab === 'perfil') { const u = arg || me, mine = posts.filter(p => p.character_id === u && !p.repost_of), c = S.all.find(x => x.id === u), nFo = fo.filter(f => f.followed === u).length, iFollow = fo.some(f => f.follower === me && f.followed === u);
           const vu = c?.ig_verified_until && new Date(c.ig_verified_until) > new Date();
-          body = head(`<b class="ig-user">${esc(handle(u))}${verified(u)}</b>`) + `<div class="ig-prof">${av(skin(u), 'av xl')}<div class="ig-stats"><div><b>${mine.length}</b><small>publicaciones</small></div><div><b>${mine.reduce((s, p) => s + (p.likes || 0), 0)}</b><small>Me gusta</small></div><div><b>${stories.filter(s => s.character_id === u).length}</b><small>historias</small></div></div></div>
-            <div class="ig-bio"><b>${esc(cname(u))}</b>${c?.roles?.length ? `<div class="muted">${esc(c.roles.join(' · '))}</div>` : ''}</div>
-            <div class="row gap ig-btns">${u === me ? `<button class="btn ghost grow" data-act="crear">Nueva publicación</button><button class="btn ghost grow" data-act="verif">${vu ? 'Verificado hasta ' + fdate(c.ig_verified_until) : isVerified(u) ? 'Cuenta verificada' : 'Solicitar verificación'}</button>` : `<button class="btn grow" data-act="dm" data-id="${u}">Enviar mensaje</button>`}</div>
+          body = head(`<b class="ig-user">${esc(handle(u))}${verified(u)}</b>`) + `<div class="ig-prof">${av(skin(u), 'av xl')}<div class="ig-stats"><div><b>${mine.length}</b><small>publicaciones</small></div><div><b>${nFo}</b><small>seguidores</small></div><div><b>${fo.filter(f => f.follower === u).length}</b><small>seguidos</small></div></div></div>
+            <div class="ig-bio"><b>${esc(cname(u))}</b>${c?.roles?.includes('Influencer') ? `<div class="muted">💸 Gana ${money((set('influencer_like_pay') ?? 15) * cpi() * Math.min(5, 1 + nFo / 20))} por like · más seguidores = más pago</div>` : ''}${c?.roles?.length ? `<div class="muted">${esc(c.roles.join(' · '))}</div>` : ''}</div>
+            <div class="row gap ig-btns">${u === me ? `<button class="btn ghost grow" data-act="crear">Nueva publicación</button><button class="btn ghost grow" data-act="verif">${vu ? 'Verificado hasta ' + fdate(c.ig_verified_until) : isVerified(u) ? 'Cuenta verificada' : 'Solicitar verificación'}</button>` : `<button class="btn grow ${iFollow ? 'ghost' : ''}" data-act="follow" data-id="${u}">${iFollow ? 'Siguiendo ✓' : 'Seguir'}</button><button class="btn ghost grow" data-act="dm" data-id="${u}">Enviar mensaje</button>`}</div>
             <div class="ig-grid">${mine.map(p => `<button class="ig-cell" data-act="ver" data-id="${p.id}">${isVideo(p.media_url) ? `<video src="${esc(p.media_url)}" muted playsinline preload="metadata"></video>` : media(p.media_url)}${isVideo(p.media_url) ? '<i class="ig-play">▶</i>' : ''}</button>`).join('') || '<p class="empty">Sin publicaciones.</p>'}</div>`; }
         else if (tab === 'saved') body = head('<b>Guardado</b>') + `<div class="ig-feed">${posts.filter(p => saved.includes(p.id)).map(igPost).join('') || '<p class="empty">No has guardado nada.</p>'}</div>`;
         else if (tab === 'dms') {
@@ -363,7 +366,8 @@ function social(id, name, icon, bg) {
               <form data-form="nuevoDm" class="ig-send"><select name="to" required><option value="">Nuevo mensaje…</option>${charOpts(c => c.status === 'active' && c.id !== me).map(([i, n]) => `<option value="${i}">${esc(n)}</option>`).join('')}</select><button class="link" type="submit">Chat</button></form>
               ${convs.map(u => { const last = msgs.filter(m => [m.from_char, m.to_char].includes(u)).pop(); return `<button class="ig-conv" data-act="dm" data-id="${u}">${av(skin(u), 'av')}<div><b>${esc(handle(u))}</b>${verified(u)}<small class="muted">${esc((last.from_char === me ? 'Tú: ' : '') + last.body).slice(0, 40)} · ${ago(last.created_at)}</small></div></button>`; }).join('') || '<p class="empty">Sin mensajes todavía.</p>'}`;
         }
-        else body = head('<b>Publicación</b>') + `<div class="ig-feed">${posts.filter(p => p.id === arg).map(igPost).join('')}</div>`;
+        else body = head('<b>Publicación</b>') + `<div class="ig-feed">${posts.filter(p => p.id === arg).map(igPost).join('')}<div class="ig-cms">${cm.filter(c => c.post_id === arg).map(c => `<p><button class="link" data-act="perfil" data-id="${c.character_id}"><b>${esc(handle(c.character_id))}</b></button> ${esc(c.body)} <small class="muted">${ago(c.created_at)}</small>${S.chars.some(x => x.id === c.character_id) || lvl() >= 2 ? `<button class="sa" data-act="delC" data-id="${c.id}" aria-label="Borrar comentario">${ico('s_trash', 'i')}</button>` : ''}</p>`).join('') || '<p class="muted">Sin comentarios todavía. Escribe el primero.</p>'}</div></div>
+          <form data-form="comentar" class="ig-send"><input name="body" maxlength="300" placeholder="Agrega un comentario…" autocomplete="off" required><button class="link" type="submit">Publicar</button></form>`;
         html = `<div class="ig">${body}<nav class="ig-nav"><button class="sa ${tab === 'feed' ? 'on' : ''}" data-act="tab" data-t="feed" aria-label="Inicio">${ico('s_home', 'i')}</button><button class="sa" data-act="tab" data-t="reels" aria-label="Reels">${ico('s_play', 'i')}</button>
           <button class="sa" data-act="crear" aria-label="Crear">${ico('s_new', 'i')}</button><button class="sa" data-act="tab" data-t="saved" aria-label="Guardados">${ico('s_save', 'i')}</button><button class="sa" data-act="perfil" data-id="${me}" aria-label="Perfil">${av(skin(me), 'av xs')}</button></nav></div>`;
       } else {
@@ -389,6 +393,10 @@ function social(id, name, icon, bg) {
         verif: () => isVerified(me) && !(S.char.ig_verified_until && new Date(S.char.ig_verified_until) - Date.now() < 5 * DAY) ? toast('Tu cuenta ya está verificada') : openTramite('verificacion_ig'),
         send: async d => { await sendDm(arg, d.body); again(); },
         nuevoDm: d => again('dms', d.to),
+        comentar: async d => { await db.insert('post_comments', { post_id: arg, character_id: me, body: d.body.trim().slice(0, 300) }); again(); },
+        delC: async d => { await db.remove('post_comments', d.id); again(); },
+        repost: async d => { const mine = all.find(p => p.repost_of === d.id && p.character_id === me); mine ? await db.remove('posts', mine.id) : await db.insert('posts', { app: id, character_id: me, repost_of: d.id }); toast(mine ? 'Repost quitado' : 'Reposteado en tu perfil 🔁'); again(); },
+        follow: async d => { const f = { follower: me, followed: d.id }; fo.some(x => x.follower === me && x.followed === d.id) ? await db.removeWhere('follows', f) : await db.insert('follows', f); again(); },
         like: async d => { if (liked.has(d.id)) return; await db.rpc('like_post', { id: d.id }); again(); },
         dbl: async (d, t) => { t.classList.remove('beat'); void t.offsetWidth; t.classList.add('beat'); if (!liked.has(d.id)) { await db.rpc('like_post', { id: d.id }); setTimeout(() => again(), 500); } },
         save: d => { const s = savedPosts(), k = s.indexOf(d.id); k < 0 ? s.push(d.id) : s.splice(k, 1); localStorage.setItem('rp_saved', JSON.stringify(s)); again(); },
@@ -1006,6 +1014,9 @@ const robstore = { id: 'robstore', name: 'App Store', icon: '🛍️', bg: '#1fa
 // El audio vive fuera de la ventana: la música sigue aunque cierres Spotify. Con una Jam, todos escuchan lo mismo al mismo segundo.
 const GENRES = ['Pop', 'Reguetón', 'Hip-Hop / Rap', 'Corridos', 'Rock', 'Electrónica', 'R&B', 'Banda / Regional', 'Indie', 'Podcast', 'Otro'];
 const player = window.rpPlayer ??= { audio: new Audio(), queue: [], i: -1, loop: 'off', shuffle: false, jam: null, lib: {}, onchange: null, off: 0 };
+// cuenta la reproducción (y paga regalías) al llegar a 30 s o a la mitad de la canción
+player.audio.ontimeupdate = () => { const s = curSong(), a = player.audio; if (!s || player.counted === s.id || !S.char || a.currentTime < Math.min(30, (a.duration || 60) / 2)) return;
+  player.counted = s.id; db.rpc('song_play', { s: s.id, c: S.char.id }).catch(() => {}); };
 const fmtT = s => !isFinite(s) ? '0:00' : `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 const curSong = () => player.queue[player.i];
 const jamPush = p => player.jam && db.update('jams', player.jam, { ...p, updated_at: new Date(Date.now() + player.off).toISOString() }).catch(() => {});
@@ -1066,7 +1077,7 @@ const spotify = { id: 'spotify', name: 'Spotify', icon: '🎧', bg: '#1db954,#13
     const q = (el.dataset.q || '').toLowerCase();
     let title = 'Lo más nuevo', list = songs, head = '';
     if (view_ === 'liked') { title = 'Tus me gusta'; list = songs.filter(s => liked.has(s.id)); }
-    else if (view_ === 'mine') { title = 'Tus canciones'; list = all.filter(s => s.uploader_char === me); }
+    else if (view_ === 'mine') { title = 'Tus canciones'; list = all.filter(s => s.uploader_char === me); head = `<p class="muted">💸 El gobierno te paga <b>${money((set('spotify_play_pay') ?? 2) * cpi())}</b> por cada reproducción de otra persona (cuenta 1 por persona al día). Llevas ${list.reduce((n, s) => n + (s.plays || 0), 0)} reproducciones.</p>`; }
     else if (view_ === 'pend' && lvl() >= 3) { title = 'Por aprobar'; list = pend; }
     else if (view_ === 'genre') { title = arg; list = songs.filter(s => (s.genre || 'Otro') === arg); }
     else if (view_ === 'artist') { title = arg; list = songs.filter(s => (s.artist || '').toLowerCase() === arg.toLowerCase()); }
@@ -1080,7 +1091,7 @@ const spotify = { id: 'spotify', name: 'Spotify', icon: '🎧', bg: '#1db954,#13
     const cur = curSong(), artists = [...new Set(songs.map(s => s.artist).filter(Boolean))].slice(0, 12), jam = player.jamRow && player.jam ? player.jamRow : null;
     const row = (s, k) => `<div class="sp-row ${cur?.id === s.id ? 'on' : ''}" data-act="play" data-k="${k}"><span class="sp-n">${cur?.id === s.id && !player.audio.paused ? '<i class="eq"><b></b><b></b><b></b></i>' : k + 1}</span>
         ${s.cover ? `<img src="${esc(s.cover)}" alt="">` : `<span class="sp-ph">${ico('s_music', 'i')}</span>`}<div class="sp-t"><b title="${esc(s.title)}">${s.approved ? '' : '⏳ '}${esc(s.title)}</b><button class="link" data-act="artist" data-a="${esc(s.artist || '')}">${esc(s.artist || 'Artista desconocido')}</button></div>
-        <span class="sp-g">${esc(s.genre || '')}</span><button class="sa ${liked.has(s.id) ? 'on' : ''}" data-act="like" data-id="${s.id}" aria-label="Me gusta">${ico('s_heart', 'i')}</button>
+        <span class="sp-g">${esc(s.genre || '')} · ${(s.plays || 0).toLocaleString('es-MX')} repr.</span><button class="sa ${liked.has(s.id) ? 'on' : ''}" data-act="like" data-id="${s.id}" aria-label="Me gusta">${ico('s_heart', 'i')}</button>
         <button class="sa" data-act="addList" data-id="${s.id}" aria-label="Agregar a playlist">${ico('s_new', 'i')}</button>${!s.approved && lvl() >= 3 ? `<button class="sa on" data-act="aprobar" data-id="${s.id}" aria-label="Aprobar" title="Aprobar">✅</button>` : ''}${s.uploader_char === me || lvl() >= 3 ? `<button class="sa" data-act="del" data-id="${s.id}" aria-label="Borrar">${ico('s_trash', 'i')}</button>` : ''}</div>`;
     const home = view_ === 'home' && !q;
     view(el, `<div class="spfy"><aside class="sp-side"><b class="sp-logo">${ico('spotify', 'i')} Spotify</b>
@@ -1104,9 +1115,9 @@ const spotify = { id: 'spotify', name: 'Spotify', icon: '🎧', bg: '#1db954,#13
           ${head}<div class="sp-bar-h"><h2>${esc(title)}</h2>${list.length ? `<button class="sp-bigplay" data-act="playAll" aria-label="Reproducir todo">${ico('s_playb', 'i')}</button>` : ''}</div>
           <div class="sp-list">${list.map(row).join('') || '<p class="empty">No hay canciones aquí todavía. Sube la primera con «Subir canción».</p>'}</div>`}</main>
       <footer class="sp-bar">${cur ? `${cur.cover ? `<img src="${esc(cur.cover)}" alt="">` : `<span class="sp-ph">${ico('s_music', 'i')}</span>`}<div class="sp-now"><b title="${esc(cur.title)}">${esc(cur.title)}</b><small>${esc(cur.artist || '')}</small></div>` : '<div class="sp-now muted">Elige una canción</div>'}
-        <div class="sp-mid"><div class="sp-ctl"><button class="${player.shuffle ? 'on' : ''}" data-act="shuffle" aria-label="Aleatorio" title="Aleatorio">🔀</button><button data-act="prev" aria-label="Anterior">${ico('s_prevb', 'i')}</button>
+        <div class="sp-mid"><div class="sp-ctl"><button class="${player.shuffle ? 'on' : ''}" data-act="shuffle" aria-label="Aleatorio" aria-pressed="${!!player.shuffle}" title="Aleatorio${player.shuffle ? ' (activado)' : ''}">${ico('s_shuffle', 'i')}</button><button data-act="prev" aria-label="Anterior">${ico('s_prevb', 'i')}</button>
           <button class="sp-pp" data-act="pp" aria-label="Reproducir o pausar">${ico(player.audio.paused ? 's_playb' : 's_pause', 'i')}</button><button data-act="next" aria-label="Siguiente">${ico('s_next', 'i')}</button>
-          <button class="${player.loop !== 'off' ? 'on' : ''}" data-act="loop" aria-label="Repetir" title="${player.loop === 'one' ? 'Repetir esta canción' : player.loop === 'all' ? 'Repetir todo' : 'Sin repetir'}">${player.loop === 'one' ? '🔂' : '🔁'}</button></div>
+          <button class="${player.loop !== 'off' ? 'on' : ''}" data-act="loop" aria-label="Repetir" title="${player.loop === 'one' ? 'Repetir esta canción' : player.loop === 'all' ? 'Repetir todo' : 'Sin repetir'}">${ico(player.loop === 'one' ? 's_repeat1' : 's_repeat', 'i')}</button></div>
           <div class="sp-prog"><small data-t>0:00</small><input type="range" class="sp-range sp-seek" min="0" max="1000" value="0" aria-label="Avance"><small data-d>0:00</small></div></div>
         <div class="sp-volw"><span aria-hidden="true">${player.audio.volume === 0 ? '🔇' : '🔊'}</span><input type="range" class="sp-range sp-vol" min="0" max="100" value="${Math.round(player.audio.volume * 100)}" aria-label="Volumen"></div></footer></div>`, {
       nav: d => { el.dataset.q = ''; go(d.v, null); }, list: d => go('list', d.id), genre: d => go('genre', d.g), artist: d => d.a && go('artist', d.a), profile: d => go('profile', d.id),
@@ -1411,7 +1422,8 @@ const staffApp = { id: 'staff', name: 'Panel Staff', icon: '🛡️', bg: '#8e2d
         <p class="muted small">La retención de nómina usa las tablas reales 2026 del IRS y de California (más FICA 7.65%).</p>
         <h3>Ingresos diarios de negocios (los paga el Tesoro según el giro)</h3><form data-form="biz" class="form"><table class="tbl"><tr><th>Giro</th><th>USD por día</th></tr>
           ${Object.entries(set('biz_income') || {}).map(([k, v]) => `<tr><td>${esc(k)}</td><td><input type="number" min="0" name="${esc(k)}" value="${v}"></td></tr>`).join('')}</table>
-          <label class="fld"><span>Pago a influencers por cada like (USD)</span><input type="number" min="0" name="__like" value="${set('influencer_like_pay') ?? 15}"></label>
+          <label class="fld"><span>Pago a influencers por cada like (USD, sube con sus seguidores hasta ×5)</span><input type="number" min="0" name="__like" value="${set('influencer_like_pay') ?? 15}"></label>
+          <label class="fld"><span>Regalías de Spotify por cada reproducción (USD)</span><input type="number" min="0" step="0.5" name="__play" value="${set('spotify_play_pay') ?? 2}"></label>
           <button class="btn" type="submit">Guardar</button></form>
         <h3>Otros</h3>${form('otros', [{ k: 'start_money', label: 'Dinero inicial de cada vida', type: 'number', min: 0, req: 1 }, { k: 'visa_days', label: 'Días para que un extranjero registre visa', type: 'number', min: 1, req: 1 },
           { k: 'job_min_minutes', label: 'Minutos mínimos de turno al día', type: 'number', min: 1, req: 1 }, { k: 'fed_rate', label: 'Tasa de la Reserva Federal (%)', type: 'number', min: 0, max: 25, req: 1 },
@@ -1427,7 +1439,7 @@ const staffApp = { id: 'staff', name: 'Panel Staff', icon: '🛡️', bg: '#8e2d
           if (!acc) throw new Error('Ese personaje no tiene cuenta'); await db.rpc('staff_pay', { acc: acc.id, amount: d.amount, concept: d.concept }); toast('Listo'); },
         imp: async d => { for (const k in d) d[k] = Number(d[k]); await save('impuestos', d); toast('Impuestos guardados'); go('eco'); },
         staffpay: async d => { for (const k in d) d[k] = Number(d[k]); await save('staff_salary', d); toast('Sueldos guardados'); go('eco'); },
-        biz: async d => { const { __like, ...o } = d; for (const k in o) o[k] = Number(o[k]); await save('biz_income', o); await save('influencer_like_pay', Number(__like)); toast('Guardado'); go('eco'); },
+        biz: async d => { const { __like, __play, ...o } = d; for (const k in o) o[k] = Number(o[k]); await save('biz_income', o); await save('influencer_like_pay', Number(__like)); await save('spotify_play_pay', Number(__play)); toast('Guardado'); go('eco'); },
         robos: async d => { const o = {}; for (const [k, v] of Object.entries(d)) { const i = k.lastIndexOf('.'); (o[k.slice(0, i)] ??= [0, 0])[+k.slice(i + 1)] = v || 0; } await save('robos', o); toast('Guardado'); go('eco'); },
         otros: async d => { for (const k of ['start_money', 'visa_days', 'job_min_minutes', 'prison_min_per_year', 'trial_years']) await save(k, d[k]); await db.rpc('set_fed_rate', { rate: d.fed_rate }); S.settings.fed_rate = d.fed_rate; toast('Guardado'); go('eco'); },
       });

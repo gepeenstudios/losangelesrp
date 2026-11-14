@@ -181,7 +181,7 @@ export const DEFAULT_SETTINGS = {
   start_money: 5000, cpi: 1, fed_rate: 4.5, job_min_minutes: 60, prison_min_per_year: 5, trial_years: 10,
   visa_days: 7,
   elecciones: { registro_hasta: 20, votacion_desde: 21, votacion_hasta: 27 }, // días del mes; el ganador gobierna todo el mes siguiente
-  influencer_like_pay: 15,
+  influencer_like_pay: 15, spotify_play_pay: 2,
   staff_salary: { helper: 38000, mod: 52000, admin: 70000, coowner: 95000, owner: 120000 }, // USD al año, se paga ÷365 cada día con servicio
   staff_min_minutes: 30,
   impuestos: { sales: 10.25, transfer: 0.56, property: 1.2, corp: 29.84 }, // % reales de Los Ángeles (sales tax desde oct-2026) // USD por like recibido (paga el Tesoro)
