@@ -4,6 +4,7 @@
 import { SUPABASE_URL as SUPA, SUPABASE_KEY as ANON } from '../../config.js';
 import R from './roles.json' with { type: 'json' };
 const { roles: WEB_ROLES, staff: STAFF } = R;
+const BOT_START = Date.UTC(2026, 10, 14, 7, 0);
 
 export async function sync(env, { dry: DRY = false, log = console.log } = {}) {
   if (!env.DISCORD_TOKEN || !env.SYNC_KEY) return log('Bot sin configurar: faltan DISCORD_TOKEN o SYNC_KEY en las variables de Netlify.');
@@ -23,9 +24,15 @@ export async function sync(env, { dry: DRY = false, log = console.log } = {}) {
   const guild = env.GUILD_ID || (await api('/users/@me/guilds'))[0]?.id;
   if (!guild) throw new Error('El bot no está en ningún servidor. Invítalo primero.');
   const STAFF_NAMES = Object.fromEntries(STAFF), MANAGED = [...WEB_ROLES, ...Object.values(STAFF_NAMES), 'Verificado', 'Baneado'];
-  let roles = await api(`/guilds/${guild}/roles`);
-  for (const name of MANAGED) if (!roles.some(r => r.name === name) && !DRY) roles.push(await api(`/guilds/${guild}/roles`, { method: 'POST', body: JSON.stringify({ name, mentionable: false }) }));
-  const byName = Object.fromEntries(roles.map(r => [r.name, r.id])), managedIds = new Set(MANAGED.map(n => byName[n]).filter(Boolean));
+  // Usa los roles que YA tiene el server (sin acentos/mayúsculas/emojis). No crea roles: Discord limita a 250.
+  const norm = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const born = id => Number(BigInt(id) >> 22n) + 1420070400000; // fecha de creación del rol (snowflake)
+  let roles = (await api(`/guilds/${guild}/roles`)).sort((a, b) => born(a.id) - born(b.id));
+  // limpia los duplicados que creó la primera versión del bot (14-nov-2026) si el server ya tenía ese rol
+  for (const r of roles.filter(r => MANAGED.includes(r.name) && born(r.id) > BOT_START))
+    if (roles.some(o => o.id !== r.id && born(o.id) < born(r.id) && norm(o.name) === norm(r.name))) { DRY ? log('borrar duplicado', r.name) : await api(`/guilds/${guild}/roles/${r.id}`, { method: 'DELETE', headers: { 'X-Audit-Log-Reason': 'Duplicado creado por el bot' } }); roles = roles.filter(x => x.id !== r.id); }
+  const byName = {}; for (const n of MANAGED) { const r = roles.find(r => norm(r.name) === norm(n)); if (r) byName[n] = r.id; }
+  const managedIds = new Set(Object.values(byName)), noRole = MANAGED.filter(n => !byName[n]);
   let members = [], after = '0';
   for (;;) { const page = await api(`/guilds/${guild}/members?limit=1000&after=${after}`); members.push(...page); if (page.length < 1000) break; after = page.at(-1).user.id; }
   const find = d => members.find(m => [m.user.username, m.user.global_name, m.nick].some(x => x && x.toLowerCase() === d));
@@ -37,7 +44,7 @@ export async function sync(env, { dry: DRY = false, log = console.log } = {}) {
     for (const id of want) if (!m.roles.includes(id)) { add++; DRY ? log('+', u.discord, roles.find(r => r.id === id)?.name) : await api(`/guilds/${guild}/members/${m.user.id}/roles/${id}`, { method: 'PUT', headers: { 'X-Audit-Log-Reason': 'Sincronizado con la web de Los Ángeles RP' } }); }
     for (const id of m.roles) if (managedIds.has(id) && !want.has(id)) { del++; DRY ? log('-', u.discord, roles.find(r => r.id === id)?.name) : await api(`/guilds/${guild}/members/${m.user.id}/roles/${id}`, { method: 'DELETE', headers: { 'X-Audit-Log-Reason': 'Ya no tiene este rol en la web' } }); }
   }
-  return log(`Listo: ${users.length} cuentas de la web, ${add} roles puestos, ${del} quitados.${miss.length ? ' No están en Discord: ' + miss.join(', ') : ''}`);
+  return log(`Listo: ${users.length} cuentas de la web, ${add} roles puestos, ${del} quitados.${miss.length ? ' No están en Discord: ' + miss.join(', ') + '.' : ''}${noRole.length ? ' Roles que no existen en el server (créalos si los usas): ' + noRole.join(', ') : ''}`);
 }
 
 export default async () => { const msg = await sync(process.env); console.log(msg); return new Response(String(msg)); };
