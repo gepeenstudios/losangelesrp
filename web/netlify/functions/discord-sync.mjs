@@ -9,14 +9,14 @@ export async function sync(env, { dry: DRY = false, log = console.log } = {}) {
   if (!env.DISCORD_TOKEN || !env.SYNC_KEY) return log('Bot sin configurar: faltan DISCORD_TOKEN o SYNC_KEY en las variables de Netlify.');
   async function api(path, opt = {}) { // Discord REST con reintento por límite de velocidad
     for (let i = 0; i < 5; i++) {
-      const r = await fetch((env.DISCORD_API || 'https://discord.com/api/v10') + path, { ...opt, headers: { Authorization: 'Bot ' + env.DISCORD_TOKEN, 'Content-Type': 'application/json', ...opt.headers } });
+      const r = await fetch((env.DISCORD_API || 'https://discord.com/api/v10') + path, { ...opt, headers: { Authorization: 'Bot ' + env.DISCORD_TOKEN.trim(), 'Content-Type': 'application/json', ...opt.headers } });
       if (r.status === 429) { const wait = ((await r.json()).retry_after || 1) * 1000; await new Promise(s => setTimeout(s, wait)); continue; }
       if (!r.ok) throw new Error(`${opt.method || 'GET'} ${path} → ${r.status} ${await r.text()}`);
       return r.status === 204 ? null : r.json();
     }
   }
   // 1) qué dice la web
-  const res = await fetch((env.SUPA_URL || SUPA) + '/rest/v1/rpc/discord_sync', { method: 'POST', headers: { apikey: ANON, Authorization: 'Bearer ' + ANON, 'Content-Type': 'application/json' }, body: JSON.stringify({ bot_key: env.SYNC_KEY }) });
+  const res = await fetch((env.SUPA_URL || SUPA) + '/rest/v1/rpc/discord_sync', { method: 'POST', headers: { apikey: ANON, Authorization: 'Bearer ' + ANON, 'Content-Type': 'application/json' }, body: JSON.stringify({ bot_key: env.SYNC_KEY.trim() }) });
   if (!res.ok) throw new Error('La web rechazó la llave del bot: ' + await res.text());
   const { users } = await res.json();
   // 2) el server de Discord
