@@ -1350,7 +1350,7 @@ const staffApp = { id: 'staff', name: 'Panel Staff', icon: '🛡️', bg: '#8e2d
         <button class="btn" type="submit">Guardar vencimientos</button></form>`;
       Object.assign(acts, {
         botkey: async () => { if (!await ask('¿Generar una llave nueva? La anterior dejará de funcionar.')) return; const k = await db.rpc('new_bot_key', {});
-          modal('Llave del bot', `<p>Cópiala y pégala en GitHub como secreto <b>SYNC_KEY</b>. No la compartas.</p><input class="mono" readonly value="${esc(k)}" onclick="this.select()"><button class="btn" data-act="cp">Copiar</button>`, { cp: async () => { await navigator.clipboard?.writeText(k); toast('Copiada'); } }); },
+          modal('Llave del bot', `<p>Cópiala y pégala en Netlify (Site configuration → Environment variables) como <b>SYNC_KEY</b>. No la compartas.</p><input class="mono" readonly value="${esc(k)}" onclick="this.select()"><button class="btn" data-act="cp">Copiar</button>`, { cp: async () => { await navigator.clipboard?.writeText(k); toast('Copiada'); } }); },
         exp: async d => { const o = {}; for (const k in d) if (+d[k] > 0) o[k] = +d[k]; await db.upsert('settings', { key: 'role_expiry_months', value: o }); S.settings.role_expiry_months = o; toast('Vencimientos guardados'); go('discord'); },
       });
     }
