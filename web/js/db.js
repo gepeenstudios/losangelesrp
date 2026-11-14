@@ -274,6 +274,8 @@ const RPC = {
   },
   join_jam({ jam_code, c }) { const j = T('jams').find(x => x.code === String(jam_code).trim().toUpperCase()); guard(j, 'No existe una Jam con ese código'); j.members = [...j.members.filter(m => m !== c), c]; return j.id; },
   server_now() { return new Date().toISOString(); },
+  pay_now() { return 0; }, // shortcut: en demo la nómina solo se paga con el cierre diario (daily_tick), suficiente para probar
+  quit_job({ emp }) { const e = T('employments').find(x => x.id === emp); if (!e) throw new Error('Ese no es tu empleo'); e.status = 'fired'; T('work_shifts').filter(w => w.character_id === e.character_id && !w.ended_at).forEach(w => w.ended_at = now()); const c = T('characters').find(x => x.id === e.character_id); if (c) c.roles = c.roles.filter(r => r !== e.dept); },
   respond_call({ cid, act, c, note }) { const k = T('calls911').find(x => x.id === cid); if (!k) throw new Error('La llamada no existe');
     if (act === 'cancel') return Object.assign(k, { status: 'cancelada', updated_at: now() });
     if (['cerrada', 'cancelada'].includes(k.status)) throw new Error('Esa llamada ya terminó');

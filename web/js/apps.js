@@ -204,13 +204,13 @@ const trabajo = { id: 'trabajo', name: 'Workday', icon: '💼', bg: '#f5a623,#e5
       return `<div class="job"><div class="job-h"><span class="gov-ico">${ico('empleos')}</span><div class="grow"><b>${esc(e.dept)}</b><small>${esc(e.rank)} · desde ${fdate(e.hired_at)}</small></div>${badge(e.status === 'vacation' ? 'vacation' : 'active')}</div>
         <div class="kpis"><div><small>Sueldo anual</small><b>${money(salaryOf(e.dept, e.rank) * cpi())}</b></div><div><small>Pago diario</small><b>${money(daily)}</b></div><div><small>Hoy</small><b>${Math.round(today)} / ${minm} min</b></div><div><small>Últimos 7 días</small><b>${Math.round(week / 60 * 10) / 10} h</b></div></div>
         <div class="meter"><i style="width:${Math.min(100, today / minm * 100)}%"></i></div>
-        <p class="muted">Cumple al menos ${minm} minutos de turno al día para cobrar. Si pasas 7 días sin cumplir, el sistema te despide. ${e.status === 'vacation' ? `De vacaciones hasta el ${esc(e.vacation_until)} (con goce de sueldo).` : ''}</p>
+        <p class="muted">Cumple al menos ${minm} minutos de turno al día y cobras ese mismo día, en cuanto los completes. Si pasas 7 días sin cumplir, el sistema te despide. ${e.status === 'vacation' ? `De vacaciones hasta el ${esc(e.vacation_until)} (con goce de sueldo).` : ''}</p>
         <div class="row">${e.status === 'active' ? `<button class="btn ${isOpen ? 'bad' : 'ok'}" data-act="clock" data-d="${esc(e.dept)}">${isOpen ? 'Terminar turno' : 'Iniciar turno'}</button>` : ''}
-        <button class="btn ghost" data-act="vac" data-d="${esc(e.dept)}">Pedir vacaciones</button></div></div>`; }).join('')
+        <button class="btn ghost" data-act="vac" data-d="${esc(e.dept)}">Pedir vacaciones</button><span class="grow"></span><button class="btn bad ghost" data-act="renunciar" data-id="${e.id}" data-d="${esc(e.dept)}">Renunciar</button></div></div>`; }).join('')
       : `<div class="empty"><p>No tienes empleo. Busca vacantes del gobierno o de empresas en LinkedIn.</p><button class="btn" data-act="li">Abrir LinkedIn</button></div>`;
     if (tab === 'pagos') { const accs = await myAccounts(), p = accs.find(a => a.kind === 'personal');
       const tx = p ? (await db.list('transactions', { eq: { to_acc: p.id } })).filter(t => t.concept.startsWith('Nómina')) : [];
-      body = `<ul class="list">${tx.map(t => `<li><div><b>${esc(t.concept)}</b><div class="muted">${fdate(t.created_at)}</div></div><b class="pos">+${money(t.amount)}</b></li>`).join('') || '<li class="muted">Aún no recibes pagos. Se depositan cada día por el turno del día anterior.</li>'}</ul>`; }
+      body = `<ul class="list">${tx.map(t => `<li><div><b>${esc(t.concept)}</b><div class="muted">${fdate(t.created_at)}</div></div><b class="pos">+${money(t.amount)}</b></li>`).join('') || '<li class="muted">Aún no recibes pagos. Se depositan en cuanto cumples los minutos de turno del día.</li>'}</ul>`; }
     if (tab === 'equipo') body = mgrOf.map(d => { const team = emps.filter(e => e.dept === d && e.status !== 'fired');
       return `<h3>${esc(d)}</h3><table class="tbl"><thead><tr><th>Nombre</th><th>Rango</th><th>Hoy</th><th>7 días</th><th>Estado</th><th></th></tr></thead><tbody>${team.map(e => { const sh = shifts.filter(w => w.character_id === e.character_id && w.dept === d);
         return `<tr><td>${esc(cname(e.character_id))}</td><td><select data-rank="${e.id}">${rankList(d).map(r => `<option ${r.rank === e.rank ? 'selected' : ''}>${esc(r.rank)}</option>`).join('')}</select></td>
@@ -220,6 +220,8 @@ const trabajo = { id: 'trabajo', name: 'Workday', icon: '💼', bg: '#f5a623,#e5
       ${tabs([['mio', 'Mi empleo'], ['pagos', 'Recibos de nómina'], ...(mgrOf.length ? [['equipo', 'Mi equipo']] : [])], tab)}${body}`, {
       tab: d => trabajo.render(el, d.t), li: () => window.openApp('empleos'),
       async clock(d) { const r = await db.rpc('clock', { c: S.char.id, d: d.d }); toast(r === 'in' ? 'Turno iniciado' : 'Turno terminado'); window.refreshDuty?.(); trabajo.render(el); },
+      renunciar: async d => { if (!await ask(`¿Renunciar a ${d.d}? Pierdes el puesto y el rol; para volver tendrías que postularte otra vez.`)) return;
+        await db.rpc('quit_job', { emp: d.id }); toast('Renunciaste a ' + d.d); window.refreshDuty?.(); trabajo.render(el); },
       vac: d => openTramite('vacaciones', { values: { dept: d.d }, data: { dept: d.d }, dept: ['mgr:' + d.d, 'staff:admin'] }, () => trabajo.render(el)),
       async rank(d) { await db.rpc('set_rank', { emp: d.id, r: el.querySelector(`[data-rank="${d.id}"]`).value }); toast('Rango actualizado. Actualízalo también en Discord.'); trabajo.render(el, 'equipo'); },
       async fire(d) { if (!await ask('¿Despedir a este empleado?')) return; await db.rpc('fire_emp', { emp: d.id }); toast('Despedido. Quítale el rol en Discord.'); trabajo.render(el, 'equipo'); },

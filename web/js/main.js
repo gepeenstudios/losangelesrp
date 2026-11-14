@@ -206,11 +206,11 @@ async function shell() {
     <div id="wins"></div></div>`, {
     open: (d, t) => openApp(d.id, t),
     spot: spotlight,
-    async job() { const j = S.jobs.find(x => x.character_id === S.char.id && x.status === 'active'); const r = await db.rpc('clock', { c: S.char.id, d: j.dept }); toast(r === 'in' ? `Turno iniciado · ${j.dept}` : 'Turno terminado'); jobLoop(); },
+    async job() { const j = S.jobs.find(x => x.character_id === S.char.id && x.status === 'active'); await payCheck(); const r = await db.rpc('clock', { c: S.char.id, d: j.dept }); toast(r === 'in' ? `Turno iniciado · ${j.dept}` : 'Turno terminado'); jobLoop(); },
     lp: () => root.querySelector('#os').classList.toggle('lp'),
     async duty() {
       const open = (await db.list('shifts', { eq: { user_id: S.me.id, ended_at: null } }))[0];
-      if (open) { await db.update('shifts', open.id, { ended_at: new Date().toISOString() }); toast('Saliste de servicio'); }
+      if (open) { await payCheck(); await db.update('shifts', open.id, { ended_at: new Date().toISOString() }); toast('Saliste de servicio'); }
       else { await db.insert('shifts', { user_id: S.me.id, started_at: new Date().toISOString() }); toast('Entraste en servicio 🟢'); }
       dutyLoop();
     },
@@ -220,7 +220,12 @@ async function shell() {
   clocks();
   myAccounts().then(a => { const p = a.find(x => x.kind === 'personal'); if (p) { root.querySelector('.cash').textContent = money(p.balance); root.querySelector('.wb-bal').textContent = money(p.balance); } });
   for (const a of apps.filter(a => a.badge)) a.badge().then(n => { const b = root.querySelector(`[data-b="${a.id}"]`); if (b && n) { b.hidden = false; b.textContent = n; } });
-  dutyLoop(); jobLoop();
+  dutyLoop(); jobLoop(); payCheck(); setInterval(payCheck, 60000);
+}
+// nómina al momento: mientras estás en turno (empleo o servicio de staff) revisa cada minuto si ya cumpliste y te paga ese mismo día
+async function payCheck() {
+  try { const n = await db.rpc('pay_now', {}); if (n > 0) { toast(`💵 Cumpliste tus minutos de hoy: ya te pagaron tu sueldo del día${n > 1 ? ' (' + n + ' pagos)' : ''}`);
+    myAccounts().then(a => { const p = a.find(x => x.kind === 'personal'); if (p) root.querySelectorAll('.cash,.wb-bal').forEach(x => x.textContent = money(p.balance)); }); } } catch {}
 }
 
 let jobTimer;
