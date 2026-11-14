@@ -820,3 +820,6 @@ tr.click{cursor:pointer}tr.click:hover{background:#ffffff08}
 .ig-rp{display:flex;align-items:center;gap:8px;padding:10px 14px 0;color:#a8a8a8;font-size:13px}.ig-rp .i{width:16px;height:16px}
 .ig .sa.rp.on{color:#00ba7c}.ig-more{display:block;padding:2px 14px 10px;color:#a8a8a8;font-size:14px;text-align:left}
 .ig-cms{padding:4px 14px 12px}.ig-cms p{margin:8px 0;display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;font-size:14px}.ig-cms .sa{margin-left:auto}.ig-cms .sa .i{width:14px;height:14px}
+/* reproducciones (Spotify) y visualizaciones (Instagram) */
+.sp-sub{display:flex;gap:5px;min-width:0;align-items:baseline}.sp-sub .link{flex:0 1 auto;min-width:0}.sp-sub small{color:#b3b3b3;font-size:12px;white-space:nowrap}
+.ig-likes{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.ig-views{margin-left:auto;display:inline-flex;align-items:center;gap:5px;font-weight:400;color:#737373;font-size:13px}.ig-views .i{width:15px;height:15px}

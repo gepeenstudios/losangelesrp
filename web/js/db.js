@@ -273,6 +273,7 @@ const RPC = {
   },
   join_jam({ jam_code, c }) { const j = T('jams').find(x => x.code === String(jam_code).trim().toUpperCase()); guard(j, 'No existe una Jam con ese código'); j.members = [...j.members.filter(m => m !== c), c]; return j.id; },
   server_now() { return new Date().toISOString(); },
+  view_posts({ ids }) { for (const id of ids) { const p = T('posts').find(x => x.id === id); if (!p || T('post_views').some(v => v.post_id === id && v.user_id === myId)) continue; T('post_views').push({ post_id: id, user_id: myId }); p.views = (p.views || 0) + 1; } save(); },
   song_play({ s, c }) { const day = now().slice(0, 10); if (T('song_plays').some(p => p.song_id === s && p.character_id === c && p.day === day)) return;
     T('song_plays').push({ song_id: s, character_id: c, day }); const sg = T('songs').find(x => x.id === s); if (!sg) return; sg.plays = (sg.plays || 0) + 1;
     const up = T('characters').find(x => x.id === sg.uploader_char); if (!sg.approved || !up || up.user_id === myId) return;

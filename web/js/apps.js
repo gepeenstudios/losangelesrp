@@ -335,10 +335,10 @@ function social(id, name, icon, bg) {
       const again = (t = tab, x = arg) => app.render(el, t, x);
       let html;
       if (ig) {
-        const igPost = p => `<article class="ig-post post"><div class="ig-h">${av(skin(p.character_id), 'av sm')}<button class="link" data-act="perfil" data-id="${p.character_id}"><b>${esc(who(p))}</b></button>${verified(p.character_id)}<span class="muted">· ${ago(p.created_at)}</span>${p.section === 'reel' ? '<span class="tag">Reel</span>' : ''}<span class="grow"></span>${del(p)}</div>
+        const igPost = p => `<article class="ig-post post" data-pv="${p.id}"><div class="ig-h">${av(skin(p.character_id), 'av sm')}<button class="link" data-act="perfil" data-id="${p.character_id}"><b>${esc(who(p))}</b></button>${verified(p.character_id)}<span class="muted">· ${ago(p.created_at)}</span>${p.section === 'reel' ? '<span class="tag">Reel</span>' : ''}<span class="grow"></span>${del(p)}</div>
           ${p.media_url ? `<div class="ig-media" data-act="dbl" data-id="${p.id}">${media(p.media_url, '', isVideo(p.media_url))}<i class="pop">${ico('s_heart', 'i')}</i></div>` : ''}
           <div class="ig-act">${heart(p)}<button class="sa" data-act="ver" data-id="${p.id}" aria-label="Comentar">${ico('s_comment', 'i')}</button><button class="sa rp ${myRp.has(p.id) ? 'on' : ''}" data-act="repost" data-id="${p.id}" aria-label="Repostear" title="${myRp.has(p.id) ? 'Quitar repost' : 'Repostear'}">${ico('s_repost', 'i')}</button><button class="sa" data-act="dm" data-id="${p.character_id}" aria-label="Enviar mensaje">${ico('s_send', 'i')}</button><span class="grow"></span>${save(p)}</div>
-          <div class="ig-likes">${p.likes ? `${p.likes.toLocaleString('es-MX')} Me gusta` : 'Sé el primero en dar Me gusta'}</div>${p.body ? `<p class="ig-cap"><b>${esc(who(p))}</b> ${esc(p.body)}</p>` : ''}${nC(p) ? `<button class="link ig-more" data-act="ver" data-id="${p.id}">Ver ${nC(p) === 1 ? 'el comentario' : 'los ' + nC(p) + ' comentarios'}</button>` : ''}</article>`;
+          <div class="ig-likes">${p.likes ? `${p.likes.toLocaleString('es-MX')} Me gusta` : 'Sé el primero en dar Me gusta'}<span class="ig-views">${ico('s_eye', 'i')} ${(p.views || 0).toLocaleString('es-MX')} ${p.views === 1 ? 'visualización' : 'visualizaciones'}</span></div>${p.body ? `<p class="ig-cap"><b>${esc(who(p))}</b> ${esc(p.body)}</p>` : ''}${nC(p) ? `<button class="link ig-more" data-act="ver" data-id="${p.id}">Ver ${nC(p) === 1 ? 'el comentario' : 'los ' + nC(p) + ' comentarios'}</button>` : ''}</article>`;
         const feedItem = p => { if (!p.repost_of) return igPost(p); const o = all.find(x => x.id === p.repost_of); return o ? `<div class="ig-rp">${ico('s_repost', 'i')}<span><b>${esc(handle(p.character_id))}</b> lo reposteó</span></div>` + igPost(o) : ''; };
         const byUser = [...new Map(stories.map(s => [s.character_id, s])).keys()];
         const head = t => `<header class="ig-top">${t}<span class="grow"></span><button class="sa" data-act="crear" aria-label="Crear">${ico('s_new', 'i')}</button><button class="sa" data-act="tab" data-t="dms" aria-label="Mensajes">${ico('s_send', 'i')}</button></header>`;
@@ -347,8 +347,8 @@ function social(id, name, icon, bg) {
             ${byUser.map(u => `<button class="ig-st" data-act="story" data-id="${u}"><span class="ring">${av(skin(u), 'av')}</span><small>${esc(handle(u))}</small></button>`).join('')}</div>
           <div class="ig-feed">${posts.map(feedItem).join('') || '<p class="empty">Todavía no hay publicaciones. ¡Sé el primero!</p>'}</div>`;
         else if (tab === 'reels') { const reels = posts.filter(p => p.section === 'reel' || isVideo(p.media_url));
-          body = `<div class="ig-reels">${reels.map(p => `<section class="reel">${media(p.media_url, 'reel-v', true)}<div class="reel-info"><div class="row">${av(skin(p.character_id), 'av sm')}<b>${esc(who(p))}</b>${verified(p.character_id)}</div>${p.body ? `<p>${esc(p.body)}</p>` : ''}</div>
-            <div class="reel-act">${heart(p)}<small>${p.likes || 0}</small><button class="sa" data-act="dm" data-id="${p.character_id}">${ico('s_send', 'i')}</button>${save(p)}</div></section>`).join('') || '<p class="empty light">Aún no hay reels. Sube un video con el botón +.</p>'}</div>`; }
+          body = `<div class="ig-reels">${reels.map(p => `<section class="reel" data-pv="${p.id}">${media(p.media_url, 'reel-v', true)}<div class="reel-info"><div class="row">${av(skin(p.character_id), 'av sm')}<b>${esc(who(p))}</b>${verified(p.character_id)}</div>${p.body ? `<p>${esc(p.body)}</p>` : ''}</div>
+            <div class="reel-act">${heart(p)}<small>${p.likes || 0}</small><span class="sa" title="Visualizaciones">${ico('s_eye', 'i')}</span><small>${p.views || 0}</small><button class="sa" data-act="dm" data-id="${p.character_id}">${ico('s_send', 'i')}</button>${save(p)}</div></section>`).join('') || '<p class="empty light">Aún no hay reels. Sube un video con el botón +.</p>'}</div>`; }
         else if (tab === 'perfil') { const u = arg || me, mine = posts.filter(p => p.character_id === u && !p.repost_of), c = S.all.find(x => x.id === u), nFo = fo.filter(f => f.followed === u).length, iFollow = fo.some(f => f.follower === me && f.followed === u);
           const vu = c?.ig_verified_until && new Date(c.ig_verified_until) > new Date();
           body = head(`<b class="ig-user">${esc(handle(u))}${verified(u)}</b>`) + `<div class="ig-prof">${av(skin(u), 'av xl')}<div class="ig-stats"><div><b>${mine.length}</b><small>publicaciones</small></div><div><b>${nFo}</b><small>seguidores</small></div><div><b>${fo.filter(f => f.follower === u).length}</b><small>seguidos</small></div></div></div>
@@ -413,6 +413,10 @@ function social(id, name, icon, bg) {
       // los reels se reproducen solo cuando se ven
       const io = new IntersectionObserver(es => es.forEach(e => e.target.tagName === 'VIDEO' && (e.isIntersecting ? e.target.play().catch(() => {}) : e.target.pause())), { threshold: .6 });
       el.querySelectorAll('.reel-v, .ig-media video').forEach(v => io.observe(v));
+      // visualizaciones: cuenta lo que de verdad pasó por la pantalla (1 por cuenta), en un solo envío
+      const seen = new Set(); let vt; const vo = new IntersectionObserver(es => es.forEach(e => { if (!e.isIntersecting) return; seen.add(e.target.dataset.pv); vo.unobserve(e.target);
+        clearTimeout(vt); vt = setTimeout(() => { const ids = [...seen]; seen.clear(); db.rpc('view_posts', { ids }).catch(() => {}); }, 1200); }), { threshold: .5 });
+      el.querySelectorAll('[data-pv]').forEach(n => vo.observe(n));
     } };
   return app;
 }
@@ -1090,8 +1094,8 @@ const spotify = { id: 'spotify', name: 'Spotify', icon: '🎧', bg: '#1db954,#13
     else if (q) { title = 'Resultados para "' + el.dataset.q + '"'; list = songs.filter(s => [s.title, s.artist, s.genre].join(' ').toLowerCase().includes(q)); }
     const cur = curSong(), artists = [...new Set(songs.map(s => s.artist).filter(Boolean))].slice(0, 12), jam = player.jamRow && player.jam ? player.jamRow : null;
     const row = (s, k) => `<div class="sp-row ${cur?.id === s.id ? 'on' : ''}" data-act="play" data-k="${k}"><span class="sp-n">${cur?.id === s.id && !player.audio.paused ? '<i class="eq"><b></b><b></b><b></b></i>' : k + 1}</span>
-        ${s.cover ? `<img src="${esc(s.cover)}" alt="">` : `<span class="sp-ph">${ico('s_music', 'i')}</span>`}<div class="sp-t"><b title="${esc(s.title)}">${s.approved ? '' : '⏳ '}${esc(s.title)}</b><button class="link" data-act="artist" data-a="${esc(s.artist || '')}">${esc(s.artist || 'Artista desconocido')}</button></div>
-        <span class="sp-g">${esc(s.genre || '')} · ${(s.plays || 0).toLocaleString('es-MX')} repr.</span><button class="sa ${liked.has(s.id) ? 'on' : ''}" data-act="like" data-id="${s.id}" aria-label="Me gusta">${ico('s_heart', 'i')}</button>
+        ${s.cover ? `<img src="${esc(s.cover)}" alt="">` : `<span class="sp-ph">${ico('s_music', 'i')}</span>`}<div class="sp-t"><b title="${esc(s.title)}">${s.approved ? '' : '⏳ '}${esc(s.title)}</b><span class="sp-sub"><button class="link" data-act="artist" data-a="${esc(s.artist || '')}">${esc(s.artist || 'Artista desconocido')}</button><small>· ${(s.plays || 0).toLocaleString('es-MX')} ${s.plays === 1 ? 'reproducción' : 'reproducciones'}</small></span></div>
+        <span class="sp-g">${esc(s.genre || '')}</span><button class="sa ${liked.has(s.id) ? 'on' : ''}" data-act="like" data-id="${s.id}" aria-label="Me gusta">${ico('s_heart', 'i')}</button>
         <button class="sa" data-act="addList" data-id="${s.id}" aria-label="Agregar a playlist">${ico('s_new', 'i')}</button>${!s.approved && lvl() >= 3 ? `<button class="sa on" data-act="aprobar" data-id="${s.id}" aria-label="Aprobar" title="Aprobar">✅</button>` : ''}${s.uploader_char === me || lvl() >= 3 ? `<button class="sa" data-act="del" data-id="${s.id}" aria-label="Borrar">${ico('s_trash', 'i')}</button>` : ''}</div>`;
     const home = view_ === 'home' && !q;
     view(el, `<div class="spfy"><aside class="sp-side"><b class="sp-logo">${ico('spotify', 'i')} Spotify</b>
