@@ -31,17 +31,29 @@ function login(mode = 'in') {
     : [{ k: 'u', label: 'Usuario de la web (3-20, letras/números)', req: 1, pattern: '[A-Za-z0-9_.]{3,20}' },
        { k: 'p', label: 'Contraseña (mín. 6)', type: 'password', req: 1, pattern: '.{6,}' },
        { k: 'roblox', label: 'Usuario de Roblox', req: 1 }, { k: 'discord', label: 'Usuario de Discord (el de tu perfil, ej. juan_rp). Solo 1 cuenta por Discord; con él te ponemos tus roles', req: 1 },
+       ...(db.DEMO ? [] : [{ k: 'dcode', label: 'Código de 6 dígitos que te manda el bot por Discord (vence en 5 min)', req: 1, pattern: '\\d{6}', ph: '123456' }]),
        { k: 'avatar', label: 'Foto de tu avatar de Roblox (será tu foto de perfil)', type: 'file', req: 1, raw: 1 }]; // se sube después de crear la cuenta (antes no hay permiso)
   view(root, `<div class="lock" style="--wall:${wallCss(WALLPAPERS[1])}">${bigClock()}
     <div class="lock-c ${mode}"><img class="lock-logo" src="img/logo.png" alt="Los Angeles Roleplay"><h1 class="sr">${esc(CIUDAD)}</h1><p class="muted">Portal oficial de la Ciudad de Los Ángeles ${demoTag}</p>
-    <form data-form="go" class="form">${fieldsHTML(fields)}<button class="btn big" type="submit">${mode === 'in' ? 'Entrar' : 'Crear cuenta'}</button></form>
+    <form data-form="go" class="form">${fieldsHTML(fields.slice(0, 4))}${mode === 'up' && !db.DEMO ? '<button type="button" class="btn ghost" data-act="code">📨 Enviarme código por Discord</button>' : ''}${fieldsHTML(fields.slice(4))}<button class="btn big" type="submit">${mode === 'in' ? 'Entrar' : 'Crear cuenta'}</button></form>
     <button class="link" data-act="sw">${mode === 'in' ? '¿No tienes cuenta? Regístrate' : '¿Ya tienes cuenta? Inicia sesión'}</button></div></div>`, {
     sw: () => login(mode === 'in' ? 'up' : 'in'),
+    async code(_, btn) { // el bot de Discord le manda el código por DM
+      const d = root.querySelector('[name=discord]').value;
+      if (!d.trim()) throw new Error('Primero escribe tu usuario de Discord');
+      btn.disabled = true;
+      try { const r = await fetch('/api/discord-code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ discord: d }) }).then(r => r.json()).catch(() => ({ error: 'No se pudo conectar con el bot. Intenta en un momento.' }));
+        if (r.error) throw new Error(r.error);
+        toast('Te mandamos el código por mensaje directo en Discord 📨'); root.querySelector('[name=dcode]').focus();
+        let s = 60; const t = setInterval(() => { btn.textContent = --s > 0 ? `Reenviar en ${s}s` : '📨 Reenviar código'; if (s <= 0) { clearInterval(t); btn.disabled = false; } }, 1000);
+      } catch (e) { btn.disabled = false; throw e; }
+    },
     async go(d) {
       const u = d.u.toLowerCase(), keep = () => localStorage.setItem('rp_login', JSON.stringify({ u, p: d.p })); // solo en este dispositivo, para verla en Ajustes
       if (mode === 'in') { await db.signIn(u, d.p); keep(); return boot(); }
       d.discord = d.discord.trim().replace(/^@/, '').toLowerCase();
       const taken = await db.rpc('signup_check', { u, d: d.discord }); if (taken) throw new Error(taken);
+      if (!db.DEMO && !await db.rpc('discord_code_verify', { d: d.discord, code: d.dcode })) throw new Error('Código incorrecto. Revisa el DM del bot e inténtalo otra vez.');
       await db.signUp(u, d.p); keep(); toast('¡Cuenta creada! Bienvenido a Los Ángeles ✅');
       d.avatar = await db.upload(d.avatar);
       await db.insert('profiles', { id: db.uid(), username: u, roblox: d.roblox, discord: d.discord, avatar_url: d.avatar, avatar_full: d.avatar });
