@@ -1,7 +1,7 @@
 // Todas las apps del sistema. Cada una: { id, name, icon, bg, show(), render(el) }
 import * as db from './db.js';
 import { sharePrice } from './db.js';
-import { S, cpi, esc, money, fdate, lvl, has, isPolice, set, cname, charOpts, toast, modal, view, form, fieldsHTML, readForm, downloadImage,
+import { S, cpi, esc, money, fdate, lvl, has, isPolice, set, cname, charOpts, toast, modal, ask, view, form, fieldsHTML, readForm, downloadImage,
   myRequests, approvedOf, requestHTML, reviewQueue, tabs, needChar, myAccounts, accSelect, stars, addRole } from './core.js';
 import { openWizardOverlay } from './vida.js';
 import { openTramite } from './portal.js';
@@ -33,7 +33,7 @@ const vida = { id: 'vida', name: 'Mi Vida', icon: '🧬', bg: '#7b2ff7,#f107a3',
         || '<p class="empty">No tienes vidas activas. Crea una nueva.</p>'}
       ${dead.length ? `<h3>Vidas perdidas (CK)</h3><p class="muted">Esta vida ya no se puede usar. Sus datos, dinero y bienes quedan guardados por si ganas una apelación.</p>
         ${dead.map(c => card(c) + (autos.some(r => r.character_id === c.id && r.type === 'autock') ? '<span class="tag">Auto-CK</span>' : appeals.some(r => r.character_id === c.id && r.status === 'pending') ? badge('pending') : `<button class="btn sm" data-act="apelar" data-id="${c.id}">Apelar CK</button>`) + (lvl() >= 3 ? `<button class="btn sm bad" data-act="borrar" data-id="${c.id}">Borrar</button>` : '') + '</div>').join('')}` : ''}`, {
-      borrar: async d => { if (!confirm('¿Borrar esta vida para siempre? Ya no se podrá apelar.')) return;
+      borrar: async d => { if (!await ask('¿Borrar esta vida para siempre? Ya no se podrá apelar.')) return;
         try { await db.rpc('delete_char', { c: d.id }); } catch (e) { return toast(e.message); } toast('Vida borrada'); await window.liveRefresh?.(); vida.render(el); },
       nuevo: openWizardOverlay,
       usar: d => { localStorage.setItem('rp_char', d.id); window.refreshShell?.('vida'); },
@@ -179,7 +179,7 @@ const gobierno = { id: 'gobierno', name: 'LA City', icon: '🏛️', bg: '#1d3b6
       tramite: d => openTramite(d.k, {}, () => gobierno.render(el)),
       go: d => el.querySelector('#' + d.k)?.scrollIntoView({ behavior: 'smooth' }),
       async print(d) {
-        if (!confirm(`¿Emitir ${money(d.amount)}? Esto genera inflación para toda la ciudad.`)) return;
+        if (!await ask(`¿Emitir ${money(d.amount)}? Esto genera inflación para toda la ciudad.`)) return;
         const c = await db.rpc('print_money', { amount: d.amount }); S.settings.cpi = c; toast(`Dinero emitido. Nuevo índice de precios: ${Number(c).toFixed(4)}`); gobierno.render(el);
       },
       async rate(d) { await db.rpc('set_fed_rate', { rate: d.rate }); S.settings.fed_rate = d.rate; toast('Tasa actualizada'); gobierno.render(el); },
@@ -222,7 +222,7 @@ const trabajo = { id: 'trabajo', name: 'Workday', icon: '💼', bg: '#f5a623,#e5
       async clock(d) { const r = await db.rpc('clock', { c: S.char.id, d: d.d }); toast(r === 'in' ? 'Turno iniciado' : 'Turno terminado'); window.refreshDuty?.(); trabajo.render(el); },
       vac: d => openTramite('vacaciones', { values: { dept: d.d }, data: { dept: d.d }, dept: ['mgr:' + d.d, 'staff:admin'] }, () => trabajo.render(el)),
       async rank(d) { await db.rpc('set_rank', { emp: d.id, r: el.querySelector(`[data-rank="${d.id}"]`).value }); toast('Rango actualizado. Actualízalo también en Discord.'); trabajo.render(el, 'equipo'); },
-      async fire(d) { if (!confirm('¿Despedir a este empleado?')) return; await db.rpc('fire_emp', { emp: d.id }); toast('Despedido. Quítale el rol en Discord.'); trabajo.render(el, 'equipo'); },
+      async fire(d) { if (!await ask('¿Despedir a este empleado?')) return; await db.rpc('fire_emp', { emp: d.id }); toast('Despedido. Quítale el rol en Discord.'); trabajo.render(el, 'equipo'); },
     });
     if (tab === 'equipo') reviewQueue(el.querySelector('.q'), { types: ['job', 'vacaciones'], title: 'Solicitudes de empleo y vacaciones' });
   } };
@@ -392,7 +392,7 @@ function social(id, name, icon, bg) {
         like: async d => { if (liked.has(d.id)) return; await db.rpc('like_post', { id: d.id }); again(); },
         dbl: async (d, t) => { t.classList.remove('beat'); void t.offsetWidth; t.classList.add('beat'); if (!liked.has(d.id)) { await db.rpc('like_post', { id: d.id }); setTimeout(() => again(), 500); } },
         save: d => { const s = savedPosts(), k = s.indexOf(d.id); k < 0 ? s.push(d.id) : s.splice(k, 1); localStorage.setItem('rp_saved', JSON.stringify(s)); again(); },
-        del: async d => { if (!confirm('¿Borrar esta publicación?')) return; await db.remove('posts', d.id); again(); },
+        del: async d => { if (!await ask('¿Borrar esta publicación?')) return; await db.remove('posts', d.id); again(); },
         zoom: d => d.src && zoom(d),
       });
       // vista previa al adjuntar en X y contador de caracteres
@@ -566,7 +566,7 @@ async function siteBuilder(el, params = {}) {
       await db.insert('sites', { ...d, owner_char: S.char.id }); toast('¡Sitio publicado!'); params.nav ? params.nav(d.slug + '.rp') : siteBuilder(el, {});
     },
     edit: d => siteBuilder(el, { ...params, id: d.id }),
-    del: async d => { if (!confirm('¿Borrar este sitio?')) return; await db.remove('sites', d.id); siteBuilder(el, params); },
+    del: async d => { if (!await ask('¿Borrar este sitio?')) return; await db.remove('sites', d.id); siteBuilder(el, params); },
   });
 }
 
@@ -692,7 +692,7 @@ const casas = { id: 'casas', name: 'Zillow', icon: '🏠', bg: '#006aff,#0041a8'
       editar: d => { const p = props.find(x => x.id === d.id); modal('Editar ' + esc(p.name), form('go', [{ k: 'name', label: 'Nombre', req: 1 }, { k: 'location', label: 'Ubicación (calle, número, referencia)' },
           { k: 'zone', label: 'Zona', type: 'select', options: ['Los Ángeles', 'River City', 'Springfield'], req: 1 }, { k: 'price', label: 'Precio base del gobierno (USD)', type: 'number', min: 1, req: 1 }, { k: 'img', label: 'Cambiar foto', type: 'file' }], p), {
         async go(f, _, close) { if (!f.img) delete f.img; f.price = Number(f.price); await db.update('properties', p.id, f); close(); toast('Casa actualizada'); casas.render(el); } }); },
-      borrar: async d => { const p = props.find(x => x.id === d.id); if (!confirm(`¿Borrar «${p.name}» para siempre?${p.owner_char || p.owner_company ? ' Su dueño la perderá.' : ''}`)) return; await db.remove('properties', d.id); toast('Casa borrada'); casas.render(el); },
+      borrar: async d => { const p = props.find(x => x.id === d.id); if (!await ask(`¿Borrar «${p.name}» para siempre?${p.owner_char || p.owner_company ? ' Su dueño la perderá.' : ''}`)) return; await db.remove('properties', d.id); toast('Casa borrada'); casas.render(el); },
       duplicar: async d => { const { name, zone, price, img, kind: k } = props.find(x => x.id === d.id); await db.insert('properties', { name, zone, price, img, kind: k || 'casa' }); toast('Agregada otra unidad. Ponle su ubicación con «Editar».'); casas.render(el); },
       comprar: d => modal('Comprar casa', `<form data-form="go" class="form">${accSelect(accs)}<button class="btn ok" type="submit">Confirmar compra</button></form>`, {
         async go(f, _, close) { const r = await db.rpc('buy', { kind: 'property', item: d.id, acc: f.acc }); toast('¡Casa comprada por ' + money(r) + '!'); close(); casas.render(el); } }),
@@ -739,7 +739,7 @@ const autos = { id: 'autos', name: 'CarMax', icon: '🚘', bg: '#053361,#1660b8'
       nuevo: () => modal('Nuevo modelo', form('go', [{ k: 'brand', label: 'Marca', req: 1 }, { k: 'model', label: 'Modelo', req: 1 }, { k: 'category', label: 'Categoría' },
         { k: 'price', label: 'Precio', type: 'number', min: 1, req: 1 }, { k: 'img', label: 'Foto', type: 'file' }]), {
         async go(f, _, close) { await db.insert('vehicle_models', { ...f, custom: true }); close(); autos.render(el); } }),
-      borrarM: async d => { if (!confirm(`¿Quitar ${M[d.id].brand} ${M[d.id].model} del catálogo?`)) return; await db.remove('vehicle_models', d.id).catch(() => { throw new Error('No se puede: hay jugadores con este auto. Edítalo en lugar de borrarlo.'); }); toast('Auto quitado del catálogo'); autos.render(el); },
+      borrarM: async d => { if (!await ask(`¿Quitar ${M[d.id].brand} ${M[d.id].model} del catálogo?`)) return; await db.remove('vehicle_models', d.id).catch(() => { throw new Error('No se puede: hay jugadores con este auto. Edítalo en lugar de borrarlo.'); }); toast('Auto quitado del catálogo'); autos.render(el); },
       editar: d => modal('✏️ ' + esc(M[d.id].brand + ' ' + M[d.id].model), form('go', [{ k: 'price', label: 'Precio', type: 'number', min: 1, req: 1 }, { k: 'img', label: 'Foto del auto', type: 'file' }], M[d.id], 'Guardar'), {
         async go(f, _, close) { await db.update('vehicle_models', d.id, { price: f.price, ...(f.img ? { img: f.img } : {}) }); close(); autos.render(el); } }),
     });
@@ -927,7 +927,7 @@ const prision = { id: 'prision', name: 'LA County Jail', icon: '🔒', bg: '#4a4
       <h3>Historial</h3><ul class="list">${past.map(i => `<li><span class="grow">${esc(cname(i.character_id))} · ${i.years} años</span>${badge(i.status === 'en_prision' ? 'cumplida' : i.status)}</li>`).join('') || '<li class="muted">Sin historial</li>'}</ul>`, {
       async libre(d) { await db.update('inmates', d.id, { status: 'liberado', ends_at: new Date().toISOString(), note: 'Liberado por ' + (cname(S.char?.id) || S.me.username) }); prision.render(el); },
       async fuga(d) {
-        if (!confirm('¿Registrar fuga APROBADA por el staff? Se le pondrá orden de arresto.')) return;
+        if (!await ask('¿Registrar fuga APROBADA por el staff? Se le pondrá orden de arresto.')) return;
         const i = inm.find(x => x.id === d.id);
         await db.update('inmates', d.id, { status: 'fugado', note: 'Fuga aprobada' });
         await db.insert('records', { kind: 'orden', character_id: i.character_id, officer_id: S.char?.id || null, description: 'G-29 Fuga de prisión', charges: [{ code: 'G-29', title: 'Fuga de prisión' }] });
@@ -998,7 +998,7 @@ const robstore = { id: 'robstore', name: 'App Store', icon: '🛍️', bg: '#1fa
         { k: 'file', label: 'Archivo .html', type: 'textfile' }, { k: 'html', label: '…o pega el HTML aquí', type: 'textarea' }]), {
         async up(f, _, close) { const html = f.file || f.html; if (!html) throw new Error('Falta el HTML');
           await db.insert('store_apps', { name: f.name, icon: f.icon, html, author_char: f.author, approved: true }); close(); toast('App publicada'); robstore.render(el); } }),
-      del: async d => { if (!confirm('¿Quitar esta app del App Store?')) return; await db.remove('store_apps', d.id); robstore.render(el); },
+      del: async d => { if (!await ask('¿Quitar esta app del App Store?')) return; await db.remove('store_apps', d.id); robstore.render(el); },
     });
   } };
 
@@ -1118,8 +1118,8 @@ const spotify = { id: 'spotify', name: 'Spotify', icon: '🎧', bg: '#1db954,#13
         async al(f, _, close) { const p = myLists.find(x => x.id === f.p); if (!p.songs.includes(d.id)) await db.update('playlists', p.id, { songs: [...p.songs, d.id] }); close(); toast('Agregada a ' + p.name); } }),
       newList: () => modal('Nueva playlist', form('nl', [{ k: 'name', label: 'Nombre', req: 1 }, { k: 'cover', label: 'Portada', type: 'file' }]), {
         async nl(f, _, close) { const p = await db.insert('playlists', { owner_char: me, name: f.name, cover: f.cover || null, songs: [] }); close(); go('list', p.id); } }),
-      delList: async d => { if (!confirm('¿Borrar esta playlist?')) return; await db.remove('playlists', d.id); go('home'); },
-      del: async d => { if (!confirm('¿Borrar esta canción?')) return; await db.remove('songs', d.id); go(); },
+      delList: async d => { if (!await ask('¿Borrar esta playlist?')) return; await db.remove('playlists', d.id); go('home'); },
+      del: async d => { if (!await ask('¿Borrar esta canción?')) return; await db.remove('songs', d.id); go(); },
       editProf: () => modal('Editar perfil', form('ep', [{ k: 'name', label: 'Nombre', req: 1 }, { k: 'avatar', label: 'Cambiar foto', type: 'file' }, { k: 'color', label: 'Color', type: 'color' }, { k: 'bio', label: 'Bio', type: 'textarea' }], prof), {
         async ep(f, _, close) { if (!f.avatar) delete f.avatar; await db.updateWhere('sp_profiles', { character_id: me }, f); close(); go('profile', me); } }),
       subir: () => modal('Subir canción', form('up', [{ k: 'title', label: 'Título', req: 1 }, { k: 'artist', label: 'Artista', def: prof.name }, { k: 'genre', label: 'Género', type: 'select', options: GENRES, req: 1 },
@@ -1349,7 +1349,7 @@ const staffApp = { id: 'staff', name: 'Panel Staff', icon: '🛡️', bg: '#8e2d
         <form data-form="exp" class="form"><table class="tbl">${Object.values(ROLES).flat().map(r => `<tr><td>${esc(r)}</td><td><select name="${esc(r)}">${[0, 1, 3, 6, 12].map(m => `<option value="${m}" ${(exp[r] || 0) == m ? 'selected' : ''}>${m ? m + (m === 1 ? ' mes' : ' meses') : 'No vence'}</option>`).join('')}</select></td></tr>`).join('')}</table>
         <button class="btn" type="submit">Guardar vencimientos</button></form>`;
       Object.assign(acts, {
-        botkey: async () => { if (!confirm('¿Generar una llave nueva? La anterior dejará de funcionar.')) return; const k = await db.rpc('new_bot_key', {});
+        botkey: async () => { if (!await ask('¿Generar una llave nueva? La anterior dejará de funcionar.')) return; const k = await db.rpc('new_bot_key', {});
           modal('Llave del bot', `<p>Cópiala y pégala en GitHub como secreto <b>SYNC_KEY</b>. No la compartas.</p><input class="mono" readonly value="${esc(k)}" onclick="this.select()"><button class="btn" data-act="cp">Copiar</button>`, { cp: async () => { await navigator.clipboard?.writeText(k); toast('Copiada'); } }); },
         exp: async d => { const o = {}; for (const k in d) if (+d[k] > 0) o[k] = +d[k]; await db.upsert('settings', { key: 'role_expiry_months', value: o }); S.settings.role_expiry_months = o; toast('Vencimientos guardados'); go('discord'); },
       });

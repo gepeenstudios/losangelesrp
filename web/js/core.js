@@ -47,6 +47,13 @@ export function notify({ icon = '', title, body, onclick }) {
   n.onclick = () => { onclick?.(); bye(); }; box.prepend(n); setTimeout(bye, 7000);
   try { new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=').play().catch(() => {}); } catch {}
 }
+// confirm() nativo no sale en navegadores integrados (app de Discord/Roblox, paneles): usamos un modal propio
+export const ask = msg => new Promise(res => {
+  let ok = false;
+  const close = modal('Confirmar', `<p>${esc(msg)}</p><div class="row gap"><button class="btn" data-act="si">Sí, continuar</button><button class="btn ghost" data-act="close">Cancelar</button></div>`, { si: () => { ok = true; close(); } });
+  const m = document.body.lastElementChild;
+  new MutationObserver((_, o) => { if (!m.isConnected) { o.disconnect(); res(ok); } }).observe(document.body, { childList: true });
+});
 export function modal(title, html, acts = {}) {
   const m = document.createElement('div');
   m.className = 'modal';
