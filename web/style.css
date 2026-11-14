@@ -823,3 +823,8 @@ tr.click{cursor:pointer}tr.click:hover{background:#ffffff08}
 /* reproducciones (Spotify) y visualizaciones (Instagram) */
 .sp-sub{display:flex;gap:5px;min-width:0;align-items:baseline}.sp-sub .link{flex:0 1 auto;min-width:0}.sp-sub small{color:#b3b3b3;font-size:12px;white-space:nowrap}
 .ig-likes{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.ig-views{margin-left:auto;display:inline-flex;align-items:center;gap:5px;font-weight:400;color:#737373;font-size:13px}.ig-views .i{width:15px;height:15px}
+/* pasaporte extranjero: franja con el color, bandera y nombre oficial de cada país */
+.pass.ext{background-color:color-mix(in srgb,var(--pc) 9%,#f6f3ea);color:#1c1c22;border-top:0;padding-top:0;overflow:hidden}
+.pass.ext .pass-h{margin:0 -16px 10px;padding:12px 16px;background:var(--pc);border:0;align-items:center;gap:10px;justify-content:flex-start}
+.pass.ext .pass-h b{color:#f3e2a6;letter-spacing:1.5px;font-size:13px;flex:1}.pass.ext .pass-h span{color:#f3e2a6cc;letter-spacing:2px;font-weight:700}
+.pass.ext .pass-flag{font-size:26px;line-height:1;letter-spacing:0}.pass.ext .pass-f small{color:color-mix(in srgb,var(--pc) 70%,#333)}.pass.ext .pass-photo{border:2px solid var(--pc)}

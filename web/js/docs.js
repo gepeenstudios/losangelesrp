@@ -66,8 +66,27 @@ export function idCard(c, dni, lic) {
 }
 
 // ---------- Pasaporte (página de datos) ----------
+// pasaporte de cada país: [nombre oficial, palabra «pasaporte», color, código ISO, bandera, autoridad, idioma de las etiquetas]
+const SRE = 'SECRETARÍA DE RELACIONES EXTERIORES', MRE = 'MINISTERIO DE RELACIONES EXTERIORES';
+const PASS = { 'México': ['ESTADOS UNIDOS MEXICANOS', 'PASAPORTE', '#0b5d3b', 'MEX', '🇲🇽', SRE, 'es'], 'Colombia': ['REPÚBLICA DE COLOMBIA', 'PASAPORTE', '#7a1f2b', 'COL', '🇨🇴', MRE, 'es'],
+  'Guatemala': ['REPÚBLICA DE GUATEMALA', 'PASAPORTE', '#1f3f7a', 'GTM', '🇬🇹', 'INSTITUTO GUATEMALTECO DE MIGRACIÓN', 'es'], 'El Salvador': ['REPÚBLICA DE EL SALVADOR', 'PASAPORTE', '#1b3a6b', 'SLV', '🇸🇻', 'DIRECCIÓN GENERAL DE MIGRACIÓN', 'es'],
+  'Honduras': ['REPÚBLICA DE HONDURAS', 'PASAPORTE', '#17365f', 'HND', '🇭🇳', 'INSTITUTO NACIONAL DE MIGRACIÓN', 'es'], 'Venezuela': ['REPÚBLICA BOLIVARIANA DE VENEZUELA', 'PASAPORTE', '#6b1d2a', 'VEN', '🇻🇪', 'SAIME', 'es'],
+  'Argentina': ['REPÚBLICA ARGENTINA', 'PASAPORTE', '#16406e', 'ARG', '🇦🇷', 'REGISTRO NACIONAL DE LAS PERSONAS', 'es'], 'Perú': ['REPÚBLICA DEL PERÚ', 'PASAPORTE', '#7d1c24', 'PER', '🇵🇪', 'SUPERINTENDENCIA NACIONAL DE MIGRACIONES', 'es'],
+  'Chile': ['REPÚBLICA DE CHILE', 'PASAPORTE', '#101d3a', 'CHL', '🇨🇱', 'SERVICIO DE REGISTRO CIVIL E IDENTIFICACIÓN', 'es'], 'Cuba': ['REPÚBLICA DE CUBA', 'PASAPORTE', '#1a2f66', 'CUB', '🇨🇺', 'MINISTERIO DEL INTERIOR', 'es'],
+  'España': ['REINO DE ESPAÑA', 'PASAPORTE', '#6e1423', 'ESP', '🇪🇸', 'DIRECCIÓN GENERAL DE LA POLICÍA', 'es'], 'Canadá': ['CANADA', 'PASSPORT · PASSEPORT', '#16264d', 'CAN', '🇨🇦', 'IMMIGRATION, REFUGEES AND CITIZENSHIP CANADA'],
+  'Brasil': ['REPÚBLICA FEDERATIVA DO BRASIL', 'PASSAPORTE', '#12305c', 'BRA', '🇧🇷', 'POLÍCIA FEDERAL'], 'República Dominicana': ['REPÚBLICA DOMINICANA', 'PASAPORTE', '#12305c', 'DOM', '🇩🇴', 'DIRECCIÓN GENERAL DE PASAPORTES', 'es'],
+  'Ecuador': ['REPÚBLICA DEL ECUADOR', 'PASAPORTE', '#6b1a26', 'ECU', '🇪🇨', MRE, 'es'], 'Nicaragua': ['REPÚBLICA DE NICARAGUA', 'PASAPORTE', '#173b73', 'NIC', '🇳🇮', 'DIRECCIÓN GENERAL DE MIGRACIÓN', 'es'],
+  'Costa Rica': ['REPÚBLICA DE COSTA RICA', 'PASAPORTE', '#123a6b', 'CRI', '🇨🇷', 'DIRECCIÓN GENERAL DE MIGRACIÓN', 'es'], 'Panamá': ['REPÚBLICA DE PANAMÁ', 'PASAPORTE', '#14305e', 'PAN', '🇵🇦', 'AUTORIDAD DE PASAPORTES', 'es'],
+  'Uruguay': ['REPÚBLICA ORIENTAL DEL URUGUAY', 'PASAPORTE', '#16386b', 'URY', '🇺🇾', 'DIRECCIÓN NACIONAL DE IDENTIFICACIÓN CIVIL', 'es'], 'Paraguay': ['REPÚBLICA DEL PARAGUAY', 'PASAPORTE', '#152f5c', 'PRY', '🇵🇾', 'POLICÍA NACIONAL', 'es'],
+  'Bolivia': ['ESTADO PLURINACIONAL DE BOLIVIA', 'PASAPORTE', '#1d4a2f', 'BOL', '🇧🇴', 'DIRECCIÓN GENERAL DE MIGRACIÓN', 'es'], 'Reino Unido': ['UNITED KINGDOM OF GREAT BRITAIN AND NORTHERN IRELAND', 'PASSPORT', '#14213d', 'GBR', '🇬🇧', 'HM PASSPORT OFFICE'],
+  'Francia': ['RÉPUBLIQUE FRANÇAISE', 'PASSEPORT', '#5e1626', 'FRA', '🇫🇷', 'PRÉFECTURE'], 'Alemania': ['BUNDESREPUBLIK DEUTSCHLAND', 'REISEPASS', '#5c1a26', 'DEU', '🇩🇪', 'BUNDESDRUCKEREI'],
+  'Italia': ['REPUBBLICA ITALIANA', 'PASSAPORTO', '#5e1a2a', 'ITA', '🇮🇹', 'MINISTERO DEGLI AFFARI ESTERI'], 'Japón': ['日本国 · JAPAN', '旅券 · PASSPORT', '#7a1220', 'JPN', '🇯🇵', 'MINISTRY OF FOREIGN AFFAIRS'],
+  'China': ['中华人民共和国 · PEOPLE’S REPUBLIC OF CHINA', '护照 · PASSPORT', '#6d1020', 'CHN', '🇨🇳', 'NATIONAL IMMIGRATION ADMINISTRATION'], 'Corea del Sur': ['대한민국 · REPUBLIC OF KOREA', '여권 · PASSPORT', '#143a5e', 'KOR', '🇰🇷', 'MINISTRY OF FOREIGN AFFAIRS'],
+  'Rusia': ['РОССИЙСКАЯ ФЕДЕРАЦИЯ · RUSSIAN FEDERATION', 'ПАСПОРТ · PASSPORT', '#6b1420', 'RUS', '🇷🇺', 'MINISTRY OF INTERNAL AFFAIRS'] };
 export function passport(c, req, foreign) {
-  const code = foreign ? String(req.data.pais || 'XXX').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3).padEnd(3, 'X') : 'USA';
+  const st = foreign ? PASS[req.data.pais] || [up(req.data.pais), 'PASSPORT · PASAPORTE', '#3a2d5c', '', '🌐', up(req.data.pais)] : null, es = st?.[6] === 'es';
+  const L = (en, sp) => es ? `${sp} / ${en}` : sp ? `${en} / ${sp}` : en;
+  const code = st?.[3] ? st[3] : foreign ? String(req.data.pais || 'XXX').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3).padEnd(3, 'X') : 'USA';
   const no = foreign ? String(req.data.pasaporte_ext).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 9) : pad(hash(c.id + 'p') % 1e9, 9);
   const iss = new Date(req.reviewed_at || req.created_at), exp = new Date(iss); exp.setFullYear(iss.getFullYear() + 10);
   const d6 = d => d.toISOString().slice(2, 10).replace(/-/g, '');
@@ -75,14 +94,14 @@ export function passport(c, req, foreign) {
   const mrz1 = ('P<' + code + name).padEnd(44, '<').slice(0, 44);
   const mrz2 = (no.padEnd(9, '<') + (hash(no) % 10) + code + d6(new Date(c.dob + 'T12:00:00')) + (hash(c.dob) % 10) + (c.sex === 'Femenino' ? 'F' : 'M') + d6(exp) + (hash(+exp) % 10)).padEnd(44, '<').slice(0, 44);
   const f = (l, v) => `<div><small>${l}</small><b>${v}</b></div>`;
-  return `<div class="pass" style="background-image:${guilloche('#9db5d8', 260, 130, 24)}">
-    <div class="pass-h"><b>${foreign ? 'PASSPORT · ' + esc(req.data.pais).toUpperCase() : 'UNITED STATES OF AMERICA'}</b><span>PASSPORT · PASSEPORT · PASAPORTE</span></div>
+  return `<div class="pass ${st ? 'ext' : ''}" style="${st ? `--pc:${st[2]};` : ''}background-image:${guilloche(st ? st[2] + '55' : '#9db5d8', 260, 130, 24)}">
+    ${st ? `<div class="pass-h"><span class="pass-flag" aria-hidden="true">${st[4]}</span><b>${esc(st[0])}</b><span>${esc(st[1])}</span></div>` : `<div class="pass-h"><b>UNITED STATES OF AMERICA</b><span>PASSPORT · PASSEPORT · PASAPORTE</span></div>`}
     <div class="pass-b"><img class="pass-photo" src="${esc(req.data.foto || c.skin_url)}" alt="">
-      <div class="pass-f">${f('Type / Tipo', 'P')}${f('Code / Código', code)}${f('Passport No. / No. de pasaporte', no)}
-        <div class="w">${f('Surname / Apellidos', up(c.last_name))}</div><div class="w">${f('Given Names / Nombres', up(c.first_name))}</div>
-        <div class="w">${f('Nationality / Nacionalidad', up(c.nationality))}</div>${f('Date of birth', fdate(c.dob))}${f('Sex / Sexo', up(c.sex?.[0]))}
-        ${f('Place of birth', foreign ? up(req.data.pais) : 'CALIFORNIA, U.S.A.')}${f('Date of issue', fdate(iss.toISOString().slice(0, 10)))}${f('Date of expiration', fdate(exp.toISOString().slice(0, 10)))}
-        ${f('Authority', foreign ? up(req.data.pais) : 'UNITED STATES DEPARTMENT OF STATE')}</div></div>
+      <div class="pass-f">${f(L('Type', 'Tipo'), 'P')}${f(L('Code', 'Código'), code)}${f(L('Passport No.', 'No. de pasaporte'), no)}
+        <div class="w">${f(L('Surname', 'Apellidos'), up(c.last_name))}</div><div class="w">${f(L('Given Names', 'Nombres'), up(c.first_name))}</div>
+        <div class="w">${f(L('Nationality', 'Nacionalidad'), up(c.nationality))}</div>${f(L('Date of birth', es && 'Fecha de nacimiento'), fdate(c.dob))}${f(L('Sex', 'Sexo'), up(c.sex?.[0]))}
+        ${f(L('Place of birth', es && 'Lugar de nacimiento'), foreign ? up(req.data.pais) : 'CALIFORNIA, U.S.A.')}${f(L('Date of issue', es && 'Fecha de expedición'), fdate(iss.toISOString().slice(0, 10)))}${f(L('Date of expiration', es && 'Fecha de caducidad'), fdate(exp.toISOString().slice(0, 10)))}
+        ${f(L('Authority', es && 'Autoridad'), st ? esc(st[5]) : 'UNITED STATES DEPARTMENT OF STATE')}</div></div>
     ${foreign === true ? `<div class="visa-strip"><b>VISA · ${up(req.data.tipo)}</b><span>Admitted until ${fdate(exp.toISOString().slice(0, 10))}</span></div>` : ''}
     <div class="mrz">${esc(mrz1)}<br>${esc(mrz2)}</div><div class="idc-micro">${RP.repeat(3)}</div></div>`;
 }
