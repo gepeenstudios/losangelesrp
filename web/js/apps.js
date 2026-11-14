@@ -7,7 +7,7 @@ import { openWizardOverlay } from './vida.js';
 import { openTramite } from './portal.js';
 import { ico } from './icons.js';
 import { birthCert, idCard, passport, diploma, docNumber, homeCountry, homePassport } from './docs.js';
-import { TRAMITES, ROLES, STAFF, STAFF_NAME, LVL, CITIES, WALLPAPERS, DEFAULT_SETTINGS, SEED_MODELS, SEED_PROPS, SEED_JOBS, CAR_PHOTOS, DEPTS, PENAL_CODE } from './data.js';
+import { CK_RULES, JOB_DESC, TRAMITES, ROLES, STAFF, STAFF_NAME, LVL, CITIES, WALLPAPERS, DEFAULT_SETTINGS, SEED_MODELS, SEED_PROPS, SEED_JOBS, CAR_PHOTOS, DEPTS, PENAL_CODE } from './data.js';
 
 const ST = { cumplida: 'Cumplida', liberado: 'Liberado', fugado: 'Fugado', en_prision: 'En prisión', pending: 'Pendiente', active: 'Activo', dead: 'CK', rejected: 'Rechazado', approved: 'Aprobado', abierto: 'Abierto', tomado: 'En atención', cerrado: 'Cerrado', vacation: 'Vacaciones' };
 const badge = s => `<span class="st st-${s}">${ST[s] || s}</span>`;
@@ -265,7 +265,7 @@ const mensajes = { id: 'mensajes', name: 'Mensajes', icon: '💬', bg: '#34c759,
   async render(el, other) {
     if (!needChar(el)) return;
     const me = S.char.id;
-    const all = [...await db.list('messages', { eq: { from_char: me } }), ...await db.list('messages', { eq: { to_char: me } })].sort((a, b) => a.created_at.localeCompare(b.created_at));
+    const all = [...await db.list('messages', { eq: { from_char: me } }), ...await db.list('messages', { eq: { to_char: me } })].filter(m => !m.via).sort((a, b) => a.created_at.localeCompare(b.created_at));
     const convs = [...new Set(all.map(m => m.from_char === me ? m.to_char : m.from_char))];
     const thread = other ? all.filter(m => [m.from_char, m.to_char].includes(other)) : [];
     view(el, `<div class="split"><aside><form data-form="nuevo" class="row"><select name="to" required><option value="">Nuevo chat…</option>${charOpts(c => c.status === 'active' && c.id !== me).map(([i, n]) => `<option value="${i}">${esc(n)}</option>`).join('')}</select><button class="btn sm">Abrir</button></form>
@@ -282,56 +282,119 @@ const mensajes = { id: 'mensajes', name: 'Mensajes', icon: '💬', bg: '#34c759,
 // Instagram y X con el aspecto de las apps reales (feed, likes, guardados)
 const handle = id => { const c = S.all.find(x => x.id === id); return c ? (c.first_name + '.' + c.last_name).toLowerCase().normalize('NFD').replace(/[^a-z0-9.]/g, '') : 'anonimo'; };
 const ago = t => { const s = (Date.now() - new Date(t)) / 1000; return s < 60 ? 'ahora' : s < 3600 ? Math.floor(s / 60) + ' min' : s < 86400 ? Math.floor(s / 3600) + ' h' : s < 604800 ? Math.floor(s / 86400) + ' d' : fdate(t); };
-const verified = id => S.all.find(c => c.id === id)?.roles?.includes('Influencer') ? ico('s_verified', 'verif') : '';
+const isVerified = id => { const c = S.all.find(x => x.id === id); return !!c && (c.roles?.includes('Influencer') || (c.ig_verified_until && new Date(c.ig_verified_until) > new Date())); };
+const verified = id => isVerified(id) ? ico('s_verified', 'verif') : '';
 const savedPosts = () => { try { return JSON.parse(localStorage.getItem('rp_saved') || '[]'); } catch { return []; } };
-function social(id, name, icon, bg, needMedia) {
+const isVideo = u => /^data:video|\.(mp4|webm|mov|m4v|ogv)(\?|$)/i.test(u || '');
+const media = (u, cls = '', auto = false) => !u ? '' : isVideo(u) ? `<video class="${cls}" src="${esc(u)}" playsinline loop ${auto ? 'autoplay muted' : 'controls'} preload="metadata"></video>` : `<img class="${cls}" src="${esc(u)}" alt="">`;
+const DAY = 864e5;
+// Visor de historias a pantalla completa (avanza solo, como Instagram)
+function storyViewer(list, start = 0) {
+  let k = start, timer;
+  const ov = document.createElement('div'); ov.className = 'stv'; document.body.append(ov);
+  const close = () => { clearTimeout(timer); ov.remove(); };
+  const show = () => {
+    const s = list[k]; if (!s) return close();
+    ov.innerHTML = `<div class="stv-card"><div class="stv-bars">${list.map((_, i) => `<i class="${i < k ? 'done' : i === k ? 'on' : ''}"></i>`).join('')}</div>
+      <div class="stv-h">${av(skin(s.character_id), 'av sm')}<b>${esc(handle(s.character_id))}</b>${verified(s.character_id)}<span>${ago(s.created_at)}</span><button class="stv-x" aria-label="Cerrar">✕</button></div>
+      ${media(s.media_url, 'stv-m', true)}${s.body ? `<p class="stv-t">${esc(s.body)}</p>` : ''}<button class="stv-prev" aria-label="Anterior"></button><button class="stv-next" aria-label="Siguiente"></button></div>`;
+    ov.querySelector('.stv-x').onclick = close; ov.querySelector('.stv-prev').onclick = () => { k = Math.max(0, k - 1); show(); }; ov.querySelector('.stv-next').onclick = () => { k++; show(); };
+    const v = ov.querySelector('video'); clearTimeout(timer);
+    if (v) { v.muted = false; v.onended = () => { k++; show(); }; v.play().catch(() => {}); v.loop = false; } else timer = setTimeout(() => { k++; show(); }, 5000);
+  };
+  ov.onclick = e => { if (e.target === ov) close(); }; show();
+}
+// Instagram y X con el aspecto de las apps reales
+function social(id, name, icon, bg) {
+  const ig = id === 'insta';
   const app = { id, name, icon, bg, show: () => true,
-    async render(el, tab = 'feed') {
+    async render(el, tab = 'feed', arg) {
       if (typeof tab === 'object') tab = 'feed';
       if (!needChar(el)) return;
-      const [all, likes] = await Promise.all([db.list('posts', { eq: { app: id }, limit: 150 }), db.list('post_likes', { eq: { user_id: S.me.id }, order: null, limit: 2000 }).catch(() => [])]);
-      const liked = new Set(likes.map(l => l.post_id)), saved = savedPosts(), mine = p => S.chars.some(c => c.id === p.character_id) || lvl() >= 2;
-      const posts = tab === 'saved' ? all.filter(p => saved.includes(p.id)) : tab === 'me' ? all.filter(p => p.character_id === S.char.id) : all;
+      const me = S.char.id;
+      const [all, likes] = await Promise.all([db.list('posts', { eq: { app: id }, limit: 200 }), db.list('post_likes', { eq: { user_id: S.me.id }, order: null, limit: 2000 }).catch(() => [])]);
+      const liked = new Set(likes.map(l => l.post_id)), saved = savedPosts(), canDel = p => S.chars.some(c => c.id === p.character_id) || lvl() >= 2;
+      const stories = all.filter(p => p.section === 'story' && Date.now() - new Date(p.created_at) < DAY).reverse();
+      const posts = all.filter(p => p.section !== 'story');
       const who = p => p.anonimo ? 'anonimo' : handle(p.character_id), nm = p => p.anonimo ? 'Anónimo' : esc(cname(p.character_id));
-      const heart = p => `<button class="sa ${liked.has(p.id) ? 'on' : ''}" data-act="like" data-id="${p.id}" aria-label="Me gusta">${ico('s_heart', 'i')}${id === 'x' ? `<span>${p.likes || ''}</span>` : ''}</button>`;
+      const heart = p => `<button class="sa ${liked.has(p.id) ? 'on' : ''}" data-act="like" data-id="${p.id}" aria-label="Me gusta">${ico('s_heart', 'i')}${ig ? '' : `<span>${p.likes || ''}</span>`}</button>`;
       const save = p => `<button class="sa ${saved.includes(p.id) ? 'on' : ''}" data-act="save" data-id="${p.id}" aria-label="Guardar">${ico('s_save', 'i')}</button>`;
-      const del = p => mine(p) ? `<button class="sa" data-act="del" data-id="${p.id}" aria-label="Borrar">${ico('s_trash', 'i')}</button>` : '';
+      const del = p => canDel(p) ? `<button class="sa" data-act="del" data-id="${p.id}" aria-label="Borrar">${ico('s_trash', 'i')}</button>` : '';
+      const again = (t = tab, x = arg) => app.render(el, t, x);
       let html;
-      if (id === 'insta') {
-        const stories = [...new Map(all.filter(p => Date.now() - new Date(p.created_at) < 864e5 && !p.anonimo).map(p => [p.character_id, p])).values()].slice(0, 15);
-        html = `<div class="ig"><header class="ig-top"><span class="ig-word">Instagram</span><span class="grow"></span>
-            <button class="sa" data-act="nuevo" aria-label="Nueva publicación">${ico('s_new', 'i')}</button><button class="sa" data-act="tab" data-t="saved" aria-label="Guardados">${ico('s_save', 'i')}</button></header>
-          ${tab === 'feed' && stories.length ? `<div class="ig-stories">${stories.map(p => `<button class="ig-st" data-act="zoom" data-src="${esc(p.media_url || '')}"><span class="ring">${av(skin(p.character_id), 'av')}</span><small>${esc(handle(p.character_id))}</small></button>`).join('')}</div>` : ''}
-          ${tab !== 'feed' ? `<div class="ig-sub"><button class="link" data-act="tab" data-t="feed">‹ Inicio</button><b>${tab === 'saved' ? 'Guardado' : '@' + esc(handle(S.char.id))}</b></div>` : ''}
-          <div class="ig-feed">${posts.map(p => `<article class="ig-post post">
-            <div class="ig-h">${av(skin(p.character_id), 'av sm ring-s')}<b>${esc(who(p))}</b>${verified(p.character_id)}<span class="muted">· ${ago(p.created_at)}</span><span class="grow"></span>${del(p)}</div>
-            ${p.media_url ? `<div class="ig-media" data-act="dbl" data-id="${p.id}"><img src="${esc(p.media_url)}" alt=""><i class="pop">${ico('s_heart', 'i')}</i></div>` : ''}
-            <div class="ig-act">${heart(p)}<span class="grow"></span>${save(p)}</div>
-            <div class="ig-likes">${p.likes ? `${p.likes.toLocaleString('es-MX')} Me gusta` : 'Sé el primero en dar Me gusta'}</div>
-            ${p.body ? `<p class="ig-cap"><b>${esc(who(p))}</b> ${esc(p.body)}</p>` : ''}</article>`).join('') || '<p class="empty">Todavía no hay publicaciones.</p>'}</div>
-          <nav class="ig-nav"><button class="sa" data-act="tab" data-t="feed">${ico('s_home', 'i')}</button><button class="sa" data-act="nuevo">${ico('s_new', 'i')}</button>
-            <button class="sa" data-act="tab" data-t="me">${av(skin(S.char.id), 'av xs')}</button></nav></div>`;
+      if (ig) {
+        const igPost = p => `<article class="ig-post post"><div class="ig-h">${av(skin(p.character_id), 'av sm')}<button class="link" data-act="perfil" data-id="${p.character_id}"><b>${esc(who(p))}</b></button>${verified(p.character_id)}<span class="muted">· ${ago(p.created_at)}</span>${p.section === 'reel' ? '<span class="tag">Reel</span>' : ''}<span class="grow"></span>${del(p)}</div>
+          ${p.media_url ? `<div class="ig-media" data-act="dbl" data-id="${p.id}">${media(p.media_url, '', isVideo(p.media_url))}<i class="pop">${ico('s_heart', 'i')}</i></div>` : ''}
+          <div class="ig-act">${heart(p)}<button class="sa" data-act="dm" data-id="${p.character_id}" aria-label="Enviar mensaje">${ico('s_send', 'i')}</button><span class="grow"></span>${save(p)}</div>
+          <div class="ig-likes">${p.likes ? `${p.likes.toLocaleString('es-MX')} Me gusta` : 'Sé el primero en dar Me gusta'}</div>${p.body ? `<p class="ig-cap"><b>${esc(who(p))}</b> ${esc(p.body)}</p>` : ''}</article>`;
+        const byUser = [...new Map(stories.map(s => [s.character_id, s])).keys()];
+        const head = t => `<header class="ig-top">${t}<span class="grow"></span><button class="sa" data-act="crear" aria-label="Crear">${ico('s_new', 'i')}</button><button class="sa" data-act="tab" data-t="dms" aria-label="Mensajes">${ico('s_send', 'i')}</button></header>`;
+        let body;
+        if (tab === 'feed') body = head('<span class="ig-word">Instagram</span>') + `<div class="ig-stories"><button class="ig-st" data-act="crear" data-k="story"><span class="ring add">${av(skin(me), 'av')}<i>+</i></span><small>Tu historia</small></button>
+            ${byUser.map(u => `<button class="ig-st" data-act="story" data-id="${u}"><span class="ring">${av(skin(u), 'av')}</span><small>${esc(handle(u))}</small></button>`).join('')}</div>
+          <div class="ig-feed">${posts.map(igPost).join('') || '<p class="empty">Todavía no hay publicaciones. ¡Sé el primero!</p>'}</div>`;
+        else if (tab === 'reels') { const reels = posts.filter(p => p.section === 'reel' || isVideo(p.media_url));
+          body = `<div class="ig-reels">${reels.map(p => `<section class="reel">${media(p.media_url, 'reel-v', true)}<div class="reel-info"><div class="row">${av(skin(p.character_id), 'av sm')}<b>${esc(who(p))}</b>${verified(p.character_id)}</div>${p.body ? `<p>${esc(p.body)}</p>` : ''}</div>
+            <div class="reel-act">${heart(p)}<small>${p.likes || 0}</small><button class="sa" data-act="dm" data-id="${p.character_id}">${ico('s_send', 'i')}</button>${save(p)}</div></section>`).join('') || '<p class="empty light">Aún no hay reels. Sube un video con el botón +.</p>'}</div>`; }
+        else if (tab === 'perfil') { const u = arg || me, mine = posts.filter(p => p.character_id === u), c = S.all.find(x => x.id === u);
+          const vu = c?.ig_verified_until && new Date(c.ig_verified_until) > new Date();
+          body = head(`<b class="ig-user">${esc(handle(u))}${verified(u)}</b>`) + `<div class="ig-prof">${av(skin(u), 'av xl')}<div class="ig-stats"><div><b>${mine.length}</b><small>publicaciones</small></div><div><b>${mine.reduce((s, p) => s + (p.likes || 0), 0)}</b><small>Me gusta</small></div><div><b>${stories.filter(s => s.character_id === u).length}</b><small>historias</small></div></div></div>
+            <div class="ig-bio"><b>${esc(cname(u))}</b>${c?.roles?.length ? `<div class="muted">${esc(c.roles.join(' · '))}</div>` : ''}</div>
+            <div class="row gap ig-btns">${u === me ? `<button class="btn ghost grow" data-act="crear">Nueva publicación</button><button class="btn ghost grow" data-act="verif">${vu ? 'Verificado hasta ' + fdate(c.ig_verified_until) : isVerified(u) ? 'Cuenta verificada' : 'Solicitar verificación'}</button>` : `<button class="btn grow" data-act="dm" data-id="${u}">Enviar mensaje</button>`}</div>
+            <div class="ig-grid">${mine.map(p => `<button class="ig-cell" data-act="ver" data-id="${p.id}">${isVideo(p.media_url) ? `<video src="${esc(p.media_url)}" muted playsinline preload="metadata"></video>` : media(p.media_url)}${isVideo(p.media_url) ? '<i class="ig-play">▶</i>' : ''}</button>`).join('') || '<p class="empty">Sin publicaciones.</p>'}</div>`; }
+        else if (tab === 'saved') body = head('<b>Guardado</b>') + `<div class="ig-feed">${posts.filter(p => saved.includes(p.id)).map(igPost).join('') || '<p class="empty">No has guardado nada.</p>'}</div>`;
+        else if (tab === 'dms') {
+          const msgs = [...await db.list('messages', { eq: { from_char: me } }), ...await db.list('messages', { eq: { to_char: me } })].filter(m => m.via === 'insta').sort((a, b) => a.created_at.localeCompare(b.created_at));
+          const convs = [...new Set(msgs.map(m => m.from_char === me ? m.to_char : m.from_char))].reverse(), o = arg;
+          body = o ? `<header class="ig-top"><button class="link" data-act="tab" data-t="dms">‹</button>${av(skin(o), 'av sm')}<b>${esc(handle(o))}</b>${verified(o)}</header>
+              <div class="ig-thread">${msgs.filter(m => [m.from_char, m.to_char].includes(o)).map(m => `<div class="ig-msg ${m.from_char === me ? 'me' : ''}">${esc(m.body)}</div>`).join('') || '<p class="empty">Saluda a ' + esc(cname(o)) + ' 👋</p>'}</div>
+              <form data-form="send" class="ig-send"><input name="body" placeholder="Mensaje…" autocomplete="off" required><button class="link" type="submit">Enviar</button></form>`
+            : `<header class="ig-top"><button class="link" data-act="tab" data-t="feed">‹</button><b>${esc(handle(me))}</b></header>
+              <form data-form="nuevoDm" class="ig-send"><select name="to" required><option value="">Nuevo mensaje…</option>${charOpts(c => c.status === 'active' && c.id !== me).map(([i, n]) => `<option value="${i}">${esc(n)}</option>`).join('')}</select><button class="link" type="submit">Chat</button></form>
+              ${convs.map(u => { const last = msgs.filter(m => [m.from_char, m.to_char].includes(u)).pop(); return `<button class="ig-conv" data-act="dm" data-id="${u}">${av(skin(u), 'av')}<div><b>${esc(handle(u))}</b>${verified(u)}<small class="muted">${esc((last.from_char === me ? 'Tú: ' : '') + last.body).slice(0, 40)} · ${ago(last.created_at)}</small></div></button>`; }).join('') || '<p class="empty">Sin mensajes todavía.</p>'}`;
+        }
+        else body = head('<b>Publicación</b>') + `<div class="ig-feed">${posts.filter(p => p.id === arg).map(igPost).join('')}</div>`;
+        html = `<div class="ig">${body}<nav class="ig-nav"><button class="sa ${tab === 'feed' ? 'on' : ''}" data-act="tab" data-t="feed" aria-label="Inicio">${ico('s_home', 'i')}</button><button class="sa" data-act="tab" data-t="reels" aria-label="Reels">${ico('s_play', 'i')}</button>
+          <button class="sa" data-act="crear" aria-label="Crear">${ico('s_new', 'i')}</button><button class="sa" data-act="tab" data-t="saved" aria-label="Guardados">${ico('s_save', 'i')}</button><button class="sa" data-act="perfil" data-id="${me}" aria-label="Perfil">${av(skin(me), 'av xs')}</button></nav></div>`;
       } else {
+        const list = tab === 'saved' ? posts.filter(p => saved.includes(p.id)) : tab === 'me' ? posts.filter(p => p.character_id === me) : posts;
         html = `<div class="xa"><header class="xa-top"><b class="xa-logo">𝕏</b><nav class="xa-tabs"><button class="${tab === 'feed' ? 'on' : ''}" data-act="tab" data-t="feed">Para ti</button><button class="${tab === 'me' ? 'on' : ''}" data-act="tab" data-t="me">Mis posts</button><button class="${tab === 'saved' ? 'on' : ''}" data-act="tab" data-t="saved">Guardados</button></nav></header>
-          <form data-form="post" class="xa-compose">${av(skin(S.char.id), 'av')}<div class="grow"><textarea name="body" rows="2" maxlength="280" placeholder="¿Qué está pasando?" required></textarea>
-            <div class="row"><label class="sa" title="Foto">${ico('s_photo', 'i')}<input type="file" name="media_url" accept="image/*" hidden></label><span class="grow"></span><button class="xa-btn" type="submit">Postear</button></div></div></form>
-          ${posts.map(p => `<article class="xa-post post">${av(skin(p.character_id), 'av')}<div class="grow">
+          <form data-form="post" class="xa-compose">${av(skin(me), 'av')}<div class="grow"><textarea name="body" rows="2" maxlength="280" placeholder="¿Qué está pasando?"></textarea><div class="xa-prev" hidden></div>
+            <div class="row"><label class="sa" title="Foto o video">${ico('s_photo', 'i')}<input type="file" name="media_url" accept="image/*,video/*" hidden data-prev></label><small class="muted" data-count>280</small><span class="grow"></span><button class="xa-btn" type="submit">Postear</button></div></div></form>
+          ${list.map(p => `<article class="xa-post post">${av(skin(p.character_id), 'av')}<div class="grow">
             <div class="xa-h"><b>${nm(p)}</b>${verified(p.character_id)}<span class="muted">@${esc(who(p))} · ${ago(p.created_at)}</span></div>
-            ${p.body ? `<p>${esc(p.body)}</p>` : ''}${p.media_url ? `<img class="xa-media" src="${esc(p.media_url)}" alt="" data-act="zoom" data-src="${esc(p.media_url)}">` : ''}
+            ${p.body ? `<p>${esc(p.body)}</p>` : ''}${p.media_url ? (isVideo(p.media_url) ? media(p.media_url, 'xa-media') : `<img class="xa-media" src="${esc(p.media_url)}" alt="" data-act="zoom" data-src="${esc(p.media_url)}">`) : ''}
             <div class="xa-act">${heart(p)}${save(p)}${del(p)}</div></div></article>`).join('') || '<p class="empty">Sé el primero en postear.</p>'}</div>`;
       }
-      const again = () => app.render(el, tab);
+      const sendDm = async (to, body) => db.insert('messages', { from_char: me, to_char: to, body, via: 'insta' });
       view(el, html, {
-        tab: d => app.render(el, d.t),
-        post: async d => { await db.insert('posts', { app: id, character_id: S.char.id, body: d.body, media_url: d.media_url || null }); again(); },
-        nuevo: () => modal('Nueva publicación', form('pub', [{ k: 'media_url', label: 'Foto', type: 'file', req: 1 }, { k: 'body', label: 'Escribe un pie de foto…', type: 'textarea' }], {}, 'Compartir'), {
-          pub: async (d, f, close) => { await db.insert('posts', { app: id, character_id: S.char.id, body: d.body, media_url: d.media_url }); close(); again(); } }),
+        tab: d => again(d.t, null), perfil: d => again('perfil', d.id), ver: d => again('post', d.id), dm: d => again('dms', d.id),
+        story: d => storyViewer(stories.filter(s => s.character_id === d.id)),
+        post: async d => { if (!d.body && !d.media_url) throw new Error('Escribe algo o agrega una foto'); await db.insert('posts', { app: id, character_id: me, body: d.body || null, media_url: d.media_url || null, section: isVideo(d.media_url) ? 'reel' : null }); again(); },
+        crear: d => modal('Crear', form('pub', [{ k: 'tipo', label: 'Tipo', type: 'select', options: [['post', 'Publicación'], ['reel', 'Reel (video)'], ['story', 'Historia (dura 24 horas)']], def: d.k || 'post', req: 1 },
+          { k: 'media_url', label: 'Foto o video', type: 'file', accept: 'image/*,video/*', req: 1 }, { k: 'body', label: 'Escribe un pie de foto…', type: 'textarea' }], {}, 'Compartir'), {
+          pub: async (f, _, close) => { if (f.tipo === 'reel' && !isVideo(f.media_url)) throw new Error('Un reel debe ser un video');
+            await db.insert('posts', { app: id, character_id: me, body: f.body || null, media_url: f.media_url, section: f.tipo === 'post' ? (isVideo(f.media_url) ? 'reel' : null) : f.tipo });
+            close(); toast(f.tipo === 'story' ? 'Historia publicada · desaparece en 24 h' : 'Publicado ✅'); again(f.tipo === 'story' ? 'feed' : f.tipo === 'reel' ? 'reels' : 'feed', null); } }),
+        verif: () => isVerified(me) && !(S.char.ig_verified_until && new Date(S.char.ig_verified_until) - Date.now() < 5 * DAY) ? toast('Tu cuenta ya está verificada') : openTramite('verificacion_ig'),
+        send: async d => { await sendDm(arg, d.body); again(); },
+        nuevoDm: d => again('dms', d.to),
         like: async d => { if (liked.has(d.id)) return; await db.rpc('like_post', { id: d.id }); again(); },
-        dbl: async (d, t) => { t.classList.remove('beat'); void t.offsetWidth; t.classList.add('beat'); if (!liked.has(d.id)) { await db.rpc('like_post', { id: d.id }); setTimeout(again, 500); } },
+        dbl: async (d, t) => { t.classList.remove('beat'); void t.offsetWidth; t.classList.add('beat'); if (!liked.has(d.id)) { await db.rpc('like_post', { id: d.id }); setTimeout(() => again(), 500); } },
         save: d => { const s = savedPosts(), k = s.indexOf(d.id); k < 0 ? s.push(d.id) : s.splice(k, 1); localStorage.setItem('rp_saved', JSON.stringify(s)); again(); },
         del: async d => { if (!confirm('¿Borrar esta publicación?')) return; await db.remove('posts', d.id); again(); },
         zoom: d => d.src && zoom(d),
       });
+      // vista previa al adjuntar en X y contador de caracteres
+      const fi = el.querySelector('input[data-prev]'), pv = el.querySelector('.xa-prev'), ta = el.querySelector('.xa-compose textarea'), cnt = el.querySelector('[data-count]');
+      fi?.addEventListener('change', () => { const f = fi.files[0]; if (!f) return; const u = URL.createObjectURL(f);
+        pv.innerHTML = `${f.type.startsWith('video') ? `<video src="${u}" muted playsinline autoplay loop></video>` : `<img src="${u}" alt="">`}<button type="button" class="xa-rm" aria-label="Quitar">✕</button>`; pv.hidden = false;
+        pv.querySelector('.xa-rm').onclick = () => { fi.value = ''; pv.hidden = true; pv.innerHTML = ''; }; });
+      ta?.addEventListener('input', () => { cnt.textContent = 280 - ta.value.length; });
+      el.querySelector('.ig-thread')?.scrollTo(0, 1e6);
+      // los reels se reproducen solo cuando se ven
+      const io = new IntersectionObserver(es => es.forEach(e => e.target.tagName === 'VIDEO' && (e.isIntersecting ? e.target.play().catch(() => {}) : e.target.pause())), { threshold: .6 });
+      el.querySelectorAll('.reel-v, .ig-media video').forEach(v => io.observe(v));
     } };
   return app;
 }
@@ -367,6 +430,8 @@ const buscar = { id: 'buscar', name: 'Google', icon: '🔎', bg: '#4285f4,#1a73e
     if (!q) return view(el, `<div class="g-home"><div class="g-top">${av(S.me.avatar_url, 'av sm')}</div>
       <div class="g-logo">Google</div><form data-form="s" class="g-box">${ico('buscar', 'i')}<input name="q" autocomplete="off" aria-label="Buscar"></form>
       <div class="row center"><button class="g-btn" data-act="go">Buscar con Google</button><button class="g-btn" data-act="lucky">Voy a tener suerte</button></div>
+      <div class="g-quick"><a class="g-tile" data-href="robpedia.rp"><b>W</b><span>RobPedia</span></a><a class="g-tile" data-href="sites.google.rp"><b>＋</b><span>Crear sitio web</span></a>
+        <a class="g-tile" data-href="latimes.rp"><b>📰</b><span>LA Times</span></a><a class="g-tile" data-href="lacity.rp"><b>🏛️</b><span>LA City</span></a></div>
       <div class="g-foot">Los Ángeles, California · Google ofrecido en: Español</div></div>`, { s: d => params.nav(`google.rp/search?q=${encodeURIComponent(d.q)}`),
         go: () => params.nav(`google.rp/search?q=${encodeURIComponent(el.querySelector('[name=q]').value)}`), lucky: () => params.nav(`google.rp/search?q=${encodeURIComponent(el.querySelector('[name=q]').value || 'Los Ángeles')}&lucky=1`) });
     const ql = q.toLowerCase(), hit = (...v) => v.some(x => String(x || '').toLowerCase().includes(ql));
@@ -386,6 +451,9 @@ const buscar = { id: 'buscar', name: 'Google', icon: '🔎', bg: '#4285f4,#1a73e
     jobs.filter(j => hit(j.title, j.employer)).forEach(j => R.push({ t: 'empleos', url: 'linkedin.rp', title: `${j.title} · ${j.employer}`, desc: j.description || '' }));
     props.filter(p => hit(p.name, p.zone, p.kind)).forEach(p => R.push({ t: 'propiedades', url: 'zillow.rp', title: `${p.name} · ${p.zone}`, desc: p.for_sale ? 'En venta · ' + money((p.owner_char || p.owner_company ? p.sale_price : p.price * cpi())) : 'Vendida', img: p.img }));
     models.filter(m => hit(m.brand, m.model, m.category)).forEach(m => R.push({ t: 'autos', url: 'carmax.rp', title: `${m.brand} ${m.model}`, desc: `${m.category} · desde ${money(m.price * cpi())}`, img: m.img || CAR_PHOTOS[m.brand] || CAR_PHOTOS.default }));
+    const sites = await db.list('sites', { order: null }).catch(() => []);
+    sites.filter(x => hit(x.title, x.tagline, x.body, x.slug)).forEach(x => R.push({ t: 'todo', url: x.slug + '.rp', title: x.title, desc: x.tagline || String(x.body || '').slice(0, 140) }));
+    WIKI.filter(([t, , kw]) => hit(t, kw) || ql.includes('wiki') || ql.includes('robpedia')).forEach(([t]) => R.unshift({ t: 'todo', url: 'robpedia.rp?a=' + encodeURIComponent(t), title: t + ' — RobPedia, la enciclopedia libre', desc: 'Artículo de RobPedia sobre ' + t + ' en Los Ángeles RP.' }));
     if (params.lucky && R[0]) return params.nav(R[0].url);
     const tabsG = [['todo', 'Todo'], ['noticias', 'Noticias'], ['empleos', 'Empleos'], ['propiedades', 'Propiedades'], ['autos', 'Autos']];
     const shown = R.filter(r => t === 'todo' ? true : r.t === t), top = cos.find(c => hit(c.name));
@@ -419,9 +487,79 @@ const companySite = { async render(el, params) {
 export async function resolveSite(host) {
   const map = { 'google.rp': buscar, 'lacity.rp': gobierno, 'latimes.rp': news, 'linkedin.rp': empleos, 'zillow.rp': casas, 'carmax.rp': autos, 'gbm.rp': bolsa, 'vote.rp': fec, 'lacourt.rp': corte };
   if (map[host]) return (el, params) => map[host].render(el, params);
+  if (host === 'robpedia.rp' || host === 'wikipedia.rp') return robpedia;
+  if (host === 'sites.google.rp') return siteBuilder;
   const co = (await db.list('companies', { order: null })).find(c => slug(c.name) + '.rp' === host);
-  return co ? (el, params) => companySite.render(el, { ...params, company: co }) : null;
+  if (co) return (el, params) => companySite.render(el, { ...params, company: co });
+  const st = (await db.list('sites', { order: null }).catch(() => [])).find(x => x.slug + '.rp' === host);
+  return st ? el => userSite(el, st) : null;
 }
+// ============ ROBPEDIA (Wikipedia del server) ============
+const WIKI = [['Los Ángeles RP', 'servidor', 'roblox servidor ciudad river city springfield historia'], ['Economía de Los Ángeles', 'economía', 'dinero tesoreria inflacion fed banco rrva bolsa'],
+  ['Gobierno y elecciones', 'gobierno', 'presidente elecciones partido votar gobierno'], ['Reglas de CK', 'ck', 'ck muerte personaje reglas'], ['Empresas de Los Ángeles', 'empresas', 'empresa negocio compañia']];
+async function robpedia(el, params = {}) {
+  const art = params.a || 'Portada';
+  const [chars, cos, props, posts, parties, els, vehs] = await Promise.all([db.list('characters', { order: null }).catch(() => S.all), db.list('companies', { order: 'name', asc: true }), db.list('properties', { order: null }),
+    db.list('posts', { order: null, limit: 1000 }), db.list('parties', { order: null }).catch(() => []), db.list('elections', { order: null }).catch(() => []), db.list('vehicles', { order: null }).catch(() => [])]);
+  const alive = chars.filter(c => c.status === 'active'), ck = chars.filter(c => c.status === 'dead'), pres = alive.filter(c => c.roles?.includes('Presidente'));
+  const foreign = alive.filter(c => c.extranjero).length, sold = props.filter(p => p.owner_char || p.owner_company).length, top = [...posts].sort((a, b) => (b.likes || 0) - (a.likes || 0))[0];
+  const nat = Object.entries(alive.reduce((m, c) => (m[c.nationality] = (m[c.nationality] || 0) + 1, m), {})).sort((a, b) => b[1] - a[1])[0];
+  const city = Object.entries(alive.reduce((m, c) => (m[c.city] = (m[c.city] || 0) + 1, m), {})).sort((a, b) => b[1] - a[1])[0];
+  const facts = [`Los Ángeles RP tiene <b>${alive.length}</b> ciudadanos con vida activa y <b>${ck.length}</b> vidas que terminaron en CK.`,
+    pres.length ? `El presidente en funciones es <b>${esc(cname(pres[0].id))}</b>.` : 'Ahora mismo la presidencia está <b>vacante</b>.',
+    `<b>${foreign}</b> ciudadanos llegaron del extranjero${nat ? `; la nacionalidad más común es <b>${esc(nat[0])}</b>` : ''}.`,
+    city ? `La zona con más habitantes es <b>${esc(city[0])}</b>.` : '', `Hay <b>${cos.length}</b> empresas registradas y <b>${parties.length}</b> partidos políticos.`,
+    `Se han vendido <b>${sold}</b> de <b>${props.length}</b> casas y locales del gobierno.`, `Circulan <b>${vehs.length}</b> autos con placa registrada.`,
+    `La inflación acumulada es de <b>${((cpi() - 1) * 100).toFixed(2)}%</b> y la tasa de la Reserva Federal está en <b>${set('fed_rate')}%</b>.`,
+    top?.likes ? `La publicación con más «Me gusta» tiene <b>${top.likes}</b> y es de <b>${esc(cname(top.character_id))}</b>.` : '',
+    `Se han hecho <b>${els.length}</b> elecciones en la historia de la ciudad.`].filter(Boolean);
+  const A = {
+    'Portada': `<p>Bienvenido a <b>RobPedia</b>, la enciclopedia libre de Los Ángeles RP que cualquiera puede consultar.</p><div class="wk-box"><h3>¿Sabías que…?</h3><ul>${facts.map(f => `<li>${f}</li>`).join('')}</ul></div>
+      <h3>Artículos</h3><ul>${WIKI.map(([t]) => `<li><a class="link" data-href="robpedia.rp?a=${encodeURIComponent(t)}">${esc(t)}</a></li>`).join('')}</ul>`,
+    'Los Ángeles RP': `<p><b>Los Ángeles RP</b> es un servidor de roleplay en Roblox ambientado en la ciudad de Los Ángeles, California. La ciudad se divide en <b>River City</b> y <b>Springfield</b>.</p>
+      <p>Cada jugador puede tener varias <i>vidas</i> (personajes), registradas en el Registro Civil. Una vida puede terminar por <a class="link" data-href="robpedia.rp?a=Reglas%20de%20CK">CK</a>.</p>
+      <h3>Datos actuales</h3><ul>${facts.slice(0, 5).map(f => `<li>${f}</li>`).join('')}</ul>`,
+    'Economía de Los Ángeles': `<p>La moneda es el dólar estadounidense. El banco principal es <b>RRVA</b>. La <b>Tesorería</b> empezó con <b>$13,950 millones</b>, el presupuesto real de la Ciudad de Los Ángeles.</p>
+      <p>El único dinero nuevo que entra solo es el inicial de cada vida nueva. El presidente puede imprimir dinero, lo que genera <b>inflación</b> (hoy ${((cpi() - 1) * 100).toFixed(2)}%).</p>
+      <p>En la bolsa (GBM+) se negocian acciones de las empresas y el ETF <b>LA500</b>. Los ahorros pagan intereses según la tasa de la Reserva Federal (${set('fed_rate')}%).</p>`,
+    'Gobierno y elecciones': `<p>Cada mes hay elección presidencial: registro de candidatos del día 1 al ${set('elecciones').registro_hasta}, votación del ${set('elecciones').votacion_desde} al ${set('elecciones').votacion_hasta}. El ganador gobierna el mes siguiente completo.</p>
+      <p>Presidente actual: <b>${pres.length ? esc(cname(pres[0].id)) : 'vacante'}</b>.</p><h3>Partidos</h3><ul>${parties.map(p => `<li>${esc(p.name)}${p.siglas ? ' (' + esc(p.siglas) + ')' : ''} — ${esc(p.ideologia || '')}</li>`).join('') || '<li>Sin partidos registrados.</li>'}</ul>`,
+    'Reglas de CK': `<p>El <b>CK</b> (Character Kill) es la muerte permanente de un personaje. Reglas oficiales:</p><ol>${CK_RULES.map(([h, b]) => `<li><b>${esc(h)}.</b> ${esc(b)}</li>`).join('')}</ol>`,
+    'Empresas de Los Ángeles': `<ul>${cos.map(c => `<li><a class="link" data-href="${slug(c.name)}.rp">${esc(c.name)}</a> — ${esc(c.industry)}</li>`).join('') || '<li>Aún no hay empresas.</li>'}</ul>`,
+  };
+  view(el, `<div class="wk"><header class="wk-h"><a class="wk-logo" data-href="robpedia.rp"><b>RobPedia</b><small>La enciclopedia libre</small></a><form data-form="s" class="wk-s"><input name="q" placeholder="Buscar en RobPedia" aria-label="Buscar"></form></header>
+    <article class="wk-a"><h1>${esc(art)}</h1><small class="muted">De RobPedia, la enciclopedia libre · datos en vivo del servidor</small>${A[art] || `<p>Este artículo no existe todavía. <a class="link" data-href="robpedia.rp">Volver a la portada</a></p>`}</article></div>`,
+    { s: d => params.nav ? params.nav('google.rp/search?q=' + encodeURIComponent(d.q + ' robpedia')) : null });
+}
+
+// ============ GOOGLE SITES: cada quien hace su página ============
+const sitePage = st => `<div class="us"><header class="us-h" style="background:${esc(st.color || '#1a73e8')}"><h1>${esc(st.title)}</h1>${st.tagline ? `<p>${esc(st.tagline)}</p>` : ''}</header>
+  ${st.img ? `<img class="us-img" src="${esc(st.img)}" alt="">` : ''}<main class="us-b">${String(st.body || '').split(/\n{2,}/).map(p => `<p>${esc(p).replace(/\n/g, '<br>')}</p>`).join('')}</main>
+  <footer class="us-f">${esc(st.slug)}.rp · Creado por ${esc(cname(st.owner_char))} con Google Sites</footer></div>`;
+const userSite = (el, st) => { el.innerHTML = sitePage(st); };
+async function siteBuilder(el, params = {}) {
+  if (!needChar(el)) return;
+  const mine = (await db.list('sites', { order: null })).filter(x => S.chars.some(c => c.id === x.owner_char)), ed = mine.find(x => x.id === params.id);
+  view(el, `<div class="gs"><header class="gs-h"><b>Google Sites</b><span class="muted">Crea tu página web gratis con dominio .rp</span></header>
+    <div class="gs-b"><section><h3>${ed ? 'Editar ' + esc(ed.slug) + '.rp' : 'Nuevo sitio'}</h3>${form('save', [
+      ...(ed ? [] : [{ k: 'slug', label: 'Dirección (solo minúsculas, números y guiones)', req: 1, ph: 'mi-negocio' }]),
+      { k: 'title', label: 'Título', req: 1 }, { k: 'tagline', label: 'Frase corta' }, { k: 'color', label: 'Color principal', type: 'color', def: '#1a73e8' },
+      { k: 'img', label: 'Imagen de portada', type: 'file' }, { k: 'body', label: 'Contenido (deja una línea en blanco entre párrafos)', type: 'textarea', req: 1 }], ed || {}, ed ? 'Guardar cambios' : 'Publicar sitio')}</section>
+      <section><h3>Mis sitios</h3>${mine.map(x => `<div class="card row"><b class="grow">${esc(x.title)}</b><a class="link" data-href="${esc(x.slug)}.rp">${esc(x.slug)}.rp</a>
+        <button class="btn sm ghost" data-act="edit" data-id="${x.id}">Editar</button><button class="btn sm bad" data-act="del" data-id="${x.id}">Borrar</button></div>`).join('') || '<p class="empty">Todavía no tienes sitios.</p>'}</section></div></div>`, {
+    async save(d) {
+      if (!d.img) delete d.img;
+      if (ed) { await db.update('sites', ed.id, d); toast('Sitio actualizado'); return params.nav ? params.nav(ed.slug + '.rp') : siteBuilder(el, {}); }
+      d.slug = String(d.slug).toLowerCase().trim();
+      if (!/^[a-z0-9-]{3,40}$/.test(d.slug)) throw new Error('La dirección solo puede tener minúsculas, números y guiones (3 a 40)');
+      if (await resolveSite(d.slug + '.rp')) throw new Error('Esa dirección ya está ocupada');
+      await db.insert('sites', { ...d, owner_char: S.char.id }); toast('¡Sitio publicado!'); params.nav ? params.nav(d.slug + '.rp') : siteBuilder(el, {});
+    },
+    edit: d => siteBuilder(el, { ...params, id: d.id }),
+    del: async d => { if (!confirm('¿Borrar este sitio?')) return; await db.remove('sites', d.id); siteBuilder(el, params); },
+  });
+}
+
 const safari = { id: 'safari', name: 'Safari', icon: '🧭', bg: '#1e90ff,#0a5bd8', url: 'google.rp', show: () => true, render: el => buscar.render(el, {}) };
 
 // ============ BOLSA DE TRABAJO ============
@@ -433,13 +571,17 @@ const empleos = { id: 'empleos', name: 'LinkedIn', icon: '💼', bg: '#0a66c2,#0
     const mine = (await myRequests()).filter(r => r.type === 'job');
     const cos = (await db.list('companies')).filter(c => c.owners.includes(S.char.id));
     let body = '';
-    if (tab === 'ofertas') body = jobs.map(j => `<div class="card"><div class="row"><b>${esc(j.title)}</b>${j.role_tag ? '<span class="tag on">Gobierno</span>' : ''}</div>
-      <div class="muted">${esc(j.employer)} · ${j.role_tag ? money((rankList(j.role_tag)[0]?.salary || 0) * cpi()) + ' al año · pago diario' : money(j.salary) + ' por pago'}</div><p>${esc(j.description || '')}</p>
+    const yr = j => (rankList(j.role_tag)[0]?.salary || 0) * cpi(), top = j => (rankList(j.role_tag).at(-1)?.salary || 0) * cpi();
+    if (tab === 'ofertas') body = `<div class="card info"><b>¿Cómo se paga?</b><p class="muted">El sueldo del gobierno es <b>anual</b> (como en la vida real) y se paga <b>un pedacito cada día real</b>: sueldo del año ÷ 365. Para cobrar ese día tienes que trabajar mínimo ${set('job_min_minutes')} min (fichar en Workday). Es decir, <b>1 año de sueldo = 365 días reales</b> trabajando.</p></div>`
+      + jobs.map(j => `<div class="card"><div class="row"><b>${esc(j.title)}</b>${j.role_tag ? '<span class="tag on">Gobierno</span>' : ''}</div>
+      <div class="muted">${esc(j.employer)}</div>
+      <div class="pay">${j.role_tag ? `<b>${money(yr(j) / 365)}</b> al día · <b>${money(yr(j) / 12)}</b> al mes · <b>${money(yr(j))}</b> al año <small class="muted">(rango inicial; el más alto gana ${money(top(j))} al año)</small>` : `<b>${money(j.salary)}</b> al día <small class="muted">(lo paga el empleador)</small>`}</div>
+      <p>${esc(JOB_DESC[j.role_tag] || j.description || '')}</p>
       ${mine.some(r => r.data.job_id === j.id && r.status === 'pending') ? badge('pending') : `<button class="btn sm" data-act="aplicar" data-id="${j.id}">Postularme</button>`}</div>`).join('') || '<p class="empty">No hay vacantes.</p>';
     if (tab === 'mias') body = `<ul class="list">${mine.map(r => `<li><div><b>${esc(r.data.job_title)}</b><div class="muted">${esc(r.data.employer)}${r.note ? ' · ' + esc(r.note) : ''}</div></div>${badge(r.status)}</li>`).join('') || '<p class="empty">Sin postulaciones.</p>'}</ul>`;
     if (tab === 'publicar') body = form('pub', [{ k: 'title', label: 'Puesto', req: 1 },
       { k: 'company_id', label: 'Empleador', type: 'select', options: [['', 'A mi nombre'], ...cos.map(c => [c.id, c.name])] },
-      { k: 'salary', label: 'Sueldo por pago (USD)', type: 'number', min: 0, req: 1 }, { k: 'description', label: 'Requisitos y descripción', type: 'textarea', req: 1 }], {}, 'Publicar vacante')
+      { k: 'salary', label: 'Sueldo por día (USD) — lo pagas tú', type: 'number', min: 0, req: 1 }, { k: 'description', label: 'Requisitos y descripción', type: 'textarea', req: 1 }], {}, 'Publicar vacante')
       + `<h3>Mis vacantes</h3><ul class="list">${jobs.filter(j => j.posted_by === S.char.id).map(j => `<li>${esc(j.title)} <button class="btn sm bad" data-act="cerrar" data-id="${j.id}">Cerrar</button></li>`).join('') || '<li class="muted">Ninguna</li>'}</ul>`;
     view(el, `${tabs([['ofertas', 'Vacantes'], ['mias', 'Mis postulaciones'], ['publicar', 'Publicar'], ['recibidas', 'Recibidas']], tab)}<div class="tabbody">${body}</div>`, {
       tab: d => this.render(el, d.t),
@@ -483,7 +625,7 @@ const bolsa = { id: 'bolsa', name: 'GBM+', icon: '📈', bg: '#0b1f3a,#1c4f8f', 
       db.list('price_history', { order: 'created_at', asc: true, limit: 5000 }), db.list('trades', { eq: { character_id: S.char.id } })]);
     const H = id => hold.find(x => x.company_id === id && x.shares > 0), series = c => [...hist.filter(p => p.company_id === c.id).map(p => +p.price), c.price];
     const day = c => { const s = hist.filter(p => p.company_id === c.id && new Date(p.created_at) > Date.now() - 864e5); return pct(c.price, s[0]?.price ?? series(c)[0]); };
-    const mine = cos.filter(c => H(c.id)), value = mine.reduce((s, c) => s + H(c.id).shares * c.price, 0), cost = mine.reduce((s, c) => s + Number(H(c.id).cost || 0), 0);
+    const mine = cos.filter(c => H(c.id)?.shares > 0), value = mine.reduce((s, c) => s + H(c.id).shares * c.price, 0), cost = mine.reduce((s, c) => s + Number(H(c.id).cost || 0), 0);
     const go = p => { Object.assign(st, p); bolsa.render(el, params); };
     let body = '';
     if (st.id) {
@@ -512,7 +654,7 @@ const bolsa = { id: 'bolsa', name: 'GBM+', icon: '📈', bg: '#0b1f3a,#1c4f8f', 
       async orden(f) {
         if (!acc) throw new Error('Necesitas tu cuenta personal');
         const r = st.side === 'sell' ? await db.rpc('sell_shares', { company: st.id, qty: f.qty, acc: acc.id }) : await db.rpc('buy', { kind: 'shares', item: st.id, acc: acc.id, qty: f.qty });
-        toast(`Orden ejecutada: ${st.side === 'sell' ? 'vendiste' : 'compraste'} ${f.qty} títulos por ${money(r)}`); go({});
+        toast(`Orden ejecutada: ${st.side === 'sell' ? 'vendiste' : 'compraste'} ${f.qty} títulos por ${money(r)}`); go({}); window.liveRefresh?.();
       },
     });
     const q = el.querySelector('[name=qty]'), est = el.querySelector('[data-est]'), c = st.id && cos.find(x => x.id === st.id);
@@ -530,17 +672,23 @@ const casas = { id: 'casas', name: 'Zillow', icon: '🏠', bg: '#006aff,#0041a8'
     const kind = el.dataset.kind || 'casa';
     view(el, `${tabs([['casa', 'Casas'], ['local', 'Locales comerciales']], kind)}<p class="muted">El gobierno vende a precio de lista (ajustado por inflación). Las inmobiliarias registradas (giro Bienes Raíces) compran al 50% y revenden al precio que quieran.</p>
       ${lvl() >= 3 ? '<button class="btn sm" data-act="nueva">+ Agregar propiedad (admin)</button>' : ''}
-      <div class="grid-cards">${props.filter(p => (p.kind || 'casa') === kind).map(p => `<div class="card prop">${p.img ? `<img src="${esc(p.img)}" alt="" loading="lazy">` : `<div class="ph">${ico('casas')}</div>`}
-        <b>${esc(p.name)}</b><div class="muted">${esc(p.zone)} · Dueño: ${esc(owner(p))}</div>
+      <div class="grid-cards">${props.filter(p => (p.kind || 'casa') === kind).map(p => { const sold = !p.for_sale && (p.owner_char || p.owner_company);
+        return `<div class="card prop ${sold ? 'sold' : ''}"><div class="prop-img">${p.img ? `<img src="${esc(p.img)}" alt="" loading="lazy">` : `<div class="ph">${ico('casas')}</div>`}${sold ? '<span class="sold-tag">VENDIDA</span>' : ''}</div>
+        <b>${esc(p.name)}</b><div class="muted">📍 ${esc(p.location || 'Ubicación por asignar')} · ${esc(p.zone)}</div><div class="muted">Dueño: ${esc(owner(p))}</div>
         <div class="price">${p.for_sale ? money(p.owner_char || p.owner_company ? p.sale_price : p.price * cpi()) : 'No está en venta'}</div>
         ${p.for_sale && !mine(p) ? `<button class="btn sm ok" data-act="comprar" data-id="${p.id}">Comprar</button>` : ''}
-        ${mine(p) ? `<button class="btn sm" data-act="vender" data-id="${p.id}">${p.for_sale ? 'Cambiar precio / quitar' : 'Poner en venta'}</button>` : ''}</div>`).join('') || '<p class="empty">Aún no hay casas cargadas.</p>'}</div>`, {
+        ${mine(p) ? `<button class="btn sm" data-act="vender" data-id="${p.id}">${p.for_sale ? 'Cambiar precio / quitar' : 'Poner en venta'}</button>` : ''}
+        ${lvl() >= 3 ? `<div class="row gap"><button class="btn sm ghost" data-act="editar" data-id="${p.id}">Editar</button><button class="btn sm ghost" data-act="duplicar" data-id="${p.id}">+ Otra igual</button></div>` : ''}</div>`; }).join('') || '<p class="empty">Aún no hay casas cargadas.</p>'}</div>`, {
+      editar: d => { const p = props.find(x => x.id === d.id); modal('Editar ' + esc(p.name), form('go', [{ k: 'name', label: 'Nombre', req: 1 }, { k: 'location', label: 'Ubicación (calle, número, referencia)' },
+          { k: 'zone', label: 'Zona', type: 'select', options: ['Los Ángeles', 'River City', 'Springfield'], req: 1 }, { k: 'price', label: 'Precio base del gobierno (USD)', type: 'number', min: 1, req: 1 }, { k: 'img', label: 'Cambiar foto', type: 'file' }], p), {
+        async go(f, _, close) { if (!f.img) delete f.img; f.price = Number(f.price); await db.update('properties', p.id, f); close(); toast('Casa actualizada'); casas.render(el); } }); },
+      duplicar: async d => { const { name, zone, price, img, kind: k } = props.find(x => x.id === d.id); await db.insert('properties', { name, zone, price, img, kind: k || 'casa' }); toast('Agregada otra unidad. Ponle su ubicación con «Editar».'); casas.render(el); },
       comprar: d => modal('Comprar casa', `<form data-form="go" class="form">${accSelect(accs)}<button class="btn ok" type="submit">Confirmar compra</button></form>`, {
         async go(f, _, close) { const r = await db.rpc('buy', { kind: 'property', item: d.id, acc: f.acc }); toast('¡Casa comprada por ' + money(r) + '!'); close(); casas.render(el); } }),
       vender: d => modal('Vender casa', form('go', [{ k: 'price', label: 'Precio de venta (vacío = quitar de venta)', type: 'number', min: 1 }]), {
         async go(f, _, close) { await db.rpc('list_item', { kind: 'property', item: d.id, price: f.price }); close(); casas.render(el); } }),
       nueva: () => modal('Nueva casa', form('go', [{ k: 'name', label: 'Nombre', req: 1 }, { k: 'zone', label: 'Zona', type: 'select', options: ['River City', 'Springfield'], req: 1 },
-        { k: 'kind', label: 'Tipo', type: 'select', options: [['casa', 'Casa'], ['local', 'Local comercial']], req: 1, def: kind }, { k: 'price', label: 'Precio base', type: 'number', min: 1, req: 1 }, { k: 'img', label: 'Foto', type: 'file' }]), {
+        { k: 'location', label: 'Ubicación' }, { k: 'kind', label: 'Tipo', type: 'select', options: [['casa', 'Casa'], ['local', 'Local comercial']], req: 1, def: kind }, { k: 'price', label: 'Precio base', type: 'number', min: 1, req: 1 }, { k: 'img', label: 'Foto', type: 'file' }]), {
         async go(f, _, close) { await db.insert('properties', f); close(); casas.render(el); } }),
       tab: d => { el.dataset.kind = d.t; casas.render(el); },
     });
@@ -842,6 +990,62 @@ const robstore = { id: 'robstore', name: 'App Store', icon: '🛍️', bg: '#1fa
     });
   } };
 
+// ============ SPOTIFY ============
+// el audio vive fuera de la ventana: la música sigue aunque cierres Spotify
+const player = window.rpPlayer ??= { audio: new Audio(), queue: [], i: -1, onchange: null };
+const playAt = k => { const s = player.queue[k]; if (!s) return; player.i = k; player.audio.src = s.url; player.audio.play().catch(() => {}); player.onchange?.(); mini(); };
+player.audio.onended = () => playAt(player.i + 1 < player.queue.length ? player.i + 1 : 0);
+player.audio.onplay = player.audio.onpause = () => { player.onchange?.(); mini(); };
+function mini() { // mini reproductor flotante para controlar la música desde cualquier lado
+  let m = document.querySelector('.sp-mini'); const s = player.queue[player.i];
+  if (!s) return m?.remove();
+  if (!m) { m = Object.assign(document.createElement('div'), { className: 'sp-mini' }); document.body.append(m); }
+  m.innerHTML = `${s.cover ? `<img src="${esc(s.cover)}" alt="">` : `<span class="sp-ph">${ico('s_music', 'i')}</span>`}<div><b>${esc(s.title)}</b><small>${esc(s.artist || '')}</small></div>
+    <button data-m="prev" aria-label="Anterior">${ico('s_prevb', 'i')}</button><button data-m="pp" aria-label="Reproducir o pausar">${ico(player.audio.paused ? 's_playb' : 's_pause', 'i')}</button><button data-m="next" aria-label="Siguiente">${ico('s_next', 'i')}</button><button data-m="x" aria-label="Cerrar">✕</button>`;
+  m.onclick = e => { const k = e.target.closest('[data-m]')?.dataset.m; if (k === 'pp') player.audio.paused ? player.audio.play() : player.audio.pause(); if (k === 'next') playAt((player.i + 1) % player.queue.length);
+    if (k === 'prev') playAt(Math.max(0, player.i - 1)); if (k === 'x') { player.audio.pause(); player.queue = []; player.i = -1; m.remove(); } };
+}
+const likedSongs = () => { try { return JSON.parse(localStorage.getItem('rp_songs') || '[]'); } catch { return []; } };
+const spotify = { id: 'spotify', name: 'Spotify', icon: '🎧', bg: '#1db954,#13863b', show: () => true,
+  async render(el, tab = 'home') {
+    if (typeof tab === 'object') tab = 'home';
+    const songs = await db.list('songs', { order: 'created_at', asc: false }).catch(() => []), liked = likedSongs(), q = (el.dataset.q || '').toLowerCase();
+    const list = tab === 'liked' ? songs.filter(s => liked.includes(s.id)) : tab === 'mine' ? songs.filter(s => S.chars.some(c => c.id === s.uploader_char)) : songs.filter(s => !q || (s.title + ' ' + s.artist).toLowerCase().includes(q));
+    const cur = player.queue[player.i], artists = [...new Set(songs.map(s => s.artist).filter(Boolean))].slice(0, 8);
+    view(el, `<div class="spfy"><aside class="sp-side"><b class="sp-logo">${ico('spotify', 'i')} Spotify</b>
+        <button class="${tab === 'home' ? 'on' : ''}" data-act="tab" data-t="home">${ico('s_home', 'i')} Inicio</button><button class="${tab === 'liked' ? 'on' : ''}" data-act="tab" data-t="liked">${ico('s_heart', 'i')} Tus me gusta</button>
+        <button class="${tab === 'mine' ? 'on' : ''}" data-act="tab" data-t="mine">${ico('s_music', 'i')} Mis canciones</button>${S.char?.status === 'active' ? `<button data-act="subir">${ico('s_new', 'i')} Subir canción</button>` : ''}</aside>
+      <main class="sp-main"><form data-form="buscar" class="sp-search">${ico('s_search', 'i')}<input name="q" value="${esc(el.dataset.q || '')}" placeholder="¿Qué quieres escuchar?" autocomplete="off"></form>
+        ${tab === 'home' && !q && artists.length ? `<h2>Artistas de Los Ángeles</h2><div class="sp-artists">${artists.map(a => `<button data-act="artist" data-a="${esc(a)}"><span>${esc(a[0] || '?')}</span><b>${esc(a)}</b></button>`).join('')}</div>` : ''}
+        <h2>${tab === 'liked' ? 'Tus me gusta' : tab === 'mine' ? 'Mis canciones' : q ? 'Resultados' : 'Lo más nuevo'}</h2>
+        <div class="sp-list">${list.map((s, k) => `<div class="sp-row ${cur?.id === s.id ? 'on' : ''}" data-act="play" data-k="${k}"><span class="sp-n">${cur?.id === s.id && !player.audio.paused ? '♪' : k + 1}</span>
+          ${s.cover ? `<img src="${esc(s.cover)}" alt="">` : `<span class="sp-ph">${ico('s_music', 'i')}</span>`}<div class="grow"><b>${esc(s.title)}</b><small>${esc(s.artist || 'Artista desconocido')}</small></div>
+          <small class="muted">${esc(cname(s.uploader_char))}</small><button class="sa ${liked.includes(s.id) ? 'on' : ''}" data-act="like" data-id="${s.id}" aria-label="Me gusta">${ico('s_heart', 'i')}</button>
+          ${S.chars.some(c => c.id === s.uploader_char) || lvl() >= 2 ? `<button class="sa" data-act="del" data-id="${s.id}" aria-label="Borrar">${ico('s_trash', 'i')}</button>` : ''}</div>`).join('') || '<p class="empty">No hay canciones aquí. ¡Sube la primera!</p>'}</div></main>
+      <footer class="sp-bar">${cur ? `${cur.cover ? `<img src="${esc(cur.cover)}" alt="">` : `<span class="sp-ph">${ico('s_music', 'i')}</span>`}<div class="sp-now"><b>${esc(cur.title)}</b><small>${esc(cur.artist || '')}</small></div>` : '<div class="sp-now muted">Elige una canción</div>'}
+        <div class="sp-ctl"><button data-act="prev" aria-label="Anterior">${ico('s_prevb', 'i')}</button><button class="sp-pp" data-act="pp" aria-label="Reproducir o pausar">${ico(player.audio.paused ? 's_playb' : 's_pause', 'i')}</button><button data-act="next" aria-label="Siguiente">${ico('s_next', 'i')}</button>
+          <input type="range" class="sp-seek" min="0" max="1000" value="0" aria-label="Avance"></div><input type="range" class="sp-vol" min="0" max="100" value="${Math.round(player.audio.volume * 100)}" aria-label="Volumen"></footer></div>`, {
+      tab: d => { el.dataset.q = ''; spotify.render(el, d.t); },
+      buscar: d => { el.dataset.q = d.q || ''; spotify.render(el, 'home'); },
+      artist: d => { el.dataset.q = d.a; spotify.render(el, 'home'); },
+      play: (d, t) => { if (t.closest('[data-act=like],[data-act=del]')) return; player.queue = list; playAt(+d.k); },
+      pp: () => player.audio.src ? (player.audio.paused ? player.audio.play() : player.audio.pause()) : list.length && (player.queue = list, playAt(0)),
+      next: () => player.queue.length && playAt((player.i + 1) % player.queue.length), prev: () => player.queue.length && playAt(Math.max(0, player.i - 1)),
+      like: d => { const l = likedSongs(), k = l.indexOf(d.id); k < 0 ? l.push(d.id) : l.splice(k, 1); localStorage.setItem('rp_songs', JSON.stringify(l)); spotify.render(el, tab); },
+      del: async d => { if (!confirm('¿Borrar esta canción?')) return; await db.remove('songs', d.id); spotify.render(el, tab); },
+      subir: () => modal('Subir canción', form('up', [{ k: 'title', label: 'Título', req: 1 }, { k: 'artist', label: 'Artista', def: S.char ? cname(S.char.id) : '' },
+        { k: 'url', label: 'Archivo de audio (MP3, M4A, WAV…)', type: 'file', accept: 'audio/*', req: 1 }, { k: 'cover', label: 'Portada (opcional)', type: 'file' }]) + '<p class="muted small">Sube solo música tuya o que tengas permiso de compartir.</p>', {
+        async up(f, _, close) { await db.insert('songs', { ...f, cover: f.cover || null, uploader_char: S.char.id }); close(); toast('Canción subida 🎵'); spotify.render(el, 'mine'); } }),
+    });
+    // barra de avance y volumen en vivo
+    const seek = el.querySelector('.sp-seek'), vol = el.querySelector('.sp-vol'), a = player.audio;
+    const tick = () => { if (!el.isConnected) return a.removeEventListener('timeupdate', tick); if (a.duration) seek.value = a.currentTime / a.duration * 1000; };
+    a.addEventListener('timeupdate', tick);
+    seek.oninput = () => { if (a.duration) a.currentTime = seek.value / 1000 * a.duration; };
+    vol.oninput = () => { a.volume = vol.value / 100; };
+    player.onchange = () => el.isConnected && spotify.render(el, tab);
+  } };
+
 // ============ AJUSTES ============
 const ajustes = { id: 'ajustes', name: 'Ajustes', icon: '⚙️', bg: '#8e8e93,#636366', show: () => true,
   async render(el) {
@@ -966,10 +1170,11 @@ const staffApp = { id: 'staff', name: 'Panel Staff', icon: '🛡️', bg: '#8e2d
 
     if (tab === 'sanc') {
       const bans = await db.list('bans'), K = { ban: '🔨 Ban', warn: '⚠️ Warn', aislamiento: '🔇 Aislamiento', blacklist: '🚫 Black-list', vetado: '🥊 Vetado del staff' };
-      body = `${L >= 2 ? form('add', [{ k: 'kind', label: 'Tipo', type: 'select', options: Object.entries(K), req: 1 }, { k: 'username', label: 'Usuario de la web' },
+      body = `<div class="whobox"><input class="filter" placeholder="Buscar persona por usuario, Roblox, Discord o nombre de su vida (ej. angel)…" data-who autocomplete="off"><div class="who-list" hidden></div></div>
+        ${L >= 2 ? form('add', [{ k: 'kind', label: 'Tipo', type: 'select', options: Object.entries(K), req: 1 }, { k: 'username', label: 'Usuario de la web' },
         { k: 'roblox', label: 'Roblox' }, { k: 'discord', label: 'Discord' }, { k: 'reason', label: 'Motivo / pruebas', type: 'textarea', req: 1 }, { k: 'until', label: 'Hasta (vacío = permanente)', type: 'date' }], {}, 'Registrar sanción') : ''}
         <table class="tbl"><thead><tr><th>Tipo</th><th>Usuario</th><th>Roblox</th><th>Discord</th><th>Motivo</th><th>Hasta</th><th>Por</th><th></th></tr></thead><tbody>
-        ${bans.map(b => `<tr><td>${K[b.kind] || esc(b.kind)}</td><td>${esc(b.username)}</td><td>${esc(b.roblox)}</td><td>${esc(b.discord)}</td><td>${esc(b.reason)}</td><td>${esc(b.until || 'Perm.')}</td>
+        ${bans.map(b => `<tr class="brow" data-s="${esc([b.username, b.roblox, b.discord].join(' ').toLowerCase())}"><td>${K[b.kind] || esc(b.kind)}</td><td>${esc(b.username)}</td><td>${esc(b.roblox)}</td><td>${esc(b.discord)}</td><td>${esc(b.reason)}</td><td>${esc(b.until || 'Perm.')}</td>
           <td>${esc(profiles.find(p => p.id === b.by_user)?.username)}</td><td>${L >= 3 ? `<button class="link" data-act="quitar" data-id="${b.id}">Quitar</button>` : ''}</td></tr>`).join('')}</tbody></table>`;
       Object.assign(acts, {
         async add(d) { await db.insert('bans', { ...d, until: d.until || null, by_user: S.me.id });
@@ -1007,6 +1212,9 @@ const staffApp = { id: 'staff', name: 'Panel Staff', icon: '🛡️', bg: '#8e2d
         <h3>Pago por robo aprobado (rango aleatorio)</h3><form data-form="robos" class="form"><table class="tbl"><tr><th>Robo</th><th>Mínimo</th><th>Máximo</th></tr>
           ${Object.entries(robos).map(([k, [a, b]]) => `<tr><td>${esc(k)}</td><td><input type="number" min="0" name="${esc(k)}.0" value="${a}"></td><td><input type="number" min="0" name="${esc(k)}.1" value="${b}"></td></tr>`).join('')}</table>
           <button class="btn" type="submit">Guardar rangos</button></form>
+        <h3>Sueldo del staff (al año; se paga ÷365 cada día que cumplan ${set('staff_min_minutes')} min en servicio)</h3><form data-form="staffpay" class="form"><table class="tbl">
+          ${STAFF.map(([k, l]) => `<tr><td>${esc(l)}</td><td><input type="number" min="0" name="${k}" value="${set('staff_salary')[k] ?? 0}"></td><td class="muted">${money((set('staff_salary')[k] ?? 0) / 365)} al día</td></tr>`).join('')}</table>
+          <button class="btn" type="submit">Guardar sueldos del staff</button></form>
         <h3>Ingresos diarios de negocios (los paga el Tesoro según el giro)</h3><form data-form="biz" class="form"><table class="tbl"><tr><th>Giro</th><th>USD por día</th></tr>
           ${Object.entries(set('biz_income') || {}).map(([k, v]) => `<tr><td>${esc(k)}</td><td><input type="number" min="0" name="${esc(k)}" value="${v}"></td></tr>`).join('')}</table>
           <label class="fld"><span>Pago a influencers por cada like (USD)</span><input type="number" min="0" name="__like" value="${set('influencer_like_pay') ?? 15}"></label>
@@ -1023,6 +1231,7 @@ const staffApp = { id: 'staff', name: 'Panel Staff', icon: '🛡️', bg: '#8e2d
             if (r && Number(v) !== Number(r.salary)) { await db.upsert('dept_ranks', { ...r, salary: Number(v) }, 'dept,rank'); r.salary = Number(v); } } toast('Sueldos guardados'); go('eco'); },
         async give(d) { const acc = (await db.list('accounts', { eq: { kind: 'personal' }, contains: { owners: [d.char] } }))[0];
           if (!acc) throw new Error('Ese personaje no tiene cuenta'); await db.rpc('staff_pay', { acc: acc.id, amount: d.amount, concept: d.concept }); toast('Listo'); },
+        staffpay: async d => { for (const k in d) d[k] = Number(d[k]); await save('staff_salary', d); toast('Sueldos guardados'); go('eco'); },
         biz: async d => { const { __like, ...o } = d; for (const k in o) o[k] = Number(o[k]); await save('biz_income', o); await save('influencer_like_pay', Number(__like)); toast('Guardado'); go('eco'); },
         robos: async d => { const o = {}; for (const [k, v] of Object.entries(d)) { const i = k.lastIndexOf('.'); (o[k.slice(0, i)] ??= [0, 0])[+k.slice(i + 1)] = v || 0; } await save('robos', o); toast('Guardado'); go('eco'); },
         otros: async d => { for (const k of ['start_money', 'visa_days', 'job_min_minutes', 'prison_min_per_year', 'trial_years']) await save(k, d[k]); await db.rpc('set_fed_rate', { rate: d.fed_rate }); S.settings.fed_rate = d.fed_rate; toast('Guardado'); go('eco'); },
@@ -1062,6 +1271,18 @@ const staffApp = { id: 'staff', name: 'Panel Staff', icon: '🛡️', bg: '#8e2d
     const fil = () => { const q = (el.querySelector('[data-filter]')?.value || '').toLowerCase(), r = (el.querySelector('[data-rolefilter]')?.value || '').toLowerCase();
       el.querySelectorAll('.urow').forEach(x => x.hidden = !x.dataset.s.includes(q) || (r && !x.dataset.s.includes(r))); };
     el.querySelector('[data-filter]')?.addEventListener('input', fil); el.querySelector('[data-rolefilter]')?.addEventListener('change', fil);
+    // sanciones: buscador con sugerencias mientras escribes (usuario, Roblox, Discord o nombre de la vida)
+    const who = el.querySelector('[data-who]'), wl = el.querySelector('.who-list');
+    who?.addEventListener('input', () => {
+      const q = who.value.trim().toLowerCase();
+      el.querySelectorAll('.brow').forEach(r => r.hidden = !!q && !r.dataset.s.includes(q));
+      const hits = !q ? [] : profiles.filter(p => [p.username, p.roblox, p.discord, ...S.all.filter(c => c.user_id === p.id).map(c => c.first_name + ' ' + c.last_name)].join(' ').toLowerCase().includes(q)).slice(0, 8);
+      wl.hidden = !hits.length;
+      wl.innerHTML = hits.map(p => `<button type="button" data-u="${p.id}">${av(p.avatar_url, 'av sm')}<span><b>${esc(p.username)}</b><small class="muted">Roblox: ${esc(p.roblox)} · Discord: ${esc(p.discord)}${S.all.some(c => c.user_id === p.id) ? ' · ' + esc(S.all.filter(c => c.user_id === p.id).map(c => c.first_name + ' ' + c.last_name).join(', ')) : ''}</small></span></button>`).join('');
+    });
+    wl?.addEventListener('click', e => { const b = e.target.closest('[data-u]'); if (!b) return; const p = profiles.find(x => x.id === b.dataset.u), f = el.querySelector('form[data-form=add]');
+      if (f) { f.username.value = p.username; f.roblox.value = p.roblox || ''; f.discord.value = p.discord || ''; f.reason.focus(); }
+      who.value = p.username; wl.hidden = true; who.dispatchEvent(new Event('input')); wl.hidden = true; });
     if (tab === 'aprob') reviewQueue(el.querySelector('.q'), { title: 'Trámites para staff' });
   } };
 const rolesPicker = cur => `<div class="roles">${Object.entries(ROLES).map(([g, rs]) => `<fieldset><legend>${g}</legend>${rs.map(r => `<label class="chk"><input type="checkbox" name="role" value="${esc(r)}" ${cur.includes(r) || r === 'Ciudadano' ? 'checked' : ''} ${r === 'Ciudadano' ? 'disabled title="Toda vida es ciudadana"' : ''}> ${esc(r)}</label>`).join('')}</fieldset>`).join('')}</div>`;
@@ -1094,6 +1315,6 @@ export async function seed() {
   if (g && Number(g.balance) === 0) await db.rpc('staff_pay', { acc: g.id, amount: 13950000000, concept: 'Presupuesto inicial FY 2025-26', mint: true });
 }
 
-export const APPS = [vida, banco, gobierno, safari, docs, documentos, licencias, trabajo, mensajes,
-  social('x', 'X', '𝕏', '#000000,#1c1c1c', false), social('insta', 'Instagram', '📸', '#833ab4,#fd1d1d,#fcb045', true),
+export const APPS = [vida, banco, gobierno, safari, docs, documentos, licencias, spotify, trabajo, mensajes,
+  social('x', 'X', '𝕏', '#000000,#1c1c1c'), social('insta', 'Instagram', '📸', '#833ab4,#fd1d1d,#fcb045'),
   news, buscar, empleos, bolsa, casas, autos, fec, corte, policia, prision, taxi, soporte, resenas, robstore, staffApp, ajustes];

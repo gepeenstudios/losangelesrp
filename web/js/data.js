@@ -149,6 +149,9 @@ export const TRAMITES = {
   servicio_militar: { cat:'Gobierno', name:'Servicio militar', icon:'🪖', dept:['Ejército','US Seal','US Navy Seal','staff:admin'], needs:['dni'], discord:()=>'Servicio Militar', role:'Ejército',
     fields:[{k:'rama',label:'Rama',type:'select',options:['Ejército (Army)','Marina (Navy)','Navy SEAL','Fuerza Aérea','Guardia Nacional'],req:1},
       {k:'experiencia',label:'Experiencia en rol militar',type:'textarea',req:1},{k:'disponibilidad',label:'Disponibilidad (días/horas)',req:1}]},
+  verificacion_ig: { cat:'Negocios', name:'Verificación de cuenta (Instagram y X)', icon:'✔️', dept:['staff:admin'], cost:5, hidden:true,
+    desc:'La palomita azul cuesta $5 al mes. Si un admin la aprueba, tu cuenta queda verificada 30 días; después puedes renovarla.',
+    fields:[{k:'motivo',label:'¿Por qué deberías estar verificado? (influencer, empresa, figura pública…)',type:'textarea',req:1}]},
   app_store: { cat:'Negocios', name:'Permiso para publicar una app', icon:'📱', dept:['staff:owner'], cost:100,
     desc:'Pagas $100 por el permiso y describes la app que quieres. El equipo de la ciudad la programa por ti y la publica en el App Store con tu nombre.',
     fields:[{k:'nombre',label:'Nombre de la app',req:1},{k:'icono',label:'Ícono (un emoji)',def:'📱',req:1},
@@ -175,7 +178,9 @@ export const DEFAULT_SETTINGS = {
   start_money: 5000, cpi: 1, fed_rate: 4.5, job_min_minutes: 60, prison_min_per_year: 5, trial_years: 10,
   visa_days: 7,
   elecciones: { registro_hasta: 20, votacion_desde: 21, votacion_hasta: 27 }, // días del mes; el ganador gobierna todo el mes siguiente
-  influencer_like_pay: 15, // USD por like recibido (paga el Tesoro)
+  influencer_like_pay: 15,
+  staff_salary: { helper: 38000, mod: 52000, admin: 70000, coowner: 95000, owner: 120000 }, // USD al año, se paga ÷365 cada día con servicio
+  staff_min_minutes: 30, // USD por like recibido (paga el Tesoro)
   biz_income: { 'Concesionaria':1200,'Bienes Raíces':1000,'Restaurante / Bar':600,'Tienda / Retail':500,'Taller mecánico':550,'Seguridad privada':700,
     'Transporte / Taxi':450,'Armería':800,'Construcción':900,'Banca / Finanzas':1100,'Medios / Noticiero':500,'Otro':400 }, // USD diarios del Tesoro
   payroll: { 'Policía':1500,'SWAT':2000,'FBI':2200,'Bomberos':1400,'Servicios Médicos':1400,'DOT':1100,'Ejército':1600,
@@ -314,14 +319,29 @@ export const SEED_PROPS = [ // [nombre, zona, precio base, foto] — tipos de ca
   ['Mansión Moderna', 'Los Ángeles', 850000, 'img/casas/mansion-moderna.jpg'],
   ['Mansión Agrícola', 'Los Ángeles', 700000, 'img/casas/mansion-agricola.jpg'],
   ['Craftsman Mansion', 'Los Ángeles', 600000, 'img/casas/craftsman-mansion.jpg'],
-  ['Casa de bajos ingresos', 'Los Ángeles', 45000, 'img/casas/bajos-ingresos.jpg'],
-  ['Casa de bajos ingresos (más pequeña)', 'Los Ángeles', 38000, 'img/casas/bajos-ingresos-pequena.jpg'],
-  ['Casa de bajos ingresos (con garaje)', 'Los Ángeles', 52000, 'img/casas/bajos-ingresos-garaje.jpg'],
-  ['Casa de bajos ingresos (mejores vistas)', 'Los Ángeles', 58000, 'img/casas/bajos-ingresos-vistas.jpg'],
-  ['Remolque individual', 'Los Ángeles', 18000, 'img/casas/remolque-individual.jpg'],
-  ['Remolque doble', 'Los Ángeles', 26000, 'img/casas/remolque-doble.jpg'],
+  ['Casa de bajos ingresos', 'Los Ángeles', 22000, 'img/casas/bajos-ingresos.jpg'],
+  ['Casa de bajos ingresos (más pequeña)', 'Los Ángeles', 18000, 'img/casas/bajos-ingresos-pequena.jpg'],
+  ['Casa de bajos ingresos (con garaje)', 'Los Ángeles', 26000, 'img/casas/bajos-ingresos-garaje.jpg'],
+  ['Casa de bajos ingresos (mejores vistas)', 'Los Ángeles', 30000, 'img/casas/bajos-ingresos-vistas.jpg'],
+  ['Remolque individual', 'Los Ángeles', 38000, 'img/casas/remolque-individual.jpg'],
+  ['Remolque doble', 'Los Ángeles', 52000, 'img/casas/remolque-doble.jpg'],
   ['Log Cabin (montaña)', 'Los Ángeles', 160000, 'img/casas/log-cabin.jpg'],
 ];
+// Qué hace cada trabajo del gobierno (se muestra en LinkedIn)
+export const JOB_DESC = {
+  'Policía': 'Patrullas la ciudad, atiendes llamadas al 911, haces arrestos, pones multas y levantas reportes en el MDT. Subes de rango de Cadete a Jefe de Policía.',
+  'Bomberos': 'Apagas incendios, rescatas personas atrapadas y atiendes choques. Revisas que los negocios cumplan las normas contra incendios.',
+  'Servicios Médicos': 'Atiendes emergencias en la calle, das primeros auxilios, reanimas con desfibrilador y trasladas heridos al hospital.',
+  'DOT': 'Controlas el tráfico, retiras autos mal estacionados con grúa, pones conos en accidentes y mantienes las calles en orden.',
+  'Ejército': 'Entrenas, cuidas bases e instalaciones del gobierno y apoyas en emergencias grandes cuando el presidente lo ordena.',
+  'Abogado Público': 'Defiendes gratis a quien no puede pagar abogado: hablas con el detenido, revisas su caso y lo representas en los juicios.',
+  'Taxi': 'Llevas pasajeros por la ciudad con la app de Uber/taxi. Cobras cada viaje y te calificas según tu servicio.',
+  'Cartero': 'Entregas paquetes y cartas a casas y negocios siguiendo tu ruta del día.',
+  'Basurero': 'Recoges la basura de las calles y contenedores con el camión y la llevas al relleno sanitario.',
+  'Prensa': 'Investigas, entrevistas y publicas noticias en LA Times sobre lo que pasa en la ciudad: crímenes, política y eventos.',
+  'Seguridad Pública': 'Vigilas edificios del gobierno, eventos y lugares importantes; controlas accesos y apoyas a la policía.',
+  'DMV': 'Haces exámenes de manejo, entregas licencias de conducir y registras placas de autos en las oficinas del gobierno.',
+};
 export const SEED_JOBS = [
   ['Oficial LAPD','Policía de Los Ángeles (LAPD)','Policía'],['Bombero LAFD','Bomberos de Los Ángeles (LAFD)','Bomberos'],
   ['Paramédico','Servicios Médicos de Emergencia','Servicios Médicos'],['Agente DOT','Departamento de Transporte','DOT'],

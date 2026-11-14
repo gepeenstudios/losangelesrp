@@ -39,6 +39,14 @@ export function toast(msg, kind = 'ok') {
   const t = Object.assign(document.createElement('div'), { className: 'toast ' + kind, textContent: msg });
   document.body.append(t); setTimeout(() => t.remove(), 4500);
 }
+// Notificación estilo macOS/iOS (arriba a la derecha), p. ej. al recibir un mensaje
+export function notify({ icon = '', title, body, onclick }) {
+  let box = document.querySelector('.notifs'); if (!box) { box = Object.assign(document.createElement('div'), { className: 'notifs' }); document.body.append(box); }
+  const n = document.createElement('button'); n.className = 'notif'; n.innerHTML = `<span class="n-ic">${icon}</span><span class="n-tx"><b>${esc(title)}</b><span>${esc(body)}</span></span><small>ahora</small>`;
+  const bye = () => { n.classList.add('out'); setTimeout(() => n.remove(), 300); };
+  n.onclick = () => { onclick?.(); bye(); }; box.prepend(n); setTimeout(bye, 7000);
+  try { new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=').play().catch(() => {}); } catch {}
+}
 export function modal(title, html, acts = {}) {
   const m = document.createElement('div');
   m.className = 'modal';
@@ -170,6 +178,11 @@ export const ON_APPROVE = {
   async partido(r) {
     await db.insert('parties', { name: r.data.nombre, siglas: r.data.siglas || null, ideologia: r.data.ideologia, logo: r.data.logo || null, owner_char: r.character_id });
     return 'Partido registrado. El dueño debe poner la contraseña del partido en Vote.gov → Mi partido.';
+  },
+  async verificacion_ig(r) {
+    const c = S.all.find(x => x.id === r.character_id), base = c?.ig_verified_until && new Date(c.ig_verified_until) > new Date() ? new Date(c.ig_verified_until) : new Date();
+    await db.update('characters', r.character_id, { ig_verified_until: new Date(+base + 30 * 864e5).toISOString() }); // 30 días por cada pago de $5
+    return 'Cuenta verificada por 30 días ✔️';
   },
   app_store() { return 'Permiso aprobado. El Owner programará la app como la pediste y la publicará en el App Store.'; },
   async placa(r) { if (r.data.vehiculo && r.data.vehiculo !== 'inicial') await db.update('vehicles', r.data.vehiculo, { plate: r.data.placa.toUpperCase() }); return 'Placa asignada.'; },

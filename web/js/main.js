@@ -1,6 +1,6 @@
 // Arranque y "sistema operativo": macOS en PC, iOS en celular (lo decide el CSS por ancho de pantalla)
 import * as db from './db.js';
-import { S, esc, money, lvl, loadMe, toast, view, fieldsHTML, cname, myAccounts, modal } from './core.js';
+import { S, esc, money, lvl, loadMe, toast, view, fieldsHTML, cname, myAccounts, modal, notify } from './core.js';
 import { APPS, seed, resolveSite } from './apps.js';
 import { WALLPAPERS, STAFF_NAME, TRAMITES } from './data.js';
 import { lifeWizard } from './vida.js';
@@ -294,14 +294,25 @@ async function boot() {
   if (S.me.banned) return wait('🔨', 'Tu cuenta está baneada. Puedes apelar desde soporte.');
   if (!S.chars.length) return lifeWizard(root, { onDone: boot }); // lo primero: crear tu vida
   if (!S.me.verified) return wait('⏳', `Hola <b>${esc(S.me.username)}</b>. Tu vida ya quedó registrada. Un admin está verificando tu Roblox <b>${esc(S.me.roblox)}</b> y tu Discord <b>${esc(S.me.discord)}</b>.`);
-  shell();
+  shell(); checkMessages(true).catch(() => {});
 }
 window.refreshShell = async reopen => { await loadMe(); await shell(); if (reopen) openApp(reopen); };
 // ---------- tiempo real ----------
 let rtTimer;
+// avisa de mensajes nuevos (WhatsApp o Instagram) que llegaron desde la última revisión
+async function checkMessages(first) {
+  const ids = S.chars.filter(c => c.status === 'active').map(c => c.id); if (!ids.length) return;
+  const key = 'rp_lastmsg_' + S.me.id, last = localStorage.getItem(key) || '';
+  const inbox = (await Promise.all(ids.map(id => db.list('messages', { eq: { to_char: id }, limit: 20 })))).flat().filter(m => m.created_at > last).sort((a, b) => a.created_at.localeCompare(b.created_at));
+  if (inbox.length) localStorage.setItem(key, inbox.at(-1).created_at);
+  if (first && !last) return; // la primera vez solo marca dónde vamos
+  inbox.slice(-3).forEach(m => notify({ icon: `<img class="av sm" src="${esc(S.all.find(c => c.id === m.from_char)?.skin_url || '')}" alt="">`, title: (m.via === 'insta' ? 'Instagram · ' : 'Mensajes · ') + cname(m.from_char), body: m.body,
+    onclick: () => openApp(m.via === 'insta' ? 'insta' : 'mensajes') }));
+}
 const liveRefresh = async () => {
   if (!S.me || !root.querySelector('#os')) return;
   await loadMe();
+  checkMessages().catch(() => {});
   myAccounts().then(a => { const p = a.find(x => x.kind === 'personal'); if (p) root.querySelectorAll('.cash,.wb-bal').forEach(x => x.textContent = money(p.balance)); });
   for (const a of APPS.filter(a => a.show() && a.badge)) a.badge().then(n => { const b = root.querySelector(`[data-b="${a.id}"]`); if (b) { b.hidden = !n; b.textContent = n; } });
   // vuelve a pintar las ventanas abiertas, salvo donde el usuario está escribiendo

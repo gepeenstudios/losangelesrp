@@ -71,7 +71,7 @@ create table if not exists tickets(
   replies jsonb default '[]', created_at timestamptz default now());
 
 create table if not exists messages(
-  id uuid primary key default gen_random_uuid(), from_char uuid, to_char uuid, body text,
+  id uuid primary key default gen_random_uuid(), from_char uuid, to_char uuid, body text, via text,
   created_at timestamptz default now());
 
 create table if not exists companies(
@@ -90,7 +90,7 @@ create table if not exists jobs(
 
 create table if not exists properties(
   id uuid primary key default gen_random_uuid(), name text, zone text, price numeric,
-  owner_char uuid, owner_company uuid, for_sale bool default true, sale_price numeric, img text,
+  owner_char uuid, owner_company uuid, for_sale bool default true, sale_price numeric, img text, location text,
   created_at timestamptz default now());
 
 create table if not exists vehicle_models(
@@ -198,12 +198,13 @@ create trigger t_profiles before insert or update on profiles for each row execu
 create or replace function characters_guard() returns trigger language plpgsql security definer set search_path=public as $$
 begin
   if tg_op='INSERT' then
-    if staff_level() < 3 then new.status:='pending'; new.roles:='{}'; new.user_id:=auth.uid(); end if;
+    if staff_level() < 3 then new.status:='pending'; new.roles:='{}'; new.user_id:=auth.uid(); new.ig_verified_until:=null; end if;
   else
     new.user_id:=old.user_id;
     if coalesce(current_setting('app.trusted', true), '') <> 'on' then -- 'on' = cambio de una función del servidor (contratar, despedir…)
       if staff_level() < 2 then new.status:=old.status; new.roles:=old.roles;
       elsif staff_level() < 3 then new.roles:=old.roles; end if;
+      if staff_level() < 3 then new.ig_verified_until:=old.ig_verified_until; end if; -- la palomita solo la da un admin
     end if;
   end if;
   if not 'Ciudadano' = any(coalesce(new.roles, '{}')) then new.roles := array_prepend('Ciudadano', coalesce(new.roles, '{}')); end if; -- rol base de toda vida
@@ -452,7 +453,9 @@ begin
   select * into h from holdings where character_id=c and company_id=company for update;
   if h.shares is null or h.shares < qty or qty < 1 then raise exception 'No tienes tantas acciones'; end if;
   price := share_price(company) * qty;
-  perform move_money((select case when industry='ETF' then gov_acc() else account_id end from companies where id=company), acc, price, 'Venta de acciones');
+  -- paga la empresa; si es el ETF o la empresa no tiene efectivo (lo tiene en autos/casas), la Tesorería actúa como formador de mercado
+  perform move_money((select case when co.industry='ETF' or co.account_id is null or coalesce((select balance from accounts where id=co.account_id),0) < price
+                                  then gov_acc() else co.account_id end from companies co where co.id=company), acc, price, 'Venta de acciones');
   update holdings set cost = round(cost * (shares-qty) / shares, 2), shares=shares-qty where id=h.id;
   insert into trades(character_id,company_id,side,qty,price,total) values(c,company,'venta',qty,price/qty,price);
   insert into price_history(company_id,price) values(company, share_price(company));
@@ -580,6 +583,16 @@ begin
              and exists(select 1 from characters ch where ch.id = any(co.owners) and ch.status='active') loop
     begin perform move_money(g, acc.account_id, round(coalesce((select (value->>acc.industry)::numeric from settings where key='biz_income'),400)*cpi(),2),
       'Ingresos del negocio · '||coalesce(acc.industry,'')); exception when others then null; end;
+  end loop;
+  -- el staff también cobra por moderar: sueldo anual ÷ 365 si estuvo en servicio el mínimo del día (a su primera vida activa)
+  for acc in select p.id, p.staff_role from profiles p where p.staff_role is not null loop
+    select coalesce(sum(extract(epoch from least(coalesce(ended_at,now()),(d+1)::timestamptz) - greatest(started_at,d::timestamptz))/60),0)
+      into mins from shifts where user_id=acc.id and started_at < (d+1)::timestamptz and coalesce(ended_at,now()) > d::timestamptz;
+    a := (select personal_acc(c.id) from characters c where c.user_id=acc.id and c.status='active' order by c.created_at limit 1);
+    if mins >= coalesce((select (value#>>'{}')::numeric from settings where key='staff_min_minutes'),30) and a is not null then
+      begin perform move_money(g, a, round(coalesce((select (value->>acc.staff_role)::numeric from settings where key='staff_salary'),40000)/365*cpi(),2),
+        'Nómina · Staff · '||acc.staff_role); n := n+1; exception when others then null; end;
+    end if;
   end loop;
   return n||' pagos, '||f||' despidos';
 end $$;
@@ -767,6 +780,27 @@ begin
   if amount <= 0 then raise exception 'Monto inválido'; end if;
   perform move_money(personal_acc(c), gov_acc(), amount, concept);
 end $$;
+
+alter table characters add column if not exists ig_verified_until timestamptz;
+
+-- Sitios web que crean los jugadores (Google Sites del rol)
+create table if not exists sites(
+  id uuid primary key default gen_random_uuid(), slug text unique not null, title text not null, tagline text, body text,
+  color text default '#1a73e8', img text, owner_char uuid references characters on delete cascade, created_at timestamptz default now());
+alter table sites enable row level security;
+drop policy if exists si_sel on sites; create policy si_sel on sites for select to authenticated using (true);
+drop policy if exists si_ins on sites; create policy si_ins on sites for insert to authenticated with check (owns_char(owner_char) and slug ~ '^[a-z0-9-]{3,40}$');
+drop policy if exists si_upd on sites; create policy si_upd on sites for update to authenticated using (owns_char(owner_char) or staff_level()>=3);
+drop policy if exists si_del on sites; create policy si_del on sites for delete to authenticated using (owns_char(owner_char) or staff_level()>=3);
+
+-- Spotify del rol: canciones que suben los jugadores
+create table if not exists songs(
+  id uuid primary key default gen_random_uuid(), title text not null, artist text, cover text, url text not null,
+  uploader_char uuid references characters on delete set null, created_at timestamptz default now());
+alter table songs enable row level security;
+drop policy if exists so_sel on songs; create policy so_sel on songs for select to authenticated using (true);
+drop policy if exists so_ins on songs; create policy so_ins on songs for insert to authenticated with check (owns_char(uploader_char));
+drop policy if exists so_del on songs; create policy so_del on songs for delete to authenticated using (owns_char(uploader_char) or staff_level()>=2);
 
 -- ---------- Tiempo real: la web se actualiza sola ----------
 do $$ declare t text; begin

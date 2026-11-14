@@ -141,6 +141,12 @@ const RPC = {
     }
     for (const c of T('companies')) T('price_history').push({ id: crypto.randomUUID(), company_id: c.id, price: sharePrice(c), created_at: now() });
     for (const a of T('accounts').filter(a => a.kind === 'savings' && a.balance > 0)) try { move(g, a, Math.round(a.balance * rate / 100 / 365 * 100) / 100, 'Intereses de ahorro'); } catch {}
+    const ss = setting('staff_salary', {}), smin = Number(setting('staff_min_minutes', 30)); // sueldo del staff
+    for (const p of T('profiles').filter(p => p.staff_role)) {
+      const mins = T('shifts').filter(s => s.user_id === p.id).reduce((m, s) => m + Math.max(0, (Math.min(+new Date(s.ended_at || Date.now()), +new Date(today)) - Math.max(+new Date(s.started_at), +new Date(today) - 864e5)) / 6e4), 0);
+      const ch = T('characters').find(c => c.user_id === p.id && c.status === 'active'), a = ch && personal(ch.id);
+      if (a && mins >= smin) try { move(g, a, Math.round((ss[p.staff_role] ?? 40000) / 365 * cpi() * 100) / 100, 'Nómina · Staff · ' + p.staff_role); } catch {}
+    }
     const inc = setting('biz_income', {}); // los negocios del rol no venden de verdad: el gobierno les paga según su giro
     for (const co of T('companies').filter(co => co.account_id && co.owners.some(o => T('characters').find(c => c.id === o)?.status === 'active')))
       try { move(g, T('accounts').find(a => a.id === co.account_id), Math.round((inc[co.industry] ?? 400) * cpi() * 100) / 100, 'Ingresos del negocio · ' + (co.industry || '')); } catch {}
@@ -228,7 +234,8 @@ const RPC = {
     const a = acc(id), h = T('holdings').find(x => x.character_id === a.owners[0] && x.company_id === cid);
     if (!h || h.shares < qty || qty < 1) throw new Error('No tienes tantas acciones');
     const c = company(cid), price = sharePrice(c) * qty;
-    move(c.industry === 'ETF' ? gov() : acc(c.account_id), a, price, 'Venta de acciones');
+    const ca = c.account_id && acc(c.account_id); // sin efectivo en la empresa, compra la Tesorería
+    move(c.industry === 'ETF' || !ca || ca.balance < price ? gov() : ca, a, price, 'Venta de acciones');
     h.cost = Math.round((h.cost || 0) * (h.shares - qty) / h.shares * 100) / 100; h.shares -= qty;
     T('trades').push({ id: crypto.randomUUID(), character_id: a.owners[0], company_id: cid, side: 'venta', qty, price: price / qty, total: price, created_at: now() });
     T('price_history').push({ id: crypto.randomUUID(), company_id: cid, price: sharePrice(c), created_at: now() });
