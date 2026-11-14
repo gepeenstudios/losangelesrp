@@ -130,6 +130,17 @@ export function openWindow({ key, title, iconHTML, bg, url, render }, from) {
   w.querySelector('.l-min').onclick = () => w.classList.add('min');
   w.querySelector('.l-max').onclick = () => toggleFull(w);
   w.addEventListener('pointerdown', () => focusWin(w));
+  // cambiar tamaño desde cualquier orilla o esquina; el contenido se acomoda (clase .narrow)
+  new ResizeObserver(() => w.classList.toggle('narrow', w.offsetWidth < 640)).observe(w);
+  for (const d of ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw']) { const z = document.createElement('i'); z.className = 'rz rz-' + d; w.append(z);
+    z.onpointerdown = e => { if (mobile() || w.matches('.max,.full')) return; e.preventDefault(); z.setPointerCapture(e.pointerId); w.classList.add('rsz');
+      const r = w.getBoundingClientRect(), x0 = e.clientX, y0 = e.clientY;
+      z.onpointermove = p => { const dx = p.clientX - x0, dy = p.clientY - y0; let L = r.left, T = r.top, W = r.width, H = r.height;
+        if (d.includes('e')) W += dx; if (d.includes('s')) H += dy; if (d.includes('w')) { W -= dx; L += dx; } if (d.includes('n')) { H -= dy; T += dy; }
+        if (W < 340) { if (d.includes('w')) L = r.right - 340; W = 340; } if (H < 260) { if (d.includes('n')) T = r.bottom - 260; H = 260; }
+        if (T < 28) { H -= 28 - T; T = 28; } // no meterse debajo de la barra de menú
+        Object.assign(w.style, { left: L + 'px', top: T + 'px', width: W + 'px', height: H + 'px' }); };
+      z.onpointerup = z.onpointercancel = () => { z.onpointermove = null; w.classList.remove('rsz'); }; }; }
   const h = w.querySelector('.win-h');
   h.ondblclick = e => { if (!e.target.closest('button')) w.classList.toggle('max'); };
   h.addEventListener('pointerdown', e => {

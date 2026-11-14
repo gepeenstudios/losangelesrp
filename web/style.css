@@ -768,3 +768,49 @@ tr.click{cursor:pointer}tr.click:hover{background:#ffffff08}
 .sh{overflow:auto;flex:1}.sh table{border-collapse:collapse}.sh th{background:#2c2c2e;position:sticky;top:0;font-size:12px;padding:4px 8px;border:1px solid #ffffff1f;min-width:34px;z-index:1}.sh tr th:first-child{left:0;position:sticky}
 .sh td{border:1px solid #ffffff1f;padding:0}.sh input{width:110px;background:none!important;border:0!important;color:inherit;padding:6px 8px;border-radius:0!important;font-size:13px}.sh input:focus{outline:2px solid #30d158;outline-offset:-2px}
 @media (max-width:760px){.sl{grid-template-columns:1fr;grid-template-rows:auto 1fr}.sl-list{grid-auto-flow:column;grid-auto-columns:110px;border-right:0;border-bottom:1px solid #ffffff14}.fx-page{padding:24px 18px}}
+
+/* ---------- Ventanas: cambiar tamaño desde cualquier orilla; el contenido se adapta al ancho de la ventana ---------- */
+.win{resize:none;min-width:340px;min-height:260px}.win.rsz{transition:none!important;user-select:none}.win.rsz .win-b{pointer-events:none}
+.rz{position:absolute;z-index:6}.rz-n,.rz-s{left:12px;right:12px;height:6px;cursor:ns-resize}.rz-n{top:0}.rz-s{bottom:0}
+.rz-e,.rz-w{top:12px;bottom:12px;width:6px;cursor:ew-resize}.rz-e{right:0}.rz-w{left:0}
+.rz-ne,.rz-nw,.rz-se,.rz-sw{width:20px;height:20px}.rz-ne{top:0;right:0;cursor:nesw-resize}.rz-sw{bottom:0;left:0;cursor:nesw-resize}.rz-nw{top:0;left:0;cursor:nwse-resize}.rz-se{bottom:0;right:0;cursor:nwse-resize}
+.win.max .rz,.win.full .rz{display:none}@media (max-width:760px){.rz{display:none}.win{min-width:0;min-height:0}}
+/* mismas reglas de pantalla chica, pero cuando la VENTANA es angosta (generado a partir de los @media de arriba) */
+.win.narrow .kpis{grid-template-columns:1fr 1fr}
+.win.narrow .pres-grid{grid-template-columns:1fr}
+.win.narrow .gov-hero{padding:18px}
+.win.narrow .mb.sp,.win.narrow .duty.jobclock{display:none}
+.win.narrow .g-tabs,.win.narrow .g-body{padding-left:16px}
+.win.narrow .g-kp{display:none}
+.win.narrow .g-logo{font-size:56px}
+.win.narrow .gbm-sum{grid-template-columns:1fr 1fr}
+.win.narrow .mkt-row{grid-template-columns:1fr 110px}
+.win.narrow .mkt-row .chart{display:none}
+.win.narrow .spfy{grid-template-columns:1fr}
+.win.narrow .sp-side{flex-direction:row;overflow-x:auto;margin:8px 8px 0}
+.win.narrow .sp-logo{display:none}
+.win.narrow .sp-vol,.win.narrow .sp-now{display:none}
+.win.narrow .wa{grid-template-columns:1fr}
+.win.narrow .wa aside{border:0}
+.win.narrow .wa.has-chat aside{display:none}
+.win.narrow .wa:not(.has-chat) section{display:none}
+.win.narrow .wa-back{display:block}
+.win.narrow .wa section{height:calc(100dvh - 150px)}
+.win.narrow .sp-g{display:none}
+.win.narrow .sp-row{grid-template-columns:24px 42px minmax(0,1fr) auto auto auto}
+.win.narrow .spfy{grid-template-rows:auto 1fr auto}
+.win.narrow .sp-side{padding:6px;align-items:center;flex:none}
+.win.narrow .sp-bar{grid-template-columns:44px minmax(0,1fr);padding:8px 10px}
+.win.narrow .sp-bar>img,.win.narrow .sp-bar>.sp-ph{width:44px;height:44px}
+.win.narrow .sp-mid{grid-column:1/-1}
+.win.narrow .spfy .sp-now{display:grid}
+.win.narrow .sp-side button{flex:none}
+.win.narrow .sp-lib{flex-direction:row;margin:0;border:0;padding:0}
+.win.narrow .sp-lib small,.win.narrow .sp-me{display:none!important}
+.win.narrow .sp-volw{display:none}
+.win.narrow .sp-prof{flex-direction:column;align-items:flex-start}
+.win.narrow .sp-prof h1{font-size:32px}
+.win.narrow .sl{grid-template-columns:1fr;grid-template-rows:auto 1fr}
+.win.narrow .sl-list{grid-auto-flow:column;grid-auto-columns:110px;border-right:0;border-bottom:1px solid #ffffff14}
+.win.narrow .fx-page{padding:24px 18px}
+.win.narrow .grid-cards{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}

@@ -1052,10 +1052,11 @@ const spotify = { id: 'spotify', name: 'Spotify', icon: '🎧', bg: '#1db954,#13
     if (typeof view_ === 'object') view_ = 'home';
     if (!needChar(el)) return;
     const me = S.char.id, go = (v = view_, x = arg) => spotify.render(el, v, x);
-    const [songs, profs, likes, lists] = await Promise.all([db.list('songs', { order: 'created_at', asc: false }).catch(() => []), db.list('sp_profiles', { order: null }).catch(() => []),
+    const [all, profs, likes, lists] = await Promise.all([db.list('songs', { order: 'created_at', asc: false }).catch(() => []), db.list('sp_profiles', { order: null }).catch(() => []),
       db.list('song_likes', { order: null, limit: 5000 }).catch(() => []), db.list('playlists', { order: 'created_at', asc: true }).catch(() => [])]);
     if (!player.off && db.rpc) db.rpc('server_now', {}).then(t => { if (t) player.off = new Date(t) - Date.now(); }).catch(() => {});
-    songs.forEach(s => player.lib[s.id] = s);
+    all.forEach(s => player.lib[s.id] = s);
+    const songs = all.filter(s => s.approved), pend = all.filter(s => !s.approved); // sin aprobar: solo las ve quien la subió y Admin+
     const prof = profs.find(p => p.character_id === me), pname = id => profs.find(p => p.character_id === id)?.name || cname(id);
     // cuenta de Spotify: cada quien se registra con el nombre y foto que quiera
     if (!prof) return view(el, `<div class="spfy sp-reg"><div class="sp-regbox"><b class="sp-logo">${ico('spotify', 'i')} Spotify</b><h2>Crea tu cuenta de Spotify</h2><p class="muted">Es gratis. Elige cómo te verán los demás.</p>
@@ -1065,7 +1066,8 @@ const spotify = { id: 'spotify', name: 'Spotify', icon: '🎧', bg: '#1db954,#13
     const q = (el.dataset.q || '').toLowerCase();
     let title = 'Lo más nuevo', list = songs, head = '';
     if (view_ === 'liked') { title = 'Tus me gusta'; list = songs.filter(s => liked.has(s.id)); }
-    else if (view_ === 'mine') { title = 'Tus canciones'; list = songs.filter(s => s.uploader_char === me); }
+    else if (view_ === 'mine') { title = 'Tus canciones'; list = all.filter(s => s.uploader_char === me); }
+    else if (view_ === 'pend' && lvl() >= 3) { title = 'Por aprobar'; list = pend; }
     else if (view_ === 'genre') { title = arg; list = songs.filter(s => (s.genre || 'Otro') === arg); }
     else if (view_ === 'artist') { title = arg; list = songs.filter(s => (s.artist || '').toLowerCase() === arg.toLowerCase()); }
     else if (view_ === 'list') { const p = lists.find(x => x.id === arg); title = p?.name || 'Playlist'; list = (p?.songs || []).map(id => songs.find(s => s.id === id)).filter(Boolean);
@@ -1077,9 +1079,9 @@ const spotify = { id: 'spotify', name: 'Spotify', icon: '🎧', bg: '#1db954,#13
     else if (q) { title = 'Resultados para "' + el.dataset.q + '"'; list = songs.filter(s => [s.title, s.artist, s.genre].join(' ').toLowerCase().includes(q)); }
     const cur = curSong(), artists = [...new Set(songs.map(s => s.artist).filter(Boolean))].slice(0, 12), jam = player.jamRow && player.jam ? player.jamRow : null;
     const row = (s, k) => `<div class="sp-row ${cur?.id === s.id ? 'on' : ''}" data-act="play" data-k="${k}"><span class="sp-n">${cur?.id === s.id && !player.audio.paused ? '<i class="eq"><b></b><b></b><b></b></i>' : k + 1}</span>
-        ${s.cover ? `<img src="${esc(s.cover)}" alt="">` : `<span class="sp-ph">${ico('s_music', 'i')}</span>`}<div class="sp-t"><b title="${esc(s.title)}">${esc(s.title)}</b><button class="link" data-act="artist" data-a="${esc(s.artist || '')}">${esc(s.artist || 'Artista desconocido')}</button></div>
+        ${s.cover ? `<img src="${esc(s.cover)}" alt="">` : `<span class="sp-ph">${ico('s_music', 'i')}</span>`}<div class="sp-t"><b title="${esc(s.title)}">${s.approved ? '' : '⏳ '}${esc(s.title)}</b><button class="link" data-act="artist" data-a="${esc(s.artist || '')}">${esc(s.artist || 'Artista desconocido')}</button></div>
         <span class="sp-g">${esc(s.genre || '')}</span><button class="sa ${liked.has(s.id) ? 'on' : ''}" data-act="like" data-id="${s.id}" aria-label="Me gusta">${ico('s_heart', 'i')}</button>
-        <button class="sa" data-act="addList" data-id="${s.id}" aria-label="Agregar a playlist">${ico('s_new', 'i')}</button>${s.uploader_char === me || lvl() >= 2 ? `<button class="sa" data-act="del" data-id="${s.id}" aria-label="Borrar">${ico('s_trash', 'i')}</button>` : ''}</div>`;
+        <button class="sa" data-act="addList" data-id="${s.id}" aria-label="Agregar a playlist">${ico('s_new', 'i')}</button>${!s.approved && lvl() >= 3 ? `<button class="sa on" data-act="aprobar" data-id="${s.id}" aria-label="Aprobar" title="Aprobar">✅</button>` : ''}${s.uploader_char === me || lvl() >= 3 ? `<button class="sa" data-act="del" data-id="${s.id}" aria-label="Borrar">${ico('s_trash', 'i')}</button>` : ''}</div>`;
     const home = view_ === 'home' && !q;
     view(el, `<div class="spfy"><aside class="sp-side"><b class="sp-logo">${ico('spotify', 'i')} Spotify</b>
         <button class="${home ? 'on' : ''}" data-act="nav" data-v="home">${ico('s_home', 'i')} Inicio</button>
@@ -1087,6 +1089,7 @@ const spotify = { id: 'spotify', name: 'Spotify', icon: '🎧', bg: '#1db954,#13
         <div class="sp-lib"><small>TU BIBLIOTECA</small>
           <button class="${view_ === 'liked' ? 'on' : ''}" data-act="nav" data-v="liked"><span class="sp-lk">♥</span> Tus me gusta <em>${liked.size}</em></button>
           <button class="${view_ === 'mine' ? 'on' : ''}" data-act="nav" data-v="mine">${ico('s_music', 'i')} Tus canciones</button>
+          ${lvl() >= 3 ? `<button class="${view_ === 'pend' ? 'on' : ''}" data-act="nav" data-v="pend">✅ Por aprobar <em>${pend.length}</em></button>` : ''}
           ${myLists.map(p => `<button class="${view_ === 'list' && arg === p.id ? 'on' : ''}" data-act="list" data-id="${p.id}">${ico('s_save', 'i')} ${esc(p.name)}</button>`).join('')}
           <button data-act="newList">${ico('s_new', 'i')} Crear playlist</button><button data-act="subir">${ico('s_new', 'i')} Subir canción</button></div>
         <button class="sp-me" data-act="profile" data-id="${me}"><img src="${esc(prof.avatar || '')}" alt=""><span>${esc(prof.name)}</span></button></aside>
@@ -1120,11 +1123,12 @@ const spotify = { id: 'spotify', name: 'Spotify', icon: '🎧', bg: '#1db954,#13
         async nl(f, _, close) { const p = await db.insert('playlists', { owner_char: me, name: f.name, cover: f.cover || null, songs: [] }); close(); go('list', p.id); } }),
       delList: async d => { if (!await ask('¿Borrar esta playlist?')) return; await db.remove('playlists', d.id); go('home'); },
       del: async d => { if (!await ask('¿Borrar esta canción?')) return; await db.remove('songs', d.id); go(); },
+      aprobar: async d => { await db.update('songs', d.id, { approved: true }); toast('Canción aprobada ✅'); go(); },
       editProf: () => modal('Editar perfil', form('ep', [{ k: 'name', label: 'Nombre', req: 1 }, { k: 'avatar', label: 'Cambiar foto', type: 'file' }, { k: 'color', label: 'Color', type: 'color' }, { k: 'bio', label: 'Bio', type: 'textarea' }], prof), {
         async ep(f, _, close) { if (!f.avatar) delete f.avatar; await db.updateWhere('sp_profiles', { character_id: me }, f); close(); go('profile', me); } }),
       subir: () => modal('Subir canción', form('up', [{ k: 'title', label: 'Título', req: 1 }, { k: 'artist', label: 'Artista', def: prof.name }, { k: 'genre', label: 'Género', type: 'select', options: GENRES, req: 1 },
         { k: 'url', label: 'Archivo de audio (MP3, M4A, WAV…)', type: 'file', accept: 'audio/*', req: 1 }, { k: 'cover', label: 'Portada (opcional)', type: 'file' }]) + '<p class="muted small">Sube solo música tuya o que tengas permiso de compartir.</p>', {
-        async up(f, _, close) { await db.insert('songs', { ...f, cover: f.cover || null, uploader_char: me }); close(); toast('Canción subida 🎵'); go('mine'); } }),
+        async up(f, _, close) { await db.insert('songs', { ...f, cover: f.cover || null, uploader_char: me }); close(); toast(lvl() >= 3 ? 'Canción subida 🎵' : 'Canción enviada ⏳ Un admin la revisa antes de publicarla'); go('mine'); } }),
       newJam: async () => { const code = Math.random().toString(36).slice(2, 8).toUpperCase(), s = curSong();
         const j = await db.insert('jams', { code, host_char: me, members: [me], song_id: s?.id || null, playing: !player.audio.paused, position: player.audio.currentTime || 0, updated_at: new Date(Date.now() + player.off).toISOString() });
         player.jam = j.id; player.jamRow = j; toast('Jam creada: comparte el código ' + code); go('jam'); },

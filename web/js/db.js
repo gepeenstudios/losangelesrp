@@ -335,6 +335,7 @@ const LOCAL = {
   async insert(t, row) {
     const r = { id: crypto.randomUUID(), created_at: now(), ...structuredClone(DEF[t] || {}), ...row };
     if (BY_USER[t] && !r[BY_USER[t]]) r[BY_USER[t]] = myId;
+    if (t === 'songs') r.approved = lvlLocal() >= 3;
     if (t === 'accounts' && !r.number) r.number = String(Math.floor(Math.random() * 1e10)).padStart(10, '0');
     if (t === 'profiles' && !T('profiles').length) Object.assign(r, { staff_role: 'owner', verified: true });
     if (t === 'votes' && T('votes').some(v => v.election_id === r.election_id && v.user_id === myId)) throw new Error('Ya votaste en esta elección');
