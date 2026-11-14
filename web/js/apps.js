@@ -688,10 +688,11 @@ const casas = { id: 'casas', name: 'Zillow', icon: '🏠', bg: '#006aff,#0041a8'
         <div class="price">${p.for_sale ? money(p.owner_char || p.owner_company ? p.sale_price : p.price * cpi()) : 'No está en venta'}</div>
         ${p.for_sale && !mine(p) ? `<button class="btn sm ok" data-act="comprar" data-id="${p.id}">Comprar</button>` : ''}
         ${mine(p) ? `<button class="btn sm" data-act="vender" data-id="${p.id}">${p.for_sale ? 'Cambiar precio / quitar' : 'Poner en venta'}</button>` : ''}
-        ${lvl() >= 3 ? `<div class="row gap"><button class="btn sm ghost" data-act="editar" data-id="${p.id}">Editar</button><button class="btn sm ghost" data-act="duplicar" data-id="${p.id}">+ Otra igual</button></div>` : ''}</div>`; }).join('') || '<p class="empty">Aún no hay casas cargadas.</p>'}</div>`, {
+        ${lvl() >= 3 ? `<div class="row gap"><button class="btn sm ghost" data-act="editar" data-id="${p.id}">Editar</button><button class="btn sm ghost" data-act="duplicar" data-id="${p.id}">+ Otra igual</button><button class="btn sm ghost" data-act="borrar" data-id="${p.id}">🗑 Borrar</button></div>` : ''}</div>`; }).join('') || '<p class="empty">Aún no hay casas cargadas.</p>'}</div>`, {
       editar: d => { const p = props.find(x => x.id === d.id); modal('Editar ' + esc(p.name), form('go', [{ k: 'name', label: 'Nombre', req: 1 }, { k: 'location', label: 'Ubicación (calle, número, referencia)' },
           { k: 'zone', label: 'Zona', type: 'select', options: ['Los Ángeles', 'River City', 'Springfield'], req: 1 }, { k: 'price', label: 'Precio base del gobierno (USD)', type: 'number', min: 1, req: 1 }, { k: 'img', label: 'Cambiar foto', type: 'file' }], p), {
         async go(f, _, close) { if (!f.img) delete f.img; f.price = Number(f.price); await db.update('properties', p.id, f); close(); toast('Casa actualizada'); casas.render(el); } }); },
+      borrar: async d => { const p = props.find(x => x.id === d.id); if (!confirm(`¿Borrar «${p.name}» para siempre?${p.owner_char || p.owner_company ? ' Su dueño la perderá.' : ''}`)) return; await db.remove('properties', d.id); toast('Casa borrada'); casas.render(el); },
       duplicar: async d => { const { name, zone, price, img, kind: k } = props.find(x => x.id === d.id); await db.insert('properties', { name, zone, price, img, kind: k || 'casa' }); toast('Agregada otra unidad. Ponle su ubicación con «Editar».'); casas.render(el); },
       comprar: d => modal('Comprar casa', `<form data-form="go" class="form">${accSelect(accs)}<button class="btn ok" type="submit">Confirmar compra</button></form>`, {
         async go(f, _, close) { const r = await db.rpc('buy', { kind: 'property', item: d.id, acc: f.acc }); toast('¡Casa comprada por ' + money(r) + '!'); close(); casas.render(el); } }),
@@ -719,7 +720,7 @@ const autos = { id: 'autos', name: 'CarMax', icon: '🚘', bg: '#053361,#1660b8'
       ${lvl() >= 3 ? '<button data-act="nuevo">+ Agregar modelo</button>' : ''}</div>
       ${brands.map(b => `<h3>${esc(b)}</h3><div class="grid-cards">${models.filter(m => m.brand === b).map(m => `<div class="card prop"><img src="${esc(m.img || CAR_PHOTOS[m.brand] || CAR_PHOTOS.default)}" alt="" loading="lazy">
         <b>${esc(m.model)}</b><div class="muted">${esc(m.category || '')}</div><div class="price">${money(m.price * cpi())}</div>
-        <div class="row"><button class="btn sm ok" data-act="comprar" data-id="${m.id}">Comprar</button>${lvl() >= 3 ? `<button class="btn sm" data-act="editar" data-id="${m.id}">✏️ Foto / precio</button>` : ''}</div></div>`).join('')}</div>`).join('') || '<p class="empty">Catálogo vacío.</p>'}`;
+        <div class="row"><button class="btn sm ok" data-act="comprar" data-id="${m.id}">Comprar</button>${lvl() >= 3 ? `<button class="btn sm" data-act="editar" data-id="${m.id}">✏️ Foto / precio</button><button class="btn sm ghost" data-act="borrarM" data-id="${m.id}">🗑</button>` : ''}</div></div>`).join('')}</div>`).join('') || '<p class="empty">Catálogo vacío.</p>'}`;
     if (tab === 'venta') body = `<div class="grid-cards">${vehs.filter(v => v.sale_price != null).map(v => `<div class="card prop"><b>${esc(M[v.model_id]?.brand)} ${esc(M[v.model_id]?.model)}</b>
       <div class="muted">Vende: ${esc(v.owner_company ? cos.find(c => c.id === v.owner_company)?.name : cname(v.owner_char))}</div><div class="price">${money(v.sale_price)}</div>
       <button class="btn sm ok" data-act="usado" data-id="${v.id}">Comprar</button></div>`).join('') || '<p class="empty">Nadie está vendiendo autos ahorita.</p>'}</div>`;
@@ -738,6 +739,7 @@ const autos = { id: 'autos', name: 'CarMax', icon: '🚘', bg: '#053361,#1660b8'
       nuevo: () => modal('Nuevo modelo', form('go', [{ k: 'brand', label: 'Marca', req: 1 }, { k: 'model', label: 'Modelo', req: 1 }, { k: 'category', label: 'Categoría' },
         { k: 'price', label: 'Precio', type: 'number', min: 1, req: 1 }, { k: 'img', label: 'Foto', type: 'file' }]), {
         async go(f, _, close) { await db.insert('vehicle_models', { ...f, custom: true }); close(); autos.render(el); } }),
+      borrarM: async d => { if (!confirm(`¿Quitar ${M[d.id].brand} ${M[d.id].model} del catálogo?`)) return; await db.remove('vehicle_models', d.id).catch(() => { throw new Error('No se puede: hay jugadores con este auto. Edítalo en lugar de borrarlo.'); }); toast('Auto quitado del catálogo'); autos.render(el); },
       editar: d => modal('✏️ ' + esc(M[d.id].brand + ' ' + M[d.id].model), form('go', [{ k: 'price', label: 'Precio', type: 'number', min: 1, req: 1 }, { k: 'img', label: 'Foto del auto', type: 'file' }], M[d.id], 'Guardar'), {
         async go(f, _, close) { await db.update('vehicle_models', d.id, { price: f.price, ...(f.img ? { img: f.img } : {}) }); close(); autos.render(el); } }),
     });
