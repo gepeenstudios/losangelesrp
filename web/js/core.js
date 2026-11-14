@@ -172,7 +172,7 @@ export const approvedOf = (reqs, type) => reqs.filter(r => r.type === type && r.
 // muestra los datos de una solicitud con las etiquetas del formulario
 export function requestHTML(r) {
   const t = TRAMITES[r.type] || { name: r.data.job_title ? 'Postulación: ' + r.data.job_title : r.type, fields: [] };
-  const lab = Object.fromEntries((t.fields || []).map(f => [f.k, f.label]));
+  const lab = { experiencia: 'Experiencia', disponibilidad: 'Disponibilidad', entrevista: 'Fecha preferida para entrevista', hora: 'Hora preferida', ...Object.fromEntries((t.fields || []).map(f => [f.k, f.label])) };
   const val = (k, v) => r.type === 'correccion' && k === 'campo' ? (([id, ty, f]) => esc(ty === 'vida' ? `Registro de la vida → ${VIDA_FIELDS[f] || f}` : `${TRAMITES[ty]?.name || ty} (folio ${id.slice(0, 8).toUpperCase()}) → ${TRAMITES[ty]?.fields.find(x => x.k === f)?.label || f}`))(String(v).split('|'))
     : k === 'victima' || k === 'demandado' ? esc(cname(v))
     : isImg(v) ? `<img class="thumb" src="${esc(v)}" alt="${esc(lab[k] || k)}" data-act="zoom" data-src="${esc(v)}">`

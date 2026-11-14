@@ -9,7 +9,7 @@ import { ico } from './icons.js';
 import { birthCert, idCard, passport, visa, diploma, docNumber, homeCountry, homePassport, ssnCard } from './docs.js';
 import { incomeTax, CK_RULES, JOB_DESC, TRAMITES, ROLES, STAFF, STAFF_NAME, LVL, CITIES, NATIONS, WALLPAPERS, DEFAULT_SETTINGS, SEED_MODELS, SEED_PROPS, SEED_JOBS, CAR_PHOTOS, DEPTS, PENAL_CODE } from './data.js';
 
-const ST = { cumplida: 'Cumplida', liberado: 'Liberado', fugado: 'Fugado', en_prision: 'En prisión', pending: 'Pendiente', active: 'Activo', dead: 'CK', rejected: 'Rechazado', approved: 'Aprobado', abierto: 'Abierto', tomado: 'En atención', cerrado: 'Cerrado', vacation: 'Vacaciones' };
+const ST = { revoked: 'Cancelado por la policía', cumplida: 'Cumplida', liberado: 'Liberado', fugado: 'Fugado', en_prision: 'En prisión', pending: 'Pendiente', active: 'Activo', dead: 'CK', rejected: 'Rechazado', approved: 'Aprobado', abierto: 'Abierto', tomado: 'En atención', cerrado: 'Cerrado', vacation: 'Vacaciones' };
 const badge = s => `<span class="st st-${s}">${ST[s] || s}</span>`;
 const av = (url, cls = 'av') => `<img class="${cls}" src="${esc(url || 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22/%3E')}" alt="">`;
 const skin = id => S.all.find(c => c.id === id)?.skin_url;
@@ -609,7 +609,7 @@ const empleos = { id: 'empleos', name: 'LinkedIn', icon: '💼', bg: '#0a66c2,#0
       tab: d => this.render(el, d.t),
       aplicar: d => { const j = jobs.find(x => x.id === d.id);
         modal('💼 ' + esc(j.title), form('send', [{ k: 'experiencia', label: 'Experiencia', type: 'textarea', req: 1 }, { k: 'disponibilidad', label: 'Disponibilidad', req: 1 },
-          { k: 'entrevista', label: 'Fecha preferida para entrevista', type: 'datetime-local' }]), {
+          { k: 'entrevista', label: 'Fecha preferida para entrevista', type: 'date', min: new Date().toISOString().slice(0, 10) }, { k: 'hora', label: 'Hora preferida (opcional)', type: 'time' }]), {
           async send(f, _, close) {
             await db.insert('requests', { type: 'job', dept: [j.role_tag ? 'mgr:' + j.role_tag : 'char:' + j.posted_by, 'staff:admin'], character_id: S.char.id,
               data: { job_id: j.id, job_title: j.title, employer: j.employer, role_tag: j.role_tag || '', ...f } });
@@ -829,7 +829,7 @@ const corte = { id: 'corte', name: 'LA Courts', icon: '⚖️', bg: '#5b3a1e,#8c
   } };
 
 // ============ POLICÍA (MDT) + PRISIÓN ============
-const REC = { arresto: 'Arresto', multa: 'Multa', orden: 'Orden de arresto', advertencia: 'Advertencia' };
+const REC = { arresto: 'Arresto', multa: 'Multa', orden: 'Orden de arresto', advertencia: 'Advertencia', cancelacion: 'Documento cancelado' };
 const KIND = { advertencia: 'Advertencias', infraccion: 'Infracciones (multa)', menor: 'Delitos menores', grave: 'Delitos graves' };
 const isGuard = () => isPolice() || has('Custodio');
 const left = i => Math.max(0, new Date(i.ends_at) - Date.now());
@@ -874,7 +874,7 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
         ${jail ? `<div class="alert">EN PRISIÓN · le faltan ${clockTxt(left(jail))}. Si está en la calle sin fuga aprobada, repórtalo al staff (warn administrativo).
           <button class="btn sm bad" data-act="reportar" data-id="${jail.id}">Reportar al staff</button></div>` : ''}
         ${recs.some(r => r.kind === 'orden' && !r.paid) ? '<div class="alert">ORDEN DE ARRESTO ACTIVA</div>' : ''}</div></div>
-        <h3>Documentos</h3><ul class="list">${lic.map(r => `<li><span class="li-ico">${ico(r.type)}</span><span class="grow">${esc(TRAMITES[r.type].name)} ${esc(r.data.clase || r.data.tipo || r.data.arma || r.data.placa || '')}</span></li>`).join('') || '<li class="muted">Sin documentos</li>'}</ul>
+        <h3>Documentos</h3><ul class="list">${lic.map(r => `<li><span class="li-ico">${ico(r.type)}</span><span class="grow">${esc(TRAMITES[r.type].name)} ${esc(r.data.clase || r.data.tipo || r.data.arma || r.data.placa || '')}</span><button class="btn sm bad" data-act="cancelarDoc" data-id="${r.id}" data-n="${esc(TRAMITES[r.type].name)}">Cancelar</button></li>`).join('') || '<li class="muted">Sin documentos</li>'}</ul>
         <h3>Vehículos</h3><ul class="list">${vehs.map(v => { const m = models.find(x => x.id === v.model_id); return `<li>${esc(m?.brand)} ${esc(m?.model)} · ${esc(v.plate || 'sin placa')}</li>`; }).join('') || '<li class="muted">Ninguno</li>'}</ul>
         <h3>Antecedentes</h3><div class="chips">${['todos', 'advertencia', 'multa', 'arresto', 'orden'].map(k => `<button data-act="f" data-f="${k}" class="${f === k ? 'on' : ''}">${k === 'todos' ? 'Todos' : REC[k]} (${k === 'todos' ? recs.length : recs.filter(r => r.kind === k).length})</button>`).join('')}</div>
         <ul class="list">${shown.map(r => `<li><div class="grow"><b>${REC[r.kind] || esc(r.kind)}</b> ${r.amount ? money(r.amount) : ''} ${r.paid ? `<span class="tag">${r.kind === 'orden' ? 'Cumplida' : 'Pagada'}</span>` : ''}
@@ -893,6 +893,8 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
     view(el, `${tabs([['buscar', 'Consultar'], ['buscados', 'Buscados'], ['pend', 'Trámites']], st.tab === 'ver' ? 'buscar' : st.tab)}<div class="tabbody">${body}</div>`, {
       tab: d => go({ tab: d.t, q: '' }), buscar: d => go({ q: d.q }), ver: d => go({ tab: 'ver', id: d.id, f: 'todos' }), f: d => go({ f: d.f }),
       cumplir: async d => { await db.update('records', d.id, { paid: true }); go({}); },
+      cancelarDoc: d => modal('Cancelar ' + esc(d.n), `<p class="muted">El documento deja de ser válido: desaparece de su cartera y tendrá que volver a tramitarlo. Queda en sus antecedentes.</p>` + form('go', [{ k: 'motivo', label: 'Motivo', type: 'textarea', req: 1, ph: 'Ej. arrestado por conducir en estado de ebriedad' }], {}, 'Cancelar documento'), {
+        async go(v, _, close) { await db.rpc('revoke_doc', { r: d.id, motivo: v.motivo, officer: S.char?.id || null }); close(); toast(d.n + ' cancelado'); go({}); } }),
       async reportar(d) {
         await db.insert('requests', { type: 'warn_prision', dept: ['staff:mod'], character_id: S.char?.id || st.id, data: { preso_id: st.id, preso: cname(st.id), lugar: prompt('¿Dónde lo viste?') || '—', detalle: `Preso visto fuera de prisión (registro ${d.id.slice(0, 8)})` } });
         toast('Reporte enviado al staff');
