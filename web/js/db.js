@@ -368,4 +368,9 @@ export function onChange(cb) {
   addEventListener('storage', e => { if (e.key === LS && e.newValue) { mem = JSON.parse(e.newValue); myId = mem.session; cb('*'); } });
 }
 const B = DEMO ? LOCAL : SB;
+// cuando cambian roles, staff o verificación, el bot de Discord los pone al momento (no espera a su vuelta de cada 15 min)
+const ROLE_TABLES = ['characters', 'profiles'], ROLE_RPCS = ['delete_char', 'delete_user', 'set_vacation', 'hire', 'fire_emp'];
+let syncT; const discordNow = () => { if (DEMO) return; clearTimeout(syncT); syncT = setTimeout(() => fetch('/api/discord-sync', { method: 'POST' }).catch(() => {}), 1500); };
+for (const m of ['insert', 'update', 'upsert', 'remove', 'removeWhere', 'updateWhere']) { const f = B[m]; B[m] = async (t, ...a) => { const r = await f.call(B, t, ...a); if (ROLE_TABLES.includes(t)) discordNow(); return r; }; }
+{ const f = B.rpc; B.rpc = async (n, a) => { const r = await f.call(B, n, a); if (ROLE_RPCS.includes(n)) discordNow(); return r; }; }
 export const { signUp, signIn, signOut, list, get, insert, update, upsert, remove, removeWhere, updateWhere, rpc, upload, setPassword } = B;

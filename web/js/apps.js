@@ -6,8 +6,8 @@ import { S, cpi, esc, money, fdate, lvl, has, isPolice, set, cname, charOpts, to
 import { openWizardOverlay } from './vida.js';
 import { openTramite } from './portal.js';
 import { ico } from './icons.js';
-import { birthCert, idCard, passport, diploma, docNumber, homeCountry, homePassport, ssnCard } from './docs.js';
-import { incomeTax, CK_RULES, JOB_DESC, TRAMITES, ROLES, STAFF, STAFF_NAME, LVL, CITIES, WALLPAPERS, DEFAULT_SETTINGS, SEED_MODELS, SEED_PROPS, SEED_JOBS, CAR_PHOTOS, DEPTS, PENAL_CODE } from './data.js';
+import { birthCert, idCard, passport, visa, diploma, docNumber, homeCountry, homePassport, ssnCard } from './docs.js';
+import { incomeTax, CK_RULES, JOB_DESC, TRAMITES, ROLES, STAFF, STAFF_NAME, LVL, CITIES, NATIONS, WALLPAPERS, DEFAULT_SETTINGS, SEED_MODELS, SEED_PROPS, SEED_JOBS, CAR_PHOTOS, DEPTS, PENAL_CODE } from './data.js';
 
 const ST = { cumplida: 'Cumplida', liberado: 'Liberado', fugado: 'Fugado', en_prision: 'En prisión', pending: 'Pendiente', active: 'Activo', dead: 'CK', rejected: 'Rechazado', approved: 'Aprobado', abierto: 'Abierto', tomado: 'En atención', cerrado: 'Cerrado', vacation: 'Vacaciones' };
 const badge = s => `<span class="st st-${s}">${ST[s] || s}</span>`;
@@ -237,7 +237,7 @@ function myDocs(c, reqs) {
   if (dni) add('doc', 'Identificación (California ID)', idCard(c, dni));
   if (!c.extranjero || ok('visa').length) add('doc', 'Tarjeta del Seguro Social (SSN)', ssnCard(c)); // número fiscal ante el IRS
   ok('pasaporte').forEach(p => add('doc', 'Pasaporte', passport(c, p, false)));
-  ok('visa').forEach(v => add('doc', 'Pasaporte y visa', passport(c, v, true)));
+  ok('visa').forEach(v => add('doc', /Green Card/.test(v.data.tipo) ? 'Green Card (residencia permanente)' : 'Visa de Estados Unidos', visa(c, v)));
   ok('titulo').forEach(t => add('doc', 'Título universitario', diploma(t.data.carrera, name, 'por haber concluido satisfactoriamente sus estudios profesionales', t.data.universidad, when(t))));
   ok('servicio_militar').forEach(t => add('doc', 'Servicio militar', diploma('Certificado de servicio militar', name, 'por su ingreso a ' + t.data.rama, 'Departamento de Defensa · LA RP', when(t))));
   if (dni) ok('licencia_conducir').forEach(l => add('lic', 'Licencia de conducir · ' + l.data.clase, idCard(c, dni, l)));
@@ -1314,11 +1314,11 @@ const staffApp = { id: 'staff', name: 'Panel Staff', icon: '🛡️', bg: '#8e2d
               await db.update('characters', c.id, { status: 'active', roles });
               const acc = await db.insert('accounts', { kind: 'personal', name: c.first_name + ' ' + c.last_name, owners: [c.id] });
               if (m > 0) await db.rpc('staff_pay', { acc: acc.id, amount: m, concept: 'Dinero inicial', mint: true });
-              close(); toast(`Aprobada. Ponle en Discord: ${roles.join(', ')}${c.extranjero ? ' · Recuérdale sacar su visa en ' + set('visa_days') + ' días' : ''}`); if (c.user_id === S.me.id) return window.refreshShell?.('staff'); // es mi vida: activarla al instante
+              close(); toast(`Aprobada. El bot le pone en Discord: ${roles.join(', ')}${c.extranjero ? ' · Recuérdale sacar su visa en ' + set('visa_days') + ' días' : ''}`); if (c.user_id === S.me.id) return window.refreshShell?.('staff'); // es mi vida: activarla al instante
               S.all = await db.list('characters', { order: 'first_name', asc: true }); go('aprob');
             } }); },
         rechC: async d => { await db.update('characters', d.id, { status: 'rejected' }); S.all = await db.list('characters', { order: 'first_name', asc: true }); go('aprob'); },
-        migr: async d => { await addRole(d.id, 'Migrante'); toast('Marcado. Ponle en Discord el rol de Migrante.'); S.all = await db.list('characters', { order: 'first_name', asc: true }); go('aprob'); },
+        migr: async d => { await addRole(d.id, 'Migrante'); toast('Marcado como Migrante. El bot le pone el rol en Discord.'); S.all = await db.list('characters', { order: 'first_name', asc: true }); go('aprob'); },
       });
     }
 
@@ -1336,7 +1336,7 @@ const staffApp = { id: 'staff', name: 'Panel Staff', icon: '🛡️', bg: '#8e2d
         ${S.all.filter(c => c.user_id === p.id).map(c => `<div class="row sub">${av(c.skin_url, 'av sm')}<span class="grow">${esc(c.first_name)} ${esc(c.last_name)} ${badge(c.status)} ${(c.roles || []).map(r => `<span class="tag">${esc(r)}</span>`).join('')}</span>
           ${L >= 3 ? `<button class="btn sm" data-act="editC" data-id="${c.id}">Roles / estado</button>` : ''}</div>`).join('')}</div>`).join('')}`;
       Object.assign(acts, {
-        setRole: async d => { await db.update('profiles', d.id, { staff_role: el.querySelector(`[data-role="${d.id}"]`).value || null }); toast('Rango actualizado. Recuerda ponerlo en Discord.'); go('users'); },
+        setRole: async d => { await db.update('profiles', d.id, { staff_role: el.querySelector(`[data-role="${d.id}"]`).value || null }); toast('Rango actualizado. El bot lo pone en Discord al momento.'); go('users'); },
         tban: async d => { await db.update('profiles', d.id, { banned: !!d.b }); go('users'); },
         delU: async d => { const p = profiles.find(x => x.id === d.id);
           if (prompt(`Esto ELIMINA para siempre la cuenta "${p.username}" con todas sus vidas, dinero, casas, autos, trámites y antecedentes. No se puede deshacer. Escribe ELIMINAR para confirmar.`) !== 'ELIMINAR') return;
@@ -1346,15 +1346,15 @@ const staffApp = { id: 'staff', name: 'Panel Staff', icon: '🛡️', bg: '#8e2d
           modal(`Editar vida · ${esc(c.first_name)} ${esc(c.last_name)}`, `<form data-form="save" class="form">${fieldsHTML([
             { k: 'first_name', label: 'Nombre(s)', req: 1 }, { k: 'last_name', label: 'Apellido(s)', req: 1 }, { k: 'dob', label: 'Nacimiento', type: 'date', req: 1 },
             { k: 'sex', label: 'Sexo', type: 'select', options: ['Masculino', 'Femenino'], req: 1 }, { k: 'city', label: 'Ciudad', type: 'select', options: CITIES, req: 1 },
-            { k: 'nationality', label: 'Nacionalidad', req: 1 }, { k: 'status', label: 'Estado', type: 'select', options: Object.entries(ST).filter(([k]) => ['pending', 'active', 'dead', 'rejected'].includes(k)), req: 1 },
+            { k: 'nationality', label: 'Nacionalidad', type: 'select', options: [...new Set([...NATIONS, c.nationality].filter(Boolean))], req: 1 }, { k: 'status', label: 'Estado', type: 'select', options: Object.entries(ST).filter(([k]) => ['pending', 'active', 'dead', 'rejected'].includes(k)), req: 1 },
             { k: 'skin_url', label: 'Cambiar foto', type: 'file' }, { k: 'bio', label: 'Historia', type: 'textarea' }], c)}
             <h4>Roles</h4>${rolesPicker(c.roles)}<div class="row"><button type="button" class="btn bad" data-act="del">Borrar vida</button><span class="grow"></span><button class="btn" type="submit">Guardar</button></div></form>`, {
             async save(v, f, close) {
               const { role, ...rest } = v; if (!rest.skin_url) delete rest.skin_url;
-              await db.update('characters', c.id, { ...rest, roles: [...f.querySelectorAll('[name=role]:checked')].map(i => i.value) });
-              close(); S.all = await db.list('characters', { order: 'first_name', asc: true }); toast('Guardado. Actualiza sus roles en Discord.'); go('users'); },
+              await db.update('characters', c.id, { ...rest, extranjero: rest.nationality !== 'Estadounidense', roles: [...f.querySelectorAll('[name=role]:checked')].map(i => i.value) });
+              close(); S.all = await db.list('characters', { order: 'first_name', asc: true }); toast('Guardado. El bot actualiza sus roles en Discord al momento.'); go('users'); },
             async del(_, __, close) {
-              if (prompt(`Esto borra la vida "${c.first_name} ${c.last_name}" con sus trámites, empleos y antecedentes. Escribe BORRAR para confirmar.`) !== 'BORRAR') return;
+              if (!await ask(`Esto borra para siempre la vida "${c.first_name} ${c.last_name}" con sus trámites, empleos y antecedentes. ¿Continuar?`)) return;
               try { await db.rpc('delete_char', { c: c.id }); } catch (e) { return toast(e.message); } close(); S.all = await db.list('characters', { order: 'first_name', asc: true }); toast('Vida borrada'); go('users'); window.liveRefresh?.(); },
           }); },
       });

@@ -116,8 +116,15 @@ export function enhance(root) {
     f.addEventListener('change', upd); upd();
   });
 }
+// datos de la vida (registro civil) que se pueden corregir con el trámite «correccion»
+export const VIDA_FIELDS = { first_name: 'Nombre(s)', last_name: 'Apellido(s)', dob: 'Fecha de nacimiento (AAAA-MM-DD)', sex: 'Sexo', city: 'Ciudad', nationality: 'Nacionalidad' };
 export async function resolveFields(fields) {
   const dyn = {
+    // cada dato que se puede corregir de mis trámites: «id|tipo|campo»
+    '@myFields': async () => (await db.list('requests', { eq: { character_id: S.char?.id } })).filter(r => r.type !== 'correccion' && r.status !== 'rejected' && TRAMITES[r.type])
+      .flatMap(r => TRAMITES[r.type].fields.filter(f => f.type !== 'file' && f.type !== 'checkbox' && typeof f.options !== 'string' && r.data?.[f.k] != null)
+        .map(f => [`${r.id}|${r.type}|${f.k}`, `${TRAMITES[r.type].name} (${r.id.slice(0, 6).toUpperCase()}) → ${f.label.replace(/\s*\(.*\)$/, '')}: ${String(r.data[f.k]).slice(0, 40)}`]))
+      .concat(S.char ? Object.entries(VIDA_FIELDS).map(([k, l]) => [`${S.char.id}|vida|${k}`, `Registro de mi vida → ${l}: ${String(S.char[k] ?? '').slice(0, 40)}`]) : []),
     '@chars': () => charOpts(c => c.status === 'active' && c.id !== S.char?.id),
     '@myVehicles': async () => {
       const ms = Object.fromEntries((await db.list('vehicle_models', { order: null })).map(m => [m.id, m]));
@@ -166,7 +173,8 @@ export const approvedOf = (reqs, type) => reqs.filter(r => r.type === type && r.
 export function requestHTML(r) {
   const t = TRAMITES[r.type] || { name: r.data.job_title ? 'Postulación: ' + r.data.job_title : r.type, fields: [] };
   const lab = Object.fromEntries((t.fields || []).map(f => [f.k, f.label]));
-  const val = (k, v) => k === 'victima' || k === 'demandado' ? esc(cname(v))
+  const val = (k, v) => r.type === 'correccion' && k === 'campo' ? (([id, ty, f]) => esc(ty === 'vida' ? `Registro de la vida → ${VIDA_FIELDS[f] || f}` : `${TRAMITES[ty]?.name || ty} (folio ${id.slice(0, 8).toUpperCase()}) → ${TRAMITES[ty]?.fields.find(x => x.k === f)?.label || f}`))(String(v).split('|'))
+    : k === 'victima' || k === 'demandado' ? esc(cname(v))
     : isImg(v) ? `<img class="thumb" src="${esc(v)}" alt="${esc(lab[k] || k)}" data-act="zoom" data-src="${esc(v)}">`
     : typeof v === 'boolean' ? (v ? 'Sí' : 'No')
     : /^https?:\/\//.test(v) ? `<a href="${esc(v)}" target="_blank" rel="noopener">${esc(v)}</a>` : esc(v);
@@ -218,7 +226,7 @@ export const ON_APPROVE = {
   async job(r) {
     if (!r.data.role_tag) return '';
     await db.rpc('hire', { c: r.character_id, d: r.data.role_tag });
-    return `Contratado en ${r.data.role_tag}. Ponle en Discord el rol "${r.data.role_tag}".`;
+    return `Contratado en ${r.data.role_tag}. El bot le pone en Discord el rol "${r.data.role_tag}".`;
   },
   async juicio(r) { // aprobar = culpable: entra a prisión con los años pedidos
     const minutes = Number(r.data.anos) * Number(set('prison_min_per_year'));
@@ -231,6 +239,14 @@ export const ON_APPROVE = {
     const c = S.all.find(x => x.id === r.data.preso_id), p = c && await db.get('profiles', c.user_id);
     await db.insert('bans', { kind: 'warn', username: p?.username || '', roblox: p?.roblox || '', discord: p?.discord || '', reason: `Fuera de prisión sin fuga aprobada (${r.data.lugar})`, by_user: S.me.id });
     return 'Warn administrativo registrado en Sanciones. Aplícalo también en Discord.';
+  },
+  async correccion(r) { // en Supabase lo aplica la base de datos al aprobar; aquí solo el modo demo
+    if (!db.DEMO) return 'El dato quedó corregido en su trámite.';
+    const [id, ty, k] = r.data.campo.split('|');
+    if (ty === 'vida') { if (id === r.character_id && VIDA_FIELDS[k]) await db.update('characters', id, { [k]: r.data.nuevo, ...(k === 'nationality' ? { extranjero: r.data.nuevo !== 'Estadounidense' } : {}) }); return 'El dato quedó corregido en el registro de su vida.'; }
+    const t = await db.get('requests', id);
+    if (t?.character_id === r.character_id) await db.update('requests', id, { data: { ...t.data, [k]: r.data.nuevo } });
+    return 'El dato quedó corregido en su trámite.';
   },
   async vacaciones(r) { await db.rpc('set_vacation', { c: r.character_id, d: r.data.dept, until: r.data.hasta }); return 'Vacaciones aprobadas.'; },
 };
@@ -257,7 +273,7 @@ export async function reviewQueue(el, { types, title = 'Pendientes por revisar',
     await db.update('requests', r.id, { status, note, reviewer_id: S.me.id, reviewed_at: new Date().toISOString() });
     const role = status === 'approved' && TRAMITES[r.type]?.discord?.(r.data);
     if (status === 'approved' && TRAMITES[r.type]?.role && lvl() >= 3) await addRole(r.character_id, TRAMITES[r.type].role);
-    toast(`${status === 'approved' ? 'Aprobado' : 'Rechazado'}. ${msg}${role ? ` · Ponle en Discord: ${role}` : ''}`);
+    toast(`${status === 'approved' ? 'Aprobado' : 'Rechazado'}. ${msg}${role ? ` · Discord: ${role}` : ''}`);
     if (r.user_id === S.me.id || S.chars.some(c => c.id === r.data?.victima)) return window.refreshShell?.(); // me afecta a mí: refrescar todo
     reviewQueue(el, { types, title, extra });
   };

@@ -102,8 +102,36 @@ export function passport(c, req, foreign) {
         <div class="w">${f(L('Nationality', 'Nacionalidad'), up(c.nationality))}</div>${f(L('Date of birth', es && 'Fecha de nacimiento'), fdate(c.dob))}${f(L('Sex', 'Sexo'), up(c.sex?.[0]))}
         ${f(L('Place of birth', es && 'Lugar de nacimiento'), foreign ? up(req.data.pais) : 'CALIFORNIA, U.S.A.')}${f(L('Date of issue', es && 'Fecha de expedición'), fdate(iss.toISOString().slice(0, 10)))}${f(L('Date of expiration', es && 'Fecha de caducidad'), fdate(exp.toISOString().slice(0, 10)))}
         ${f(L('Authority', es && 'Autoridad'), st ? esc(st[5]) : 'UNITED STATES DEPARTMENT OF STATE')}</div></div>
-    ${foreign === true ? `<div class="visa-strip"><b>VISA · ${up(req.data.tipo)}</b><span>Admitted until ${fdate(exp.toISOString().slice(0, 10))}</span></div>` : ''}
     <div class="mrz">${esc(mrz1)}<br>${esc(mrz2)}</div><div class="idc-micro">${RP.repeat(3)}</div></div>`;
+}
+
+// Visa estadounidense (hoja que se pega en el pasaporte extranjero) o Green Card, según el tipo aprobado
+export function visa(c, req) {
+  const t = String(req.data.tipo || ''), green = /Green Card/.test(t), cls = green ? 'C2' : (t.match(/^([A-Z])-?(\w+)/) || [, 'B', '2']).slice(1).join('');
+  const iss = new Date(req.reviewed_at || req.created_at), exp = new Date(iss); exp.setFullYear(iss.getFullYear() + ({ B2: 10, F1: 5, H1B: 3, E2: 5 }[cls] || 10));
+  const day = d => d.toISOString().slice(0, 10), d6 = d => day(d).slice(2).replace(/-/g, ''), ctrl = '2026' + pad(hash(req.id || c.id + 'v') % 1e10, 10);
+  const nat = String(homeCountry(c)).normalize('NFD').replace(/[^A-Za-z]/g, '').slice(0, 3).toUpperCase().padEnd(3, 'X');
+  const pno = String(req.data.pasaporte_ext || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 9);
+  const name = (String(c.last_name) + '<<' + String(c.first_name).replace(/ /g, '<')).toUpperCase().normalize('NFD').replace(/[^A-Z<]/g, '');
+  const f = (l, v, w) => `<div class="${w ? 'w' : ''}"><small>${l}</small><b>${v}</b></div>`, foto = esc(req.data.foto || c.skin_url);
+  if (green) return `<div class="gcard" style="background-image:${guilloche('#7fb59a', 240, 120, 22)}">
+    <div class="gcard-h"><b>UNITED STATES OF AMERICA</b><span>PERMANENT RESIDENT</span></div>
+    <div class="pass-b"><img class="pass-photo" src="${foto}" alt=""><div class="pass-f">
+      <div class="w">${f('Surname', up(c.last_name))}</div><div class="w">${f('Given Name', up(c.first_name))}</div>
+      ${f('USCIS#', pad(hash(c.id + 'uscis') % 1e9, 9))}${f('Category', 'IR1')}${f('Country of Birth', up(homeCountry(c)))}
+      ${f('Date of Birth', fdate(c.dob))}${f('Sex', up(c.sex?.[0]))}${f('Card Expires', fdate(day(exp)))}${f('Resident Since', fdate(day(iss)), 1)}</div></div>
+    <div class="mrz">${esc(('C1USA' + pad(hash(c.id + 'gc') % 1e9, 9)).padEnd(30, '<'))}<br>${esc((d6(new Date(c.dob + 'T12:00:00')) + '0' + (c.sex === 'Femenino' ? 'F' : 'M') + d6(exp) + '0' + nat).padEnd(30, '<'))}<br>${esc(name.padEnd(30, '<').slice(0, 30))}</div>
+    <div class="idc-micro">${RP.repeat(3)}</div></div>`;
+  return `<div class="usvisa" style="background-image:${guilloche('#c9a0a8', 260, 130, 26)}">
+    <div class="usvisa-h"><b>UNITED STATES OF AMERICA</b><span class="usvisa-v">VISA</span></div>
+    <div class="pass-b"><img class="pass-photo" src="${foto}" alt=""><div class="pass-f">
+      <div class="w">${f('Issuing Post Name', 'LOS ANGELES')}</div>${f('Control Number', ctrl, 1)}
+      <div class="w">${f('Surname', up(c.last_name))}</div><div class="w">${f('Given Name', up(c.first_name))}</div>
+      ${f('Visa Type/Class', 'R ' + esc(cls))}${f('Entries', 'M')}${f('Passport Number', esc(pno))}
+      ${f('Sex', up(c.sex?.[0]))}${f('Birth Date', fdate(c.dob))}${f('Nationality', nat)}
+      ${f('Issue Date', fdate(day(iss)))}${f('Expiration Date', fdate(day(exp)))}${f('Annotation', esc(t.split('·')[1]?.trim().toUpperCase() || ''))}</div></div>
+    <div class="mrz">${esc(('V<USA' + name).padEnd(44, '<').slice(0, 44))}<br>${esc((pno.padEnd(9, '<') + (hash(pno) % 10) + nat + d6(new Date(c.dob + 'T12:00:00')) + (hash(c.dob) % 10) + (c.sex === 'Femenino' ? 'F' : 'M') + d6(exp) + (hash(+exp) % 10) + cls).padEnd(44, '<').slice(0, 44))}</div>
+    <div class="idc-micro">${RP.repeat(3)}</div></div>`;
 }
 
 // Pasaporte del país de origen: todo extranjero lo trae al llegar (lo necesita para su visa)

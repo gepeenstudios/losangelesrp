@@ -2,6 +2,10 @@
 export const STAFF = [['helper','Helper',1],['mod','Moderador',2],['admin','Admin',3],['coowner','Co-Owner',4],['owner','Owner',5]];
 export const LVL = Object.fromEntries(STAFF.map(([k,,n]) => [k, n]));
 export const STAFF_NAME = Object.fromEntries(STAFF.map(([k,n]) => [k, n]));
+// nacionalidades (gentilicio). Cualquiera que no sea «Estadounidense» queda como extranjero automáticamente.
+export const NATIONS = ['Estadounidense', 'Mexicana', 'Guatemalteca', 'Salvadoreña', 'Hondureña', 'Nicaragüense', 'Costarricense', 'Panameña', 'Cubana', 'Dominicana',
+  'Colombiana', 'Venezolana', 'Ecuatoriana', 'Peruana', 'Boliviana', 'Chilena', 'Argentina', 'Uruguaya', 'Paraguaya', 'Brasileña', 'Canadiense',
+  'Española', 'Británica', 'Francesa', 'Alemana', 'Italiana', 'Rusa', 'China', 'Japonesa', 'Surcoreana', 'Otra'];
 export const CITIES = ['Los Ángeles · River City', 'Los Ángeles · Springfield'];
 export const POLICE = ['Policía','SWAT','FBI','DEA','CIA','US Seal','US Navy Seal','Servicio Secreto','Seguridad Pública'];
 
@@ -137,6 +141,10 @@ export const TRAMITES = {
       {k:'foto_prueba',label:'Foto 2: prueba de que tú lo mataste',type:'file',req:1},
       {k:'video',label:'Video (opcional)',type:'url'},
       {k:'reglas',label:'Confirmo',type:'check',text:'Cumplí las 11 reglas de CK',req:1}]},
+  correccion: { cat:'Identidad', name:'Corregir datos de un trámite', icon:'✏️', dept:['staff:mod'],
+    desc:'¿Te equivocaste en un trámite o en el registro de tu vida (nombre, fecha de nacimiento, nacionalidad…)? Elige el dato, escribe el correcto y explica por qué. Cuando el staff lo aprueba, se corrige solo en tu trámite y en todos tus documentos.',
+    fields:[{k:'campo',label:'¿Qué dato quieres corregir?',type:'select',options:'@myFields',req:1},{k:'nuevo',label:'Dato correcto',req:1},
+      {k:'motivo',label:'¿Por qué hay que corregirlo?',type:'textarea',req:1}] },
   apelacion_ck: { cat:'Justicia', name:'Apelar CK', icon:'🛟', dept:['staff:admin'], rules:true,
     desc:'Para anular un CK debe haber pruebas de antirol. Si te reanimaron con desfibrilador, súbelo.',
     fields:[{k:'motivo',label:'¿Por qué debe anularse?',type:'textarea',req:1},{k:'pruebas',label:'Link de pruebas del antirol',type:'url',req:1},

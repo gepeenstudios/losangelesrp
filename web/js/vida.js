@@ -1,7 +1,7 @@
 // Registro de una vida nueva (second role) como trámite del Registro Civil. Es lo primero que hace un usuario nuevo.
 import * as db from './db.js';
 import { S, esc, fieldsHTML, view, set, toast } from './core.js';
-import { CITIES } from './data.js';
+import { CITIES, NATIONS } from './data.js';
 import { birthCert } from './docs.js';
 
 const seal = `<svg viewBox="0 0 40 40" class="gov-seal" aria-hidden="true"><circle cx="20" cy="20" r="18.5" fill="#fff" stroke="#c9a227" stroke-width="2"/><circle cx="20" cy="20" r="14" fill="#1d3b6e"/>
@@ -15,8 +15,8 @@ const STEPS = [
   { t: 'Nacimiento', s: 'Fecha de nacimiento y sexo del registrado.',
     html: () => fieldsHTML([{ k: 'dob', label: 'Fecha de nacimiento', type: 'date', req: 1, max: new Date().toISOString().slice(0, 10) }]) + '<span class="fld-l">Sexo</span>' + choice('sex', [['Masculino'], ['Femenino']]) },
   { t: 'Residencia y nacionalidad', s: 'Dónde vivirás dentro de Los Ángeles.',
-    html: () => '<span class="fld-l">Ciudad de residencia</span>' + choice('city', CITIES.map(c => [c])) + fieldsHTML([{ k: 'nationality', label: 'Nacionalidad', req: 1, def: 'Estadounidense' }])
-      + '<span class="fld-l">¿Naciste fuera de Estados Unidos?</span>' + choice('extranjero', [['No', 'Ciudadano estadounidense'], ['Sí', `Extranjero: tendrás ${set('visa_days')} días para registrar tu visa`]]) },
+    html: () => '<span class="fld-l">Ciudad de residencia</span>' + choice('city', CITIES.map(c => [c])) + fieldsHTML([{ k: 'nationality', label: 'Nacionalidad', type: 'select', options: NATIONS, req: 1, def: 'Estadounidense' }])
+      + `<p class="muted">Si eliges cualquier país que no sea Estados Unidos quedas registrado como <b>extranjero</b>: recibes el pasaporte de tu país y tendrás ${set('visa_days')} días para tramitar tu visa.</p>` },
   { t: 'Fotografía', s: 'Captura de tu personaje completo en Roblox. Se usará en tus documentos.',
     html: () => fieldsHTML([{ k: 'skin_url', label: 'Foto del personaje', type: 'file', req: 1 }]) },
   { t: 'Antecedentes del personaje', s: 'Quién es, de dónde viene y a qué se dedica.',
@@ -46,7 +46,7 @@ export function lifeWizard(host, { onDone, onCancel } = {}) {
     host.querySelector('.gov-main input:not([type=radio]), .gov-main textarea')?.focus();
   };
   const acts = {
-    next(v) { Object.assign(d, v); i++; draw(); },
+    next(v) { Object.assign(d, v); if (v.nationality) d.extranjero = v.nationality === 'Estadounidense' ? 'No' : 'Sí'; i++; draw(); },
     back() { i--; draw(); },
     cancel: () => onCancel?.(),
     async enviar(_, btn) {
