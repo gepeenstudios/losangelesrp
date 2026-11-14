@@ -195,6 +195,8 @@ end $$;
 drop trigger if exists t_profiles on profiles;
 create trigger t_profiles before insert or update on profiles for each row execute function profiles_guard();
 
+alter table characters add column if not exists role_expiry jsonb default '{}';
+alter table characters add column if not exists ig_verified_until timestamptz;
 create or replace function characters_guard() returns trigger language plpgsql security definer set search_path=public as $$
 begin
   if tg_op='INSERT' then
@@ -208,6 +210,17 @@ begin
     end if;
   end if;
   if not 'Ciudadano' = any(coalesce(new.roles, '{}')) then new.roles := array_prepend('Ciudadano', coalesce(new.roles, '{}')); end if; -- rol base de toda vida
+  -- vencimiento: los roles configurados (p. ej. 3 meses) guardan su fecha de fin al darse; los que se quitan pierden la fecha
+  declare r text; m numeric; exp jsonb := '{}'; begin
+    foreach r in array new.roles loop
+      if coalesce(new.role_expiry, '{}') ? r then exp := exp || jsonb_build_object(r, new.role_expiry->r);
+      elsif tg_op='INSERT' or not r = any(coalesce(old.roles,'{}')) then
+        m := (select (value->>r)::numeric from settings where key='role_expiry_months');
+        if m > 0 then exp := exp || jsonb_build_object(r, now() + make_interval(days => (m*30)::int)); end if;
+      end if;
+    end loop;
+    new.role_expiry := exp;
+  end;
   return new;
 end $$;
 drop trigger if exists t_characters on characters;
@@ -398,6 +411,24 @@ create or replace function share_price(c uuid) returns numeric language sql stab
     + coalesce((select sum(m.price) from vehicles v join vehicle_models m on m.id=v.model_id where v.owner_company=co.id),0)
   ) / greatest(co.shares_total,1), 2)) end from companies co where co.id=c $$;
 
+
+-- ---------- Impuestos (IRS federal + California FTB + FICA, sales tax de LA) ----------
+create or replace function tax_cfg(k text, d numeric) returns numeric language sql stable as $$
+  select coalesce((select (value->>k)::numeric from settings where key='impuestos'), d) $$;
+-- impuesto anual sobre un sueldo: federal 2026 + California 2025 (soltero, deducción estándar) + FICA 7.65%
+create or replace function income_tax(annual numeric) returns numeric language plpgsql immutable as $$
+declare fed numeric := 0; ca numeric := 0; t numeric; lo numeric; r record;
+begin
+  t := greatest(annual - 16100, 0); lo := 0;
+  for r in select * from (values (12400,10),(50400,12),(105700,22),(201775,24),(256225,32),(640600,35),(1e15,37)) b(hi,rate) loop
+    fed := fed + greatest(least(t, r.hi) - lo, 0) * r.rate / 100; lo := r.hi; end loop;
+  t := greatest(annual - 5706, 0); lo := 0;
+  for r in select * from (values (11079,1),(26264,2),(41452,4),(57542,6),(72724,8),(371479,9.3),(445771,10.3),(742953,11.3),(1e15,12.3)) b(hi,rate) loop
+    ca := ca + greatest(least(t, r.hi) - lo, 0) * r.rate / 100; lo := r.hi; end loop;
+  if annual > 1000000 then ca := ca + (annual - 1000000) * 0.01; end if; -- Mental Health Services Tax
+  return round(fed + ca + annual * 0.0765, 2);
+end $$;
+
 create or replace function buy(kind text, item uuid, acc uuid, qty int default 1) returns numeric
 language plpgsql security definer set search_path=public as $$
 declare a accounts; co companies; buyer uuid; price numeric; seller uuid;
@@ -441,7 +472,16 @@ begin
   if seller = acc then raise exception 'Ya es tuyo'; end if;
   if kind='shares' then perform move_money(acc, seller, price, 'Compra de acciones'); insert into price_history(company_id,price) values(item, share_price(item)); return price; end if;
   perform move_money(acc, seller, price, 'Compra · '||case kind when 'property' then 'casa' when 'model' then 'auto nuevo' when 'vehicle' then 'auto usado' else 'acciones' end);
-  return price;
+  -- impuestos que cobra el gobierno sobre la compra (las concesionarias no pagan sales tax al surtir inventario, como en la vida real)
+  declare tax numeric := 0; lbl text; begin
+    if kind in ('model','vehicle') and coalesce(co.industry,'') <> 'Concesionaria' then
+      tax := round(price * tax_cfg('sales', 10.25) / 100, 2); lbl := 'Impuesto sobre ventas (Sales Tax LA)';
+    elsif kind = 'property' and seller <> gov_acc() then
+      tax := round(price * tax_cfg('transfer', 0.56) / 100, 2); lbl := 'Impuesto de transferencia de inmueble';
+    end if;
+    if tax > 0 then perform move_money(acc, gov_acc(), tax, lbl); end if;
+    return price + tax;
+  end;
 end $$;
 
 create or replace function sell_shares(company uuid, qty int, acc uuid) returns numeric
@@ -557,6 +597,10 @@ begin
   if coalesce((select (value#>>'{}')::date from settings where key='last_tick'),'1970-01-01') >= current_date then return 'ya corrió hoy'; end if;
   insert into settings values('last_tick', to_jsonb(current_date::text)) on conflict(key) do update set value=excluded.value;
   update employments set status='active', vacation_until=null where status='vacation' and vacation_until < d;
+  -- roles vencidos (los quita también de Discord en la siguiente sincronización)
+  perform set_config('app.trusted','on',true);
+  update characters c set roles = (select coalesce(array_agg(r),'{}') from unnest(c.roles) r where not (coalesce(c.role_expiry,'{}') ? r and (c.role_expiry->>r)::timestamptz < now()))
+   where exists(select 1 from jsonb_each_text(coalesce(c.role_expiry,'{}')) x where x.value::timestamptz < now());
   for e in select em.*, r.salary from employments em join dept_ranks r on r.dept=em.dept and r.rank=em.rank
            join characters c on c.id=em.character_id where em.status<>'fired' and c.status='active' loop
     select coalesce(sum(extract(epoch from least(coalesce(ended_at,now()),(d+1)::timestamptz) - greatest(started_at,d::timestamptz))/60),0)
@@ -565,7 +609,7 @@ begin
       update employments set last_qualified=d where id=e.id;
       a := personal_acc(e.character_id);
       if a is not null then
-        begin perform move_money(g, a, round(e.salary/365*cpi(),2), 'Nómina · '||e.dept||' · '||e.rank); n := n+1;
+        begin perform move_money(g, a, round((e.salary*cpi() - income_tax(e.salary*cpi()))/365,2), 'Nómina neta · '||e.dept||' · '||e.rank||' (ya con retención de impuestos)'); n := n+1;
         exception when others then null; end;
       end if;
     elsif e.last_qualified < d - 6 then
@@ -581,8 +625,13 @@ begin
   -- los negocios del rol no venden de verdad: el gobierno les paga según su giro (dueño con vida activa)
   for acc in select co.account_id, co.industry from companies co where co.account_id is not null
              and exists(select 1 from characters ch where ch.id = any(co.owners) and ch.status='active') loop
-    begin perform move_money(g, acc.account_id, round(coalesce((select (value->>acc.industry)::numeric from settings where key='biz_income'),400)*cpi(),2),
-      'Ingresos del negocio · '||coalesce(acc.industry,'')); exception when others then null; end;
+    begin perform move_money(g, acc.account_id, round(coalesce((select (value->>acc.industry)::numeric from settings where key='biz_income'),400)*cpi()*(1 - tax_cfg('corp', 29.84)/100),2),
+      'Ingresos del negocio · '||coalesce(acc.industry,'')||' (neto de impuesto corporativo)'); exception when others then null; end;
+  end loop;
+  -- impuesto predial (property tax de LA): % anual del valor, cobrado por día a cada dueño
+  for acc in select pr.price, pr.name, coalesce(personal_acc(pr.owner_char),(select account_id from companies where id=pr.owner_company)) a
+             from properties pr where pr.owner_char is not null or pr.owner_company is not null loop
+    if acc.a is not null then begin perform move_money(acc.a, g, round(acc.price*cpi()*tax_cfg('property', 1.2)/100/365,2), 'Impuesto predial · '||acc.name); exception when others then null; end; end if;
   end loop;
   -- el staff también cobra por moderar: sueldo anual ÷ 365 si estuvo en servicio el mínimo del día (a su primera vida activa)
   for acc in select p.id, p.staff_role from profiles p where p.staff_role is not null loop
@@ -590,8 +639,8 @@ begin
       into mins from shifts where user_id=acc.id and started_at < (d+1)::timestamptz and coalesce(ended_at,now()) > d::timestamptz;
     a := (select personal_acc(c.id) from characters c where c.user_id=acc.id and c.status='active' order by c.created_at limit 1);
     if mins >= coalesce((select (value#>>'{}')::numeric from settings where key='staff_min_minutes'),30) and a is not null then
-      begin perform move_money(g, a, round(coalesce((select (value->>acc.staff_role)::numeric from settings where key='staff_salary'),40000)/365*cpi(),2),
-        'Nómina · Staff · '||acc.staff_role); n := n+1; exception when others then null; end;
+      declare y numeric := coalesce((select (value->>acc.staff_role)::numeric from settings where key='staff_salary'),40000)*cpi(); begin
+        perform move_money(g, a, round((y - income_tax(y))/365,2), 'Nómina neta · Staff · '||acc.staff_role||' (ya con retención de impuestos)'); n := n+1; exception when others then null; end;
     end if;
   end loop;
   return n||' pagos, '||f||' despidos';
@@ -801,6 +850,29 @@ alter table songs enable row level security;
 drop policy if exists so_sel on songs; create policy so_sel on songs for select to authenticated using (true);
 drop policy if exists so_ins on songs; create policy so_ins on songs for insert to authenticated with check (owns_char(uploader_char));
 drop policy if exists so_del on songs; create policy so_del on songs for delete to authenticated using (owns_char(uploader_char) or staff_level()>=2);
+
+
+-- ---------- Bot de Discord: la web manda, el bot pone y quita roles ----------
+alter table characters add column if not exists role_expiry jsonb default '{}';
+create table if not exists bot_keys(id int primary key default 1, key_hash text not null, created_at timestamptz default now());
+alter table bot_keys enable row level security; -- sin políticas: nadie la lee desde la web
+create or replace function new_bot_key() returns text language plpgsql security definer set search_path=public as $$
+declare k text := replace(gen_random_uuid()::text||gen_random_uuid()::text,'-','');
+begin
+  if staff_level() < 5 then raise exception 'Solo el Owner'; end if;
+  insert into bot_keys(id,key_hash) values(1, encode(sha256(convert_to(k,'UTF8')),'hex')) on conflict(id) do update set key_hash=excluded.key_hash, created_at=now();
+  return k;  -- se muestra una sola vez
+end $$;
+create or replace function discord_sync(bot_key text) returns jsonb language plpgsql security definer set search_path=public as $$
+begin
+  if not exists(select 1 from bot_keys where key_hash = encode(sha256(convert_to(coalesce(bot_key,''),'UTF8')),'hex')) then raise exception 'Llave del bot inválida'; end if;
+  insert into settings values('discord_last_sync', to_jsonb(now()::text)) on conflict(key) do update set value=excluded.value;
+  return jsonb_build_object('users', coalesce((select jsonb_agg(jsonb_build_object('discord', lower(trim(leading '@' from p.discord)), 'username', p.username, 'banned', coalesce(p.banned,false),
+      'staff', p.staff_role, 'verified', coalesce(p.verified,false),
+      'roles', coalesce((select jsonb_agg(distinct r) from characters c, unnest(c.roles) r where c.user_id=p.id and c.status='active'), '[]')))
+    from profiles p where coalesce(p.discord,'') <> ''), '[]'));
+end $$;
+grant execute on function discord_sync(text) to anon;
 
 -- ---------- Tiempo real: la web se actualiza sola ----------
 do $$ declare t text; begin

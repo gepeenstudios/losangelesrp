@@ -1,0 +1,71 @@
+{
+ "roles": [
+  "Presidente",
+  "VicePresidente",
+  "Gobernador",
+  "Gabinete",
+  "DMV",
+  "FEC",
+  "Corte Suprema",
+  "Juez de Distrito",
+  "Tribunales Inferiores",
+  "Abogado Privado",
+  "Abogado Público",
+  "Senado",
+  "Cámara de Representantes",
+  "Policía",
+  "SWAT",
+  "FBI",
+  "CIA",
+  "DEA",
+  "US Seal",
+  "US Navy Seal",
+  "Servicio Secreto",
+  "Seguridad Pública",
+  "Custodio",
+  "Ejército",
+  "Bomberos",
+  "Servicios Médicos",
+  "DOT",
+  "Taxi",
+  "Cartero",
+  "Gasolinero",
+  "Granjero",
+  "Basurero",
+  "Trabajador de Banco",
+  "Prensa",
+  "Periodista",
+  "Noticieros",
+  "Influencer",
+  "Mafia",
+  "Cartel",
+  "Pandilla",
+  "Criminal",
+  "Ciudadano",
+  "Extranjero",
+  "Migrante",
+  "Empresario"
+ ],
+ "staff": [
+  [
+   "helper",
+   "Helper"
+  ],
+  [
+   "mod",
+   "Moderador"
+  ],
+  [
+   "admin",
+   "Admin"
+  ],
+  [
+   "coowner",
+   "Co-Owner"
+  ],
+  [
+   "owner",
+   "Owner"
+  ]
+ ]
+}

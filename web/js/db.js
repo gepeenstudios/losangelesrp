@@ -1,4 +1,5 @@
 // Capa de datos: Supabase si config.js tiene llaves; si no, modo demo en localStorage (mismas funciones).
+import { incomeTax } from './data.js';
 import { SUPABASE_URL, SUPABASE_KEY } from '../config.js';
 
 export const DEMO = !SUPABASE_URL;
@@ -136,7 +137,7 @@ const RPC = {
       const r = T('dept_ranks').find(x => x.dept === e.dept && x.rank === e.rank);
       if (e.status === 'vacation' || dayMins(e.character_id, e.dept, d) >= minm) {
         e.last_qualified = d; const a = personal(e.character_id);
-        if (a && r) try { move(g, a, Math.round(r.salary / 365 * cpi() * 100) / 100, `Nómina · ${e.dept} · ${e.rank}`); n++; } catch {}
+        if (a && r) try { const y = r.salary * cpi(); move(g, a, Math.round((y - incomeTax(y)) / 365 * 100) / 100, `Nómina neta · ${e.dept} · ${e.rank} (ya con retención de impuestos)`); n++; } catch {}
       } else if ((e.last_qualified || '1970-01-01') < iso(new Date(new Date(d) - 6 * 864e5))) { e.status = 'fired'; ch.roles = ch.roles.filter(x => x !== e.dept); f++; }
     }
     for (const c of T('companies')) T('price_history').push({ id: crypto.randomUUID(), company_id: c.id, price: sharePrice(c), created_at: now() });
@@ -145,11 +146,15 @@ const RPC = {
     for (const p of T('profiles').filter(p => p.staff_role)) {
       const mins = T('shifts').filter(s => s.user_id === p.id).reduce((m, s) => m + Math.max(0, (Math.min(+new Date(s.ended_at || Date.now()), +new Date(today)) - Math.max(+new Date(s.started_at), +new Date(today) - 864e5)) / 6e4), 0);
       const ch = T('characters').find(c => c.user_id === p.id && c.status === 'active'), a = ch && personal(ch.id);
-      if (a && mins >= smin) try { move(g, a, Math.round((ss[p.staff_role] ?? 40000) / 365 * cpi() * 100) / 100, 'Nómina · Staff · ' + p.staff_role); } catch {}
+      if (a && mins >= smin) try { const y = (ss[p.staff_role] ?? 40000) * cpi(); move(g, a, Math.round((y - incomeTax(y)) / 365 * 100) / 100, 'Nómina neta · Staff · ' + p.staff_role + ' (ya con retención de impuestos)'); } catch {}
     }
     const inc = setting('biz_income', {}); // los negocios del rol no venden de verdad: el gobierno les paga según su giro
     for (const co of T('companies').filter(co => co.account_id && co.owners.some(o => T('characters').find(c => c.id === o)?.status === 'active')))
-      try { move(g, T('accounts').find(a => a.id === co.account_id), Math.round((inc[co.industry] ?? 400) * cpi() * 100) / 100, 'Ingresos del negocio · ' + (co.industry || '')); } catch {}
+      try { move(g, T('accounts').find(a => a.id === co.account_id), Math.round((inc[co.industry] ?? 400) * cpi() * (1 - (setting('impuestos', {}).corp ?? 29.84) / 100) * 100) / 100, 'Ingresos del negocio · ' + (co.industry || '') + ' (neto de impuesto corporativo)'); } catch {}
+    for (const p of T('properties').filter(p => p.owner_char || p.owner_company)) { // impuesto predial
+      const pa = p.owner_char ? personal(p.owner_char) : acc(T('companies').find(c => c.id === p.owner_company)?.account_id);
+      if (pa) try { move(pa, g, Math.round(p.price * cpi() * (setting('impuestos', {}).property ?? 1.2) / 100 / 365 * 100) / 100, 'Impuesto predial · ' + p.name); } catch {}
+    }
     return `${n} pagos, ${f} despidos`;
   },
   open_savings({ c }) {
@@ -196,11 +201,13 @@ const RPC = {
   },
   staff_pay({ acc: id, amount, concept, mint }) { mint && amount > 0 ? move(null, acc(id), amount, concept) : amount >= 0 ? move(gov(), acc(id), amount, concept) : move(acc(id), gov(), -amount, concept); },
   buy({ kind, item, acc: id, qty = 1 }) {
+    let sellerIsPerson = false;
     const a = acc(id), co = a.kind === 'business' ? T('companies').find(c => c.account_id === id) : null, buyer = co ? null : a.owners[0];
     let q = Math.max(qty || 1, 1), price, seller;
     if (kind === 'property') {
       const p = T('properties').find(x => x.id === item);
       if (!p?.for_sale) throw new Error('No está en venta');
+      sellerIsPerson = !!(p.owner_char || p.owner_company);
       if (!p.owner_char && !p.owner_company) { seller = gov(); price = Math.round(p.price * cpi() * (co?.industry === 'Bienes Raíces' ? 0.5 : 1) * 100) / 100; }
       else { price = p.sale_price; seller = personal(p.owner_char) || acc(company(p.owner_company).account_id); }
       if (seller === a) throw new Error('Ya es tuyo');
@@ -228,7 +235,11 @@ const RPC = {
       T('trades').push({ id: crypto.randomUUID(), character_id: buyer, company_id: item, side: 'compra', qty: q, price: price / q, total: price, created_at: now() });
       T('price_history').push({ id: crypto.randomUUID(), company_id: item, price: sharePrice(c), created_at: now() });
     } else throw new Error('Tipo inválido');
-    return price;
+    // impuestos como en el SQL: sales tax en autos (no concesionarias) y transferencia en casas entre particulares
+    const tc = setting('impuestos', {}), tax = kind === 'shares' ? 0 : (kind === 'model' || kind === 'vehicle') && co?.industry !== 'Concesionaria' ? price * (tc.sales ?? 10.25) / 100
+      : kind === 'property' && sellerIsPerson ? price * (tc.transfer ?? 0.56) / 100 : 0;
+    if (tax > 0) move(a, gov(), Math.round(tax * 100) / 100, kind === 'property' ? 'Impuesto de transferencia de inmueble' : 'Impuesto sobre ventas (Sales Tax LA)');
+    return price + Math.round(tax * 100) / 100;
   },
   sell_shares({ company: cid, qty, acc: id }) {
     const a = acc(id), h = T('holdings').find(x => x.character_id === a.owners[0] && x.company_id === cid);
@@ -258,6 +269,7 @@ const RPC = {
       const a = personal(au.id); if (a) try { move(gov(), a, Math.round(Number(setting('influencer_like_pay', 15)) * cpi() * 100) / 100, 'Influencer · pago por like'); } catch {}
     }
   },
+  new_bot_key() { guard(lvlLocal() >= 5, 'Solo el Owner'); return 'demo-' + crypto.randomUUID().replace(/-/g, ''); },
   pay_gov({ c, amount, concept }) {
     guard(myChars().some(x => x.id === c), 'No es tu vida'); guard(amount > 0, 'Monto inválido');
     move(personal(c), gov(), amount, concept);

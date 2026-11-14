@@ -144,7 +144,10 @@ export const TRAMITES = {
   demanda: { cat:'Justicia', name:'Presentar demanda', icon:'💥', dept:['Juez de Distrito','Corte Suprema','Tribunales Inferiores','staff:admin'],
     fields:[{k:'demandado',label:'Demandado',type:'select',options:'@chars',req:1},
       {k:'tipo',label:'Tipo',type:'select',options:['Civil','Penal','Laboral','Familiar','Mercantil'],req:1},
-      {k:'monto',label:'Monto reclamado (USD)',type:'number',min:0},{k:'hechos',label:'Hechos',type:'textarea',req:1},
+      {k:'reclamo',label:'¿Qué reclamas?',type:'select',req:1,options:[['dinero','Dinero'],['bienes','Bienes (casa, auto, empresa, objetos…)'],['ambos','Dinero y bienes'],['ninguno','Nada material (solo que se haga justicia)']]},
+      {k:'monto',label:'Monto reclamado (USD)',type:'number',min:1,req:1,show:'reclamo=dinero|ambos'},
+      {k:'bienes',label:'¿Qué bienes reclamas? (descríbelos)',type:'textarea',req:1,show:'reclamo=bienes|ambos'},
+      {k:'hechos',label:'Hechos',type:'textarea',req:1},
       {k:'pruebas',label:'Pruebas (link)',type:'url'},{k:'abogado',label:'Tu abogado'}]},
   servicio_militar: { cat:'Gobierno', name:'Servicio militar', icon:'🪖', dept:['Ejército','US Seal','US Navy Seal','staff:admin'], needs:['dni'], discord:()=>'Servicio Militar', role:'Ejército',
     fields:[{k:'rama',label:'Rama',type:'select',options:['Ejército (Army)','Marina (Navy)','Navy SEAL','Fuerza Aérea','Guardia Nacional'],req:1},
@@ -180,7 +183,8 @@ export const DEFAULT_SETTINGS = {
   elecciones: { registro_hasta: 20, votacion_desde: 21, votacion_hasta: 27 }, // días del mes; el ganador gobierna todo el mes siguiente
   influencer_like_pay: 15,
   staff_salary: { helper: 38000, mod: 52000, admin: 70000, coowner: 95000, owner: 120000 }, // USD al año, se paga ÷365 cada día con servicio
-  staff_min_minutes: 30, // USD por like recibido (paga el Tesoro)
+  staff_min_minutes: 30,
+  impuestos: { sales: 10.25, transfer: 0.56, property: 1.2, corp: 29.84 }, // % reales de Los Ángeles (sales tax desde oct-2026) // USD por like recibido (paga el Tesoro)
   biz_income: { 'Concesionaria':1200,'Bienes Raíces':1000,'Restaurante / Bar':600,'Tienda / Retail':500,'Taller mecánico':550,'Seguridad privada':700,
     'Transporte / Taxi':450,'Armería':800,'Construcción':900,'Banca / Finanzas':1100,'Medios / Noticiero':500,'Otro':400 }, // USD diarios del Tesoro
   payroll: { 'Policía':1500,'SWAT':2000,'FBI':2200,'Bomberos':1400,'Servicios Médicos':1400,'DOT':1100,'Ejército':1600,
@@ -416,3 +420,11 @@ export const PENAL_CODE = [
   ['G-26', 'Secuestro', 'grave', 20000, 12], ['G-27', 'Intento de homicidio', 'grave', 30000, 15], ['G-28', 'Homicidio', 'grave', 50000, 25],
   ['G-29', 'Fuga de prisión', 'grave', 5000, 5], ['G-30', 'Corrupción / soborno a funcionario', 'grave', 15000, 6],
 ];
+
+// Impuesto anual de un sueldo (igual que income_tax() en SQL): federal 2026 + California + FICA 7.65%, soltero con deducción estándar
+export function incomeTax(annual) {
+  const brk = (inc, b) => { let t = 0, lo = 0; for (const [hi, r] of b) { t += Math.max(Math.min(inc, hi) - lo, 0) * r / 100; lo = hi; } return t; };
+  const fed = brk(Math.max(annual - 16100, 0), [[12400, 10], [50400, 12], [105700, 22], [201775, 24], [256225, 32], [640600, 35], [Infinity, 37]]);
+  const ca = brk(Math.max(annual - 5706, 0), [[11079, 1], [26264, 2], [41452, 4], [57542, 6], [72724, 8], [371479, 9.3], [445771, 10.3], [742953, 11.3], [Infinity, 12.3]]) + Math.max(annual - 1e6, 0) * 0.01;
+  return Math.round((fed + ca + annual * 0.0765) * 100) / 100;
+}

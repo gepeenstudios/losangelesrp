@@ -96,6 +96,12 @@ export const homeCountry = c => { const n = String(c.nationality || '').toLowerC
 export const homePassportNo = c => String(homeCountry(c)).normalize('NFD').replace(/[^A-Za-z]/g, '').slice(0, 1).toUpperCase() + pad(hash(c.id + 'home') % 1e8, 8);
 export const homePassport = c => passport(c, { data: { pais: homeCountry(c), pasaporte_ext: homePassportNo(c) }, created_at: c.created_at }, 'home');
 
+// Tarjeta del Seguro Social (SSN): tu número fiscal ante el IRS
+export const ssnNumber = c => { const n = String(hash(c.id + 'ssn') % 1e9).padStart(9, '0'); return `${n.slice(0, 3)}-${n.slice(3, 5)}-${n.slice(5)}`; };
+export const ssnCard = c => `<div class="ssn"><div class="ssn-h">SOCIAL SECURITY</div><div class="ssn-u">UNITED STATES OF AMERICA</div>
+  <div class="ssn-n">${ssnNumber(c)}</div><small>THIS NUMBER HAS BEEN ESTABLISHED FOR</small><div class="ssn-name">${up(c.first_name)} ${up(c.last_name)}</div>
+  <div class="ssn-sig"><span class="signature">${esc(c.first_name)} ${esc(c.last_name)}</span><small>SIGNATURE</small></div><div class="idc-micro">${RP.repeat(2)}</div></div>`;
+
 // ---------- Diplomas y licencias profesionales ----------
 export function diploma(title, who, line, by, date) {
   return `<div class="diploma" style="background-image:${guilloche('#c8b37a', 300, 150, 18)}"><div class="dip-in">

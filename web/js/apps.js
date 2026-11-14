@@ -6,8 +6,8 @@ import { S, cpi, esc, money, fdate, lvl, has, isPolice, set, cname, charOpts, to
 import { openWizardOverlay } from './vida.js';
 import { openTramite } from './portal.js';
 import { ico } from './icons.js';
-import { birthCert, idCard, passport, diploma, docNumber, homeCountry, homePassport } from './docs.js';
-import { CK_RULES, JOB_DESC, TRAMITES, ROLES, STAFF, STAFF_NAME, LVL, CITIES, WALLPAPERS, DEFAULT_SETTINGS, SEED_MODELS, SEED_PROPS, SEED_JOBS, CAR_PHOTOS, DEPTS, PENAL_CODE } from './data.js';
+import { birthCert, idCard, passport, diploma, docNumber, homeCountry, homePassport, ssnCard } from './docs.js';
+import { incomeTax, CK_RULES, JOB_DESC, TRAMITES, ROLES, STAFF, STAFF_NAME, LVL, CITIES, WALLPAPERS, DEFAULT_SETTINGS, SEED_MODELS, SEED_PROPS, SEED_JOBS, CAR_PHOTOS, DEPTS, PENAL_CODE } from './data.js';
 
 const ST = { cumplida: 'Cumplida', liberado: 'Liberado', fugado: 'Fugado', en_prision: 'En prisión', pending: 'Pendiente', active: 'Activo', dead: 'CK', rejected: 'Rechazado', approved: 'Aprobado', abierto: 'Abierto', tomado: 'En atención', cerrado: 'Cerrado', vacation: 'Vacaciones' };
 const badge = s => `<span class="st st-${s}">${ST[s] || s}</span>`;
@@ -98,6 +98,15 @@ const banco = { id: 'banco', name: 'RRVA', icon: '🏦', bg: '#004481,#1464a5', 
       const f = await db.list('records', { eq: { character_id: S.char.id, kind: 'multa' } });
       body = f.length ? `<ul class="list">${f.map(r => `<li><div><b>${esc(r.description)}</b><div class="muted">${fdate(r.created_at)}</div></div>
         <span>${money(r.amount)} ${r.paid ? '<span class="tag">Pagada</span>' : `<button class="btn sm" data-act="pagar" data-id="${r.id}">Pagar</button>`}</span></li>`).join('')}</ul>` : '<p class="empty">No tienes multas.</p>';
+    } else if (st.tab === 'imp') {
+      const txs = (await db.list('transactions', { eq: { from_acc: cur.id }, limit: 500 })).filter(t => /^Impuesto/.test(t.concept));
+      const nom = (await db.list('transactions', { eq: { to_acc: cur.id }, limit: 500 })).filter(t => /^Nómina neta/.test(t.concept));
+      const emps = (S.jobs || []).filter(e => e.character_id === S.char.id), tc = set('impuestos'), y = emps.reduce((s, e) => s + (S.ranks.find(r => r.dept === e.dept && r.rank === e.rank)?.salary || 0), 0) * cpi(), it = incomeTax(y);
+      body = `<div class="card"><b>Tu situación fiscal</b><p class="muted">En Los Ángeles pagas impuestos al <b>IRS</b> (federal), al <b>Franchise Tax Board</b> (California) y FICA (Seguro Social y Medicare). Tu número fiscal es tu SSN: está en la app Documentos.</p>
+        ${y ? `<p>Sueldo anual bruto: <b>${money(y)}</b> · Impuestos al año: <b>${money(it)}</b> (${(it / y * 100).toFixed(1)}%) · Te llega neto: <b>${money((y - it) / 365)}</b> al día.</p>` : '<p class="muted">Cuando tengas un trabajo del gobierno verás aquí cuánto se te retiene.</p>'}
+        <ul class="muted small"><li>Compra de autos: Sales Tax de LA ${tc.sales}%.</li><li>Compra de casa a otra persona: impuesto de transferencia ${tc.transfer}%.</li><li>Casas que tienes: impuesto predial ${tc.property}% al año (se cobra un poco cada día).</li><li>Empresas: impuesto corporativo ${tc.corp}% (federal 21% + California 8.84%).</li></ul></div>
+        <h3>Impuestos pagados</h3><ul class="list">${txs.map(t => `<li><div><b>${esc(t.concept)}</b><div class="muted">${fdate(t.created_at)}</div></div><b class="neg">−${money(t.amount)}</b></li>`).join('') || '<li class="muted">Todavía no has pagado impuestos directos.</li>'}</ul>
+        ${nom.length ? `<p class="muted">Además se te retuvieron impuestos en ${nom.length} pagos de nómina.</p>` : ''}`;
     } else if (st.tab === 'tarjeta') {
       body = `<div class="ccard"><div class="row"><b class="cc-bank">RRVA</b><small class="grow" style="text-align:right">${cur.kind === 'personal' ? 'Débito' : 'Business'}</small></div><div class="chip"></div>
         <div class="num">${cur.number.replace(/(\d{4})(?=\d)/g, '$1 ')} 00</div><div class="row"><span>${esc(cur.kind === 'personal' ? cname(S.char.id).toUpperCase() : cur.name.toUpperCase())}</span><b class="grow" style="text-align:right">VISA</b></div></div>
@@ -106,7 +115,7 @@ const banco = { id: 'banco', name: 'RRVA', icon: '🏦', bg: '#004481,#1464a5', 
     view(el, `<div class="bank-h"><div class="row"><small class="grow">${esc(accLabel(cur))}</small><button class="link light" data-act="copyacc">Cuenta ${cur.number} ⧉</button></div>
       <small>Saldo disponible</small><h2>${money(cur.balance)}</h2>
       ${accs.length > 1 ? `<div class="chips">${accs.map(a => `<button data-act="acc" data-id="${a.id}" class="${a.id === cur.id ? 'on' : ''}">${a.kind === 'personal' ? 'Personal' : a.kind === 'savings' ? 'Ahorro' : esc(a.name)}</button>`).join('')}</div>` : ''}</div>
-      ${tabs([['mov', 'Movimientos'], ['send', 'Transferir'], ['ahorro', 'Ahorro e intereses'], ['multas', 'Multas'], ['tarjeta', 'Tarjeta']], st.tab)}${body}`, {
+      ${tabs([['mov', 'Movimientos'], ['send', 'Transferir'], ['ahorro', 'Ahorro e intereses'], ['multas', 'Multas'], ['imp', 'Impuestos'], ['tarjeta', 'Tarjeta']], st.tab)}${body}`, {
       async ahorro() { await db.rpc('open_savings', { c: S.char.id }); toast('Cuenta de ahorro abierta'); go({}); },
       tab: d => banco.render(el, { tab: d.t, acc: cur.id }),
       acc: d => banco.render(el, { tab: st.tab, acc: d.id }),
@@ -226,6 +235,7 @@ function myDocs(c, reqs) {
   const add = (kind, title, html) => out.push({ kind, title, html });
   if (c.extranjero) add('doc', 'Pasaporte de ' + homeCountry(c), homePassport(c)); else add('doc', 'Acta de nacimiento', birthCert(c));
   if (dni) add('doc', 'Identificación (California ID)', idCard(c, dni));
+  if (!c.extranjero || ok('visa').length) add('doc', 'Tarjeta del Seguro Social (SSN)', ssnCard(c)); // número fiscal ante el IRS
   ok('pasaporte').forEach(p => add('doc', 'Pasaporte', passport(c, p, false)));
   ok('visa').forEach(v => add('doc', 'Pasaporte y visa', passport(c, v, true)));
   ok('titulo').forEach(t => add('doc', 'Título universitario', diploma(t.data.carrera, name, 'por haber concluido satisfactoriamente sus estudios profesionales', t.data.universidad, when(t))));
@@ -268,11 +278,11 @@ const mensajes = { id: 'mensajes', name: 'Mensajes', icon: '💬', bg: '#34c759,
     const all = [...await db.list('messages', { eq: { from_char: me } }), ...await db.list('messages', { eq: { to_char: me } })].filter(m => !m.via).sort((a, b) => a.created_at.localeCompare(b.created_at));
     const convs = [...new Set(all.map(m => m.from_char === me ? m.to_char : m.from_char))];
     const thread = other ? all.filter(m => [m.from_char, m.to_char].includes(other)) : [];
-    view(el, `<div class="split"><aside><form data-form="nuevo" class="row"><select name="to" required><option value="">Nuevo chat…</option>${charOpts(c => c.status === 'active' && c.id !== me).map(([i, n]) => `<option value="${i}">${esc(n)}</option>`).join('')}</select><button class="btn sm">Abrir</button></form>
+    view(el, `<div class="split wa ${other ? 'has-chat' : ''}"><aside><form data-form="nuevo" class="row"><select name="to" required><option value="">Nuevo chat…</option>${charOpts(c => c.status === 'active' && c.id !== me).map(([i, n]) => `<option value="${i}">${esc(n)}</option>`).join('')}</select><button class="btn sm">Abrir</button></form>
       ${convs.map(id => `<button class="conv ${id === other ? 'on' : ''}" data-act="abrir" data-id="${id}">${av(skin(id), 'av sm')} ${esc(cname(id))}</button>`).join('') || '<p class="empty">Sin chats</p>'}</aside>
-      <section>${other ? `<h3>${esc(cname(other))}</h3><div class="thread">${thread.map(m => `<div class="msg ${m.from_char === me ? 'me' : ''}">${esc(m.body)}<small>${fdate(m.created_at)}</small></div>`).join('')}</div>
+      <section>${other ? `<header class="wa-h"><button class="wa-back" data-act="atras" aria-label="Volver a los chats">‹</button>${av(skin(other), 'av sm')}<b>${esc(cname(other))}</b></header><div class="thread">${thread.map(m => `<div class="msg ${m.from_char === me ? 'me' : ''}">${esc(m.body)}<small>${fdate(m.created_at)}</small></div>`).join('')}</div>
       <form data-form="send" class="row"><input name="body" required placeholder="Escribe un mensaje…" autocomplete="off"><button class="btn">Enviar</button></form>` : '<p class="empty">Elige un chat</p>'}</section></div>`, {
-      nuevo: d => this.render(el, d.to), abrir: d => this.render(el, d.id),
+      nuevo: d => mensajes.render(el, d.to), abrir: d => mensajes.render(el, d.id), atras: () => mensajes.render(el),
       async send(d) { await db.insert('messages', { from_char: me, to_char: other, body: d.body }); mensajes.render(el, other); },
     });
     el.querySelector('.thread')?.scrollTo(0, 1e6);
@@ -1079,7 +1089,7 @@ const staffApp = { id: 'staff', name: 'Panel Staff', icon: '🛡️', bg: '#8e2d
   async render(el, tab = 'aprob') {
     const L = lvl(), profiles = await db.list('profiles', { order: 'username', asc: true }), staff = profiles.filter(p => p.staff_role);
     const go = t => this.render(el, t);
-    const T = [['aprob', 'Aprobaciones'], ['users', 'Usuarios'], ['act', 'Actividad'], ['sanc', 'Sanciones'], ['tickets', 'Soporte'], ...(L >= 3 ? [['eco', 'Economía'], ['icons', 'Íconos']] : []), ...(L >= 5 ? [['cfg', 'Configuración']] : [])];
+    const T = [['aprob', 'Aprobaciones'], ['users', 'Usuarios'], ['act', 'Actividad'], ['sanc', 'Sanciones'], ['tickets', 'Soporte'], ...(L >= 3 ? [['eco', 'Economía'], ['icons', 'Íconos']] : []), ...(L >= 5 ? [['discord', 'Discord'], ['cfg', 'Configuración']] : [])];
     const acts = { tab: d => go(d.t) };
     let body = '';
 
@@ -1215,6 +1225,9 @@ const staffApp = { id: 'staff', name: 'Panel Staff', icon: '🛡️', bg: '#8e2d
         <h3>Sueldo del staff (al año; se paga ÷365 cada día que cumplan ${set('staff_min_minutes')} min en servicio)</h3><form data-form="staffpay" class="form"><table class="tbl">
           ${STAFF.map(([k, l]) => `<tr><td>${esc(l)}</td><td><input type="number" min="0" name="${k}" value="${set('staff_salary')[k] ?? 0}"></td><td class="muted">${money((set('staff_salary')[k] ?? 0) / 365)} al día</td></tr>`).join('')}</table>
           <button class="btn" type="submit">Guardar sueldos del staff</button></form>
+        <h3>Impuestos (%)</h3>${form('imp', [{ k: 'sales', label: 'Sales Tax de LA (autos)', type: 'number', min: 0, def: set('impuestos').sales }, { k: 'transfer', label: 'Transferencia de casas entre personas', type: 'number', min: 0, def: set('impuestos').transfer },
+          { k: 'property', label: 'Predial anual', type: 'number', min: 0, def: set('impuestos').property }, { k: 'corp', label: 'Corporativo (empresas)', type: 'number', min: 0, def: set('impuestos').corp }], {}, 'Guardar impuestos')}
+        <p class="muted small">La retención de nómina usa las tablas reales 2026 del IRS y de California (más FICA 7.65%).</p>
         <h3>Ingresos diarios de negocios (los paga el Tesoro según el giro)</h3><form data-form="biz" class="form"><table class="tbl"><tr><th>Giro</th><th>USD por día</th></tr>
           ${Object.entries(set('biz_income') || {}).map(([k, v]) => `<tr><td>${esc(k)}</td><td><input type="number" min="0" name="${esc(k)}" value="${v}"></td></tr>`).join('')}</table>
           <label class="fld"><span>Pago a influencers por cada like (USD)</span><input type="number" min="0" name="__like" value="${set('influencer_like_pay') ?? 15}"></label>
@@ -1231,6 +1244,7 @@ const staffApp = { id: 'staff', name: 'Panel Staff', icon: '🛡️', bg: '#8e2d
             if (r && Number(v) !== Number(r.salary)) { await db.upsert('dept_ranks', { ...r, salary: Number(v) }, 'dept,rank'); r.salary = Number(v); } } toast('Sueldos guardados'); go('eco'); },
         async give(d) { const acc = (await db.list('accounts', { eq: { kind: 'personal' }, contains: { owners: [d.char] } }))[0];
           if (!acc) throw new Error('Ese personaje no tiene cuenta'); await db.rpc('staff_pay', { acc: acc.id, amount: d.amount, concept: d.concept }); toast('Listo'); },
+        imp: async d => { for (const k in d) d[k] = Number(d[k]); await save('impuestos', d); toast('Impuestos guardados'); go('eco'); },
         staffpay: async d => { for (const k in d) d[k] = Number(d[k]); await save('staff_salary', d); toast('Sueldos guardados'); go('eco'); },
         biz: async d => { const { __like, ...o } = d; for (const k in o) o[k] = Number(o[k]); await save('biz_income', o); await save('influencer_like_pay', Number(__like)); toast('Guardado'); go('eco'); },
         robos: async d => { const o = {}; for (const [k, v] of Object.entries(d)) { const i = k.lastIndexOf('.'); (o[k.slice(0, i)] ??= [0, 0])[+k.slice(i + 1)] = v || 0; } await save('robos', o); toast('Guardado'); go('eco'); },
@@ -1238,6 +1252,20 @@ const staffApp = { id: 'staff', name: 'Panel Staff', icon: '🛡️', bg: '#8e2d
       });
     }
 
+    if (tab === 'discord') {
+      const exp = set('role_expiry_months') || {}, last = S.settings.discord_last_sync;
+      body = `<div class="card"><b>Bot de Discord</b><p class="muted">Cada 15 minutos el bot copia a Discord los roles de la web: pone los que tienen y quita los que ya no. Solo toca los roles que maneja la web (Policía, Admin, Verificado…), nunca otros.</p>
+        <p>Última sincronización: <b>${last ? fdate(last) + ' ' + new Date(last).toLocaleTimeString('es-MX') : 'todavía no corre'}</b></p>
+        <button class="btn" data-act="botkey">Generar llave del bot</button> <small class="muted">La llave se muestra una sola vez; si generas otra, la anterior deja de servir.</small></div>
+        <h3>Roles con vencimiento</h3><p class="muted">Cuando a alguien se le da uno de estos roles, se le quita solo al pasar el tiempo (en la web y en Discord). 0 = no vence.</p>
+        <form data-form="exp" class="form"><table class="tbl">${Object.values(ROLES).flat().map(r => `<tr><td>${esc(r)}</td><td><select name="${esc(r)}">${[0, 1, 3, 6, 12].map(m => `<option value="${m}" ${(exp[r] || 0) == m ? 'selected' : ''}>${m ? m + (m === 1 ? ' mes' : ' meses') : 'No vence'}</option>`).join('')}</select></td></tr>`).join('')}</table>
+        <button class="btn" type="submit">Guardar vencimientos</button></form>`;
+      Object.assign(acts, {
+        botkey: async () => { if (!confirm('¿Generar una llave nueva? La anterior dejará de funcionar.')) return; const k = await db.rpc('new_bot_key', {});
+          modal('Llave del bot', `<p>Cópiala y pégala en GitHub como secreto <b>SYNC_KEY</b>. No la compartas.</p><input class="mono" readonly value="${esc(k)}" onclick="this.select()"><button class="btn" data-act="cp">Copiar</button>`, { cp: async () => { await navigator.clipboard?.writeText(k); toast('Copiada'); } }); },
+        exp: async d => { const o = {}; for (const k in d) if (+d[k] > 0) o[k] = +d[k]; await db.upsert('settings', { key: 'role_expiry_months', value: o }); S.settings.role_expiry_months = o; toast('Vencimientos guardados'); go('discord'); },
+      });
+    }
     if (tab === 'icons') {
       body = `<h3>Íconos de las apps</h3><p class="muted">Sube tu propia imagen (PNG cuadrado) para el ícono de cualquier app. Solo usa imágenes que tengas derecho a usar.</p>
         ${form('icon', [{ k: 'app', label: 'App', type: 'select', options: APPS.map(a => [a.id, a.name]), req: 1 }, { k: 'url', label: 'Imagen', type: 'file', req: 1 }], {}, 'Guardar ícono')}

@@ -1,0 +1,17 @@
+name: Bot de Discord (sincronizar roles)
+on:
+  schedule: [{ cron: '*/15 * * * *' }]   # cada 15 minutos
+  workflow_dispatch: {}                  # botón "Run workflow" para correrlo al momento
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: node bot/sync.mjs
+        env:
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          SYNC_KEY: ${{ secrets.SYNC_KEY }}
+          GUILD_ID: ${{ secrets.GUILD_ID }}

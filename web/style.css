@@ -669,3 +669,34 @@ tr.click{cursor:pointer}tr.click:hover{background:#ffffff08}
 .sp-mini{position:fixed;left:50%;transform:translateX(-50%);bottom:96px;z-index:900;display:flex;align-items:center;gap:10px;background:#181818ee;color:#fff;padding:8px 12px;border-radius:14px;box-shadow:0 10px 30px #0008;backdrop-filter:blur(14px);max-width:min(440px,92vw)}
 .sp-mini img,.sp-mini .sp-ph{width:38px;height:38px;border-radius:6px;object-fit:cover}.sp-mini div{display:grid;min-width:0;max-width:200px}.sp-mini b,.sp-mini small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px}.sp-mini small{color:#b3b3b3}
 .sp-mini button{background:none;border:0;color:#fff;cursor:pointer;display:grid;place-items:center;padding:4px}.sp-mini .i{width:18px;height:18px}
+/* buscador de personas en formularios */
+.sr-sel{position:absolute!important;opacity:0;pointer-events:none;height:1px!important;width:1px!important}
+.fld{position:relative}.pbox{position:relative}.plist{position:absolute;left:0;right:0;top:100%;z-index:30;background:var(--card);border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 26px #0005;overflow:hidden;padding:4px}
+.plist button{display:flex;gap:10px;align-items:center;width:100%;padding:7px 10px;background:none;border:0;color:inherit;cursor:pointer;text-align:left;border-radius:6px}.plist button:hover{background:#ffffff14}
+.plist small{display:block;padding:8px}
+/* ---------- WhatsApp (Mensajes) ---------- */
+.win-b:has(>.wa){padding:0!important}
+.wa{display:grid;grid-template-columns:260px 1fr;gap:0;height:100%;min-height:420px;background:#111b21;color:#e9edef}
+.wa aside{border-right:1px solid #222d34;padding:10px;overflow:auto;max-height:none}
+.wa section{display:flex;flex-direction:column;min-height:0;background:#0b141a}
+.wa .empty{margin:auto;color:#8696a0}
+.wa-h{display:flex;align-items:center;gap:10px;padding:10px 14px;background:#202c33}
+.wa-back{display:none;background:none;border:0;color:#00a884;font-size:28px;line-height:1;cursor:pointer;padding:0 6px 0 0}
+.wa .thread{flex:1;max-height:none;margin:0;padding:12px 16px;overflow-y:auto}
+.wa .msg{background:#202c33;color:#e9edef;border-radius:8px;max-width:78%;word-break:break-word}.wa .msg.me{background:#005c4b}
+.wa .msg small{display:block;text-align:right;opacity:.6;font-size:11px;margin-top:2px}
+.wa form[data-form=send]{padding:8px 10px;background:#202c33;margin:0;gap:8px}.wa form[data-form=send] input{flex:1;background:#2a3942;border:0;color:#e9edef;border-radius:20px;padding:10px 14px}
+.wa .conv{color:#e9edef}.wa .conv.on,.wa .conv:hover{background:#2a3942}
+@media (max-width:760px){
+  .wa{grid-template-columns:1fr}.wa aside{border:0}
+  .wa.has-chat aside{display:none}.wa:not(.has-chat) section{display:none}
+  .wa-back{display:block}.wa section{height:calc(100dvh - 150px)}
+}
+.wa .btn{background:#00a884;color:#fff}
+/* tarjeta del Seguro Social */
+.ssn{position:relative;width:440px;max-width:100%;aspect-ratio:1.6;border-radius:10px;padding:14px 22px;background:linear-gradient(135deg,#eaf1fb,#cfe0f5 45%,#f3e9f3);color:#1c2e5a;font-family:Georgia,serif;text-align:center;box-shadow:0 10px 30px #0006;overflow:hidden;border:1px solid #9fb6d8}
+.ssn-h{font-size:22px;letter-spacing:.18em;font-weight:700;color:#1d3b6e}.ssn-u{font-size:10px;letter-spacing:.3em;margin-bottom:8px}
+.ssn-n{font-family:"Courier New",monospace;font-size:28px;font-weight:700;letter-spacing:.08em;color:#b3141b;margin:6px 0}
+.ssn small{font-size:9px;letter-spacing:.15em;display:block}.ssn-name{font-size:18px;font-weight:700;margin:4px 0 10px;font-family:Arial,sans-serif}
+.ssn-sig{border-top:1px solid #1c2e5a;width:70%;margin:0 auto;padding-top:2px}.ssn-sig .signature{display:block;font-size:20px;margin-top:-26px}
+[hidden]{display:none!important}

@@ -61,6 +61,7 @@ export function modal(title, html, acts = {}) {
 // view: pinta html y conecta [data-act] (clicks) y form[data-form] (submits) a funciones
 export function view(el, html, acts = {}, close) {
   el.innerHTML = html.replaceAll('<img ', '<img loading="lazy" decoding="async" ');
+  enhance(el);
   el.onclick = async e => {
     const t = e.target.closest('[data-act]');
     if (!t || !el.contains(t) || !acts[t.dataset.act]) return;
@@ -87,6 +88,27 @@ export async function downloadImage(node, name) {
 }
 
 // ---------- formularios ----------
+// buscador de personas (escribes y salen sugerencias) y campos que aparecen según otra respuesta
+export function enhance(root) {
+  root.querySelectorAll('select[data-person]').forEach(sel => {
+    if (sel.dataset.done) return; sel.dataset.done = 1; sel.classList.add('sr-sel');
+    const box = Object.assign(document.createElement('div'), { className: 'pbox' });
+    box.innerHTML = '<input type="text" placeholder="Escribe un nombre…" autocomplete="off" aria-label="Buscar persona"><div class="plist" hidden></div>';
+    sel.after(box); const inp = box.firstChild, list = box.lastChild, opts = [...sel.options].filter(o => o.value);
+    if (sel.value) inp.value = sel.selectedOptions[0].text;
+    inp.oninput = () => { const q = inp.value.trim().toLowerCase(); sel.value = '';
+      const hits = q ? opts.filter(o => o.text.toLowerCase().includes(q)).slice(0, 8) : [];
+      list.innerHTML = hits.map(o => { const c = S.all.find(x => x.id === o.value); return `<button type="button" data-v="${esc(o.value)}"><img class="av sm" src="${esc(c?.skin_url || '')}" alt=""><span>${esc(o.text)}</span></button>`; }).join('') || (q ? '<small class="muted">Nadie con ese nombre</small>' : '');
+      list.hidden = !q; };
+    list.onclick = e => { const b = e.target.closest('[data-v]'); if (!b) return; sel.value = b.dataset.v; inp.value = b.textContent.trim(); list.hidden = true; sel.dispatchEvent(new Event('change', { bubbles: true })); };
+  });
+  root.querySelectorAll('form').forEach(f => {
+    const conds = [...f.querySelectorAll('[data-show]')]; if (!conds.length) return;
+    const upd = () => conds.forEach(l => { const [k, vals] = l.dataset.show.split('='), cur = f.elements[k]?.value || '', on = vals.split('|').includes(cur);
+      l.hidden = !on; l.querySelectorAll('input,select,textarea').forEach(x => x.disabled = !on); });
+    f.addEventListener('change', upd); upd();
+  });
+}
 export async function resolveFields(fields) {
   const dyn = {
     '@chars': () => charOpts(c => c.status === 'active' && c.id !== S.char?.id),
@@ -96,14 +118,14 @@ export async function resolveFields(fields) {
         .map(v => [v.id, `${ms[v.model_id]?.brand || ''} ${ms[v.model_id]?.model || 'Vehículo'}${v.plate ? ' · ' + v.plate : ''}`])];
     },
   };
-  return Promise.all(fields.map(async f => typeof f.options === 'string' ? { ...f, options: await dyn[f.options]() } : f));
+  return Promise.all(fields.map(async f => typeof f.options === 'string' ? { ...f, person: f.options === '@chars', options: await dyn[f.options]() } : f));
 }
 export function fieldsHTML(fields, v = {}) {
   return fields.map(f => {
     const val = v[f.k] ?? f.def ?? '', req = f.req ? 'required' : '';
     let i;
     if (f.type === 'textarea') i = `<textarea name="${f.k}" rows="3" ${req} placeholder="${esc(f.ph || '')}">${esc(val)}</textarea>`;
-    else if (f.type === 'select') i = `<select name="${f.k}" ${req}><option value="">Selecciona…</option>${f.options.map(o => {
+    else if (f.type === 'select') i = `<select name="${f.k}" ${req} ${f.person ? 'data-person' : ''}><option value="">Selecciona…</option>${f.options.map(o => {
       const [ov, ol] = Array.isArray(o) ? o : [o, o];
       return `<option value="${esc(ov)}" ${String(ov) === String(val) ? 'selected' : ''}>${esc(ol)}</option>`;
     }).join('')}</select>`;
@@ -113,13 +135,13 @@ export function fieldsHTML(fields, v = {}) {
     else if (f.type === 'check') return `<label class="chk"><input type="checkbox" name="${f.k}" ${val ? 'checked' : ''} ${req}> ${esc(f.label)}: ${esc(f.text || '')}</label>`;
     else i = `<input name="${f.k}" type="${f.type || 'text'}" value="${esc(val)}" ${req} ${f.pattern ? `pattern="${f.pattern}"` : ''}
       ${f.min != null ? `min="${f.min}"` : ''} ${f.max != null ? `max="${f.max}"` : ''} ${f.type === 'number' ? 'step="any"' : ''} placeholder="${esc(f.ph || '')}">`;
-    return `<label class="fld"><span>${esc(f.label)}${f.req ? ' *' : ''}</span>${i}${f.help ? `<small>${esc(f.help)}</small>` : ''}</label>`;
+    return `<label class="fld" ${f.show ? `data-show="${esc(f.show)}"` : ''}><span>${esc(f.label)}${f.req ? ' *' : ''}</span>${i}${f.help ? `<small>${esc(f.help)}</small>` : ''}</label>`;
   }).join('');
 }
 export async function readForm(fm) {
   const o = {};
   for (const el of fm.elements) {
-    if (!el.name || (el.type === 'radio' && !el.checked)) continue;
+    if (!el.name || el.disabled || (el.type === 'radio' && !el.checked)) continue;
     if (el.type === 'file') { if (el.files[0]) o[el.name] = el.dataset.text ? await el.files[0].text() : el.dataset.raw ? el.files[0] : await db.upload(el.files[0]); }
     else if (el.type === 'checkbox') o[el.name] = el.checked;
     else if (el.type === 'number') o[el.name] = el.value === '' ? null : Number(el.value);
