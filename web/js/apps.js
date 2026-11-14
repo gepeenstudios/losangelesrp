@@ -6,7 +6,7 @@ import { S, cpi, esc, money, fdate, lvl, has, isPolice, set, cname, charOpts, to
 import { openWizardOverlay } from './vida.js';
 import { openTramite } from './portal.js';
 import { ico } from './icons.js';
-import { birthCert, idCard, passport, visa, diploma, docNumber, homeCountry, homePassport, ssnCard } from './docs.js';
+import { birthCert, idCard, passport, visa, vehicleReg, diploma, docNumber, homeCountry, homePassport, ssnCard } from './docs.js';
 import { incomeTax, CK_RULES, JOB_DESC, TRAMITES, ROLES, STAFF, STAFF_NAME, LVL, CITIES, NATIONS, WALLPAPERS, DEFAULT_SETTINGS, SEED_MODELS, SEED_PROPS, SEED_JOBS, CAR_PHOTOS, DEPTS, PENAL_CODE } from './data.js';
 
 const ST = { revoked: 'Cancelado por la policía', cumplida: 'Cumplida', liberado: 'Liberado', fugado: 'Fugado', en_prision: 'En prisión', pending: 'Pendiente', active: 'Activo', dead: 'CK', rejected: 'Rechazado', approved: 'Aprobado', abierto: 'Abierto', tomado: 'En atención', cerrado: 'Cerrado', vacation: 'Vacaciones' };
@@ -230,7 +230,7 @@ const trabajo = { id: 'trabajo', name: 'Workday', icon: '💼', bg: '#f5a623,#e5
 // ============ DOCUMENTOS (wallet) ============
 // Documentos personales y licencias: Wallet los junta todos; Documentos y Licencias salen en el escritorio cuando tienes alguno
 const LIC_TYPES = ['licencia_conducir', 'licencia_armas', 'licencia_abogado', 'licencia_juez'];
-function myDocs(c, reqs) {
+function myDocs(c, reqs, vehs = [], models = []) {
   const ok = t => approvedOf(reqs, t), name = `${c.first_name} ${c.last_name}`, when = r => r.reviewed_at || r.created_at, dni = ok('dni')[0], out = [];
   const add = (kind, title, html) => out.push({ kind, title, html });
   if (c.extranjero) add('doc', 'Pasaporte de ' + homeCountry(c), homePassport(c)); else add('doc', 'Acta de nacimiento', birthCert(c));
@@ -244,13 +244,14 @@ function myDocs(c, reqs) {
   ok('licencia_armas').forEach(t => add('lic', 'Licencia de armas', diploma('Licencia de portación · ' + t.data.tipo, name, 'autorizado(a) a portar armas de la categoría indicada', 'LAPD · Departamento de Licencias', when(t))));
   ok('licencia_abogado').forEach(t => add('lic', 'Licencia de abogado', diploma('Licencia para ejercer la abogacía', name, 'admitido(a) para ejercer ante los tribunales de Los Ángeles', 'State Bar of Los Angeles RP', when(t))));
   ok('licencia_juez').forEach(t => add('lic', 'Nombramiento de juez', diploma('Nombramiento judicial', name, 'como Juez de Distrito de la Corte de Los Ángeles', 'Corte Superior de Los Ángeles RP', when(t))));
+  vehs.forEach(v => { const m = models.find(x => x.id === v.model_id); add('doc', `Registro vehicular · ${m ? m.brand + ' ' + m.model : 'Vehículo'}`, vehicleReg(c, v, m)); });
   return { list: out, dni };
 }
 function docApp(id, name, bg, kind, show) {
   const app = { id, name, icon: '🪪', bg, show,
     async render(el) {
       if (!needChar(el)) return;
-      const reqs = await myRequests(), ok = t => approvedOf(reqs, t), { list, dni } = myDocs(S.char, reqs), all = kind ? list.filter(d => d.kind === kind) : list;
+      const [reqs, vehs, models] = await Promise.all([myRequests(), db.list('vehicles', { eq: { owner_char: S.char.id } }), db.list('vehicle_models', { order: null })]), ok = t => approvedOf(reqs, t), { list, dni } = myDocs(S.char, reqs, vehs, models), all = kind ? list.filter(d => d.kind === kind) : list;
       const regs = kind ? [] : [...ok('placa').map(r => [ico('placa'), `Placa ${esc(r.data.placa.toUpperCase())}`, `${esc(r.data.tipo)} · ${esc(r.data.estado)}`]),
         ...ok('registro_arma').map(r => [ico('registro_arma'), esc(r.data.arma), 'Serie ' + esc(r.data.serie)]),
         ...ok('registro_herramienta').map(r => [ico('registro_herramienta'), esc(r.data.herramienta), 'Registrada'])];
@@ -846,6 +847,7 @@ async function searchPeople(q) {
     if (c.id.slice(0, 8).toLowerCase() === q) add(c.id, 'Folio de registro');
   }
   vehs.filter(v => v.plate?.toLowerCase() === q).forEach(v => add(v.owner_char, 'Placa ' + v.plate));
+  vehs.filter(v => v.vin?.toLowerCase() === q).forEach(v => add(v.owner_char, 'VIN ' + v.vin));
   reqs.filter(r => r.type === 'placa' && r.data.placa?.toLowerCase() === q).forEach(r => add(r.character_id, 'Placa ' + r.data.placa.toUpperCase()));
   reqs.filter(r => r.type === 'registro_arma' && r.data.serie?.toLowerCase() === q).forEach(r => add(r.character_id, 'Arma serie ' + r.data.serie));
   return [...hit].map(([id, why]) => ({ c: S.all.find(x => x.id === id), why })).filter(x => x.c);
@@ -860,7 +862,7 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
     let body = '';
     if (st.tab === 'buscar') {
       const res = await searchPeople(st.q || '');
-      body = `<form data-form="buscar" class="row"><input name="q" value="${esc(st.q || '')}" placeholder="Nombre, No. de identificación o licencia, placa, serie de arma o folio" required autofocus><button class="btn">Buscar</button></form>
+      body = `<form data-form="buscar" class="row"><input name="q" value="${esc(st.q || '')}" placeholder="Nombre, No. de identificación o licencia, placa, VIN, serie de arma o folio" required autofocus><button class="btn">Buscar</button></form>
         ${st.q && !res.length ? '<p class="empty">Sin coincidencias.</p>' : ''}
         ${res.map(({ c, why }) => `<button class="result" data-act="ver" data-id="${c.id}">${av(c.skin_url, 'av sm')}<div><b>${esc(c.first_name)} ${esc(c.last_name)}</b><div class="muted">Coincide por: ${esc(why)}</div></div>${badge(c.status)}</button>`).join('')}`;
     } else if (st.tab === 'ver') {
@@ -875,7 +877,7 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
           <button class="btn sm bad" data-act="reportar" data-id="${jail.id}">Reportar al staff</button></div>` : ''}
         ${recs.some(r => r.kind === 'orden' && !r.paid) ? '<div class="alert">ORDEN DE ARRESTO ACTIVA</div>' : ''}</div></div>
         <h3>Documentos</h3><ul class="list">${lic.map(r => `<li><span class="li-ico">${ico(r.type)}</span><span class="grow">${esc(TRAMITES[r.type].name)} ${esc(r.data.clase || r.data.tipo || r.data.arma || r.data.placa || '')}</span><button class="btn sm bad" data-act="cancelarDoc" data-id="${r.id}" data-n="${esc(TRAMITES[r.type].name)}">Cancelar</button></li>`).join('') || '<li class="muted">Sin documentos</li>'}</ul>
-        <h3>Vehículos</h3><ul class="list">${vehs.map(v => { const m = models.find(x => x.id === v.model_id); return `<li>${esc(m?.brand)} ${esc(m?.model)} · ${esc(v.plate || 'sin placa')}</li>`; }).join('') || '<li class="muted">Ninguno</li>'}</ul>
+        <h3>Vehículos</h3><ul class="list">${vehs.map(v => { const m = models.find(x => x.id === v.model_id); const exp = new Date(v.registered_at || v.created_at); exp.setFullYear(exp.getFullYear() + 1); return `<li><div class="grow"><b>${esc(m?.brand)} ${esc(m?.model)}</b> · ${esc(v.plate || 'sin placa')}<div class="muted">VIN ${esc(v.vin || '—')} · Registro ${exp < new Date() ? '<b class="neg">VENCIDO</b>' : 'vigente hasta ' + fdate(exp.toISOString())}</div></div></li>`; }).join('') || '<li class="muted">Ninguno</li>'}</ul>
         <h3>Antecedentes</h3><div class="chips">${['todos', 'advertencia', 'multa', 'arresto', 'orden'].map(k => `<button data-act="f" data-f="${k}" class="${f === k ? 'on' : ''}">${k === 'todos' ? 'Todos' : REC[k]} (${k === 'todos' ? recs.length : recs.filter(r => r.kind === k).length})</button>`).join('')}</div>
         <ul class="list">${shown.map(r => `<li><div class="grow"><b>${REC[r.kind] || esc(r.kind)}</b> ${r.amount ? money(r.amount) : ''} ${r.paid ? `<span class="tag">${r.kind === 'orden' ? 'Cumplida' : 'Pagada'}</span>` : ''}
           <div>${esc(r.description)}</div><div class="muted">${fdate(r.created_at)} · Oficial ${esc(cname(r.officer_id))}</div></div>

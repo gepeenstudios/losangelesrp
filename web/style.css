@@ -836,3 +836,9 @@ tr.click{cursor:pointer}tr.click:hover{background:#ffffff08}
 .gcard{max-width:520px;background-color:#e7f2ea;background-size:240px 120px;color:#14301f;border-radius:14px;padding:12px 16px 8px;font-family:Arial,Helvetica,sans-serif;box-shadow:0 10px 30px #0006;font-size:11px}
 .gcard-h{display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #2e7d4f;padding-bottom:4px}.gcard-h b{color:#1d5a37;letter-spacing:1px}.gcard-h span{font-weight:900;color:#2e7d4f;letter-spacing:2px}
 .gcard .pass-f small{color:#2e7d4f}.gcard .pass-photo{border:2px solid #2e7d4f}
+/* registro vehicular (DMV) */
+.vreg{max-width:540px;background-color:#f4f8fb;background-size:240px 120px;color:#13283d;border-radius:8px;padding:0 16px 8px;font-family:Arial,Helvetica,sans-serif;box-shadow:0 10px 30px #0006;overflow:hidden;font-size:11px}
+.vreg-h{display:flex;justify-content:space-between;align-items:center;margin:0 -16px 10px;padding:8px 16px;background:#1f4e79;color:#fff}.vreg-h div{display:grid}.vreg-h b{letter-spacing:1.5px;font-size:12px}.vreg-h span{font-size:9px;letter-spacing:1px;opacity:.85}
+.vreg-h em{font-style:normal;font-weight:900;letter-spacing:2px;font-size:13px;color:#ffd166}
+.vreg-g{display:grid;grid-template-columns:repeat(3,1fr);gap:7px 12px}.vreg-g .w{grid-column:span 2}.vreg-g .big{grid-column:span 1}.vreg-g .big b{font-size:20px;letter-spacing:2px;font-family:"Courier New",monospace}
+.vreg-g small{display:block;font-size:8.5px;color:#1f4e79;letter-spacing:.5px}.vreg-g b{font-size:12.5px;overflow-wrap:anywhere}.vreg-n{margin:8px 0 0;padding:5px 8px;background:#ffd16633;border:1px dashed #b8860b;border-radius:5px;font-size:11px}

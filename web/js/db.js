@@ -88,6 +88,7 @@ function move(f, t, amt, concept) {
   if (t) t.balance += amt;
   T('transactions').push({ id: crypto.randomUUID(), from_acc: f?.id || null, to_acc: t?.id || null, amount: amt, concept, created_at: now() });
 }
+const newVin = () => Array.from({ length: 17 }, () => '0123456789ABCDEFGHJKLMNPRSTUVWXYZ'[Math.random() * 33 | 0]).join('');
 export function sharePrice(co, accounts = T('accounts'), props = T('properties'), vehicles = T('vehicles'), models = T('vehicle_models'), companies = T('companies')) {
   if (co.industry === 'ETF') { const o = companies.filter(x => x.industry !== 'ETF'); return o.length ? Math.round(o.reduce((s, x) => s + sharePrice(x, accounts, props, vehicles, models, companies), 0) / o.length * 1000) / 100 : 10; }
   const bal = accounts.find(a => a.id === co.account_id)?.balance || 0;
@@ -220,14 +221,14 @@ const RPC = {
       if (!co) q = 1;
       price = m.price * cpi() * q * (co?.industry === 'Concesionaria' ? (co.brand?.toLowerCase() === m.brand.toLowerCase() ? 0.1 : 0.3) : 1);
       move(a, gov(), price, 'Compra · auto nuevo');
-      for (let i = 0; i < q; i++) T('vehicles').push({ id: crypto.randomUUID(), model_id: item, owner_char: buyer, owner_company: co?.id || null, sale_price: null, plate: null, created_at: now() });
+      for (let i = 0; i < q; i++) T('vehicles').push({ id: crypto.randomUUID(), model_id: item, owner_char: buyer, owner_company: co?.id || null, sale_price: null, plate: null, vin: newVin(), registered_at: now(), created_at: now() });
     } else if (kind === 'vehicle') {
       const v = T('vehicles').find(x => x.id === item);
       if (v?.sale_price == null) throw new Error('No está en venta');
       price = v.sale_price; seller = personal(v.owner_char) || acc(company(v.owner_company).account_id);
       if (seller === a) throw new Error('Ya es tuyo');
       move(a, seller, price, 'Compra · auto usado');
-      Object.assign(v, { owner_char: buyer, owner_company: co?.id || null, sale_price: null, plate: null });
+      Object.assign(v, { owner_char: buyer, owner_company: co?.id || null, sale_price: null, plate: null, vin: v.vin || newVin(), registered_at: now() });
     } else if (kind === 'shares') {
       if (!buyer) throw new Error('Compra acciones con tu cuenta personal');
       const c = company(item); price = sharePrice(c) * q;

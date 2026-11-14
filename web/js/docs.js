@@ -134,6 +134,23 @@ export function visa(c, req) {
     <div class="idc-micro">${RP.repeat(3)}</div></div>`;
 }
 
+// Tarjeta de registro vehicular (DMV de California) de un auto. Vence 1 año después de registrarse con su dueño actual.
+export function vehicleReg(c, v, m) {
+  const reg = new Date(v.registered_at || v.created_at), exp = new Date(reg); exp.setFullYear(reg.getFullYear() + 1);
+  const day = d => d.toISOString().slice(0, 10), vin = esc(v.vin || ('PENDIENTE' + String(hash(v.id)).padStart(8, '0')).slice(0, 17)), vencida = exp < new Date();
+  const f = (l, val, cls = '') => `<div class="${cls}"><small>${l}</small><b>${val}</b></div>`;
+  return `<div class="vreg" style="background-image:${guilloche('#9fc3d9', 240, 120, 22)}">
+    <div class="vreg-h"><div><b>STATE OF CALIFORNIA</b><span>DEPARTMENT OF MOTOR VEHICLES</span></div><em>REGISTRATION CARD</em></div>
+    <div class="vreg-g">
+      ${f('LICENSE NUMBER', v.plate ? esc(v.plate.toUpperCase()) : '<i>SIN PLACA</i>', 'big')}${f('VEHICLE ID NUMBER (VIN)', vin, 'w')}
+      ${f('MAKE', up(m?.brand))}${f('MODEL', up(m?.model))}${f('BODY TYPE', up(m?.category || 'AUTO'))}
+      ${f('REGISTERED OWNER', up(c.first_name + ' ' + c.last_name), 'w')}${f('ADDRESS', up(c.city || 'LOS ANGELES, CA'), 'w')}
+      ${f('ISSUED', fdate(day(reg)))}${f('EXPIRES', fdate(day(exp)) + (vencida ? ' <span class="neg">VENCIDO</span>' : ''))}${f('CLASS', 'AUTO')}
+    </div>
+    ${v.plate ? '' : '<p class="vreg-n">Placa pendiente: tramita tu placa en la comisaría (Registro de placa).</p>'}
+    <div class="idc-micro">${RP.repeat(3)}</div></div>`;
+}
+
 // Pasaporte del país de origen: todo extranjero lo trae al llegar (lo necesita para su visa)
 const COUNTRY = { mexican: 'México', colombian: 'Colombia', guatemalte: 'Guatemala', salvadoreñ: 'El Salvador', hondureñ: 'Honduras', venezolan: 'Venezuela',
   argentin: 'Argentina', peruan: 'Perú', chilen: 'Chile', cuban: 'Cuba', español: 'España', canadiense: 'Canadá', brasileñ: 'Brasil', dominican: 'República Dominicana',
