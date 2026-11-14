@@ -831,7 +831,10 @@ const corte = { id: 'corte', name: 'LA Courts', icon: '⚖️', bg: '#5b3a1e,#8c
 
 // ============ POLICÍA (MDT) + PRISIÓN ============
 const REC = { arresto: 'Arresto', multa: 'Multa', orden: 'Orden de arresto', advertencia: 'Advertencia', cancelacion: 'Documento cancelado' };
-const KIND = { advertencia: 'Advertencias', infraccion: 'Infracciones (multa)', menor: 'Delitos menores', grave: 'Delitos graves' };
+const KIND = { advertencia: 'Advertencias', infraccion: 'Infracciones (solo multa)', menor: 'Delitos menores (hasta 1 año)', grave: 'Delitos graves (más de 1 año)' };
+// años de prisión → texto («6 meses», «2 años y 6 meses», «Perpetua»)
+const pena = y => { const m = Math.round(Number(y) * 12); if (m >= 1188) return 'Perpetua'; if (!m) return ''; const a = Math.floor(m / 12), r = m % 12;
+  return [a && `${a} año${a > 1 ? 's' : ''}`, r && `${r} mes${r > 1 ? 'es' : ''}`].filter(Boolean).join(' y '); };
 const isGuard = () => isPolice() || has('Custodio');
 const left = i => Math.max(0, new Date(i.ends_at) - Date.now());
 const clockTxt = ms => { const m = Math.ceil(ms / 6e4); return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`; };
@@ -858,7 +861,7 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
       <p>Oficial: <b>${esc(S.char ? cname(S.char.id) : S.me.username)}</b></p><p class="muted">Placa #${(S.char?.id || S.me.id).slice(0, 5).toUpperCase()}</p>
       <button class="btn" data-act="in">Iniciar sesión</button></div>`, { in: () => { sessionStorage.setItem('mdt', 1); this.render(el); } });
     const go = p => policia.render(el, { ...st, ...p });
-    const code = await db.list('penal_code', { order: 'code', asc: true });
+    const code = (await db.list('penal_code', { order: 'code', asc: true })).sort((a, b) => a.code.localeCompare(b.code, 'es', { numeric: true }));
     let body = '';
     if (st.tab === 'buscar') {
       const res = await searchPeople(st.q || '');
@@ -884,8 +887,11 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
           ${r.kind === 'orden' && !r.paid ? `<button class="btn sm" data-act="cumplir" data-id="${r.id}">Cumplida</button>` : ''}</li>`).join('') || '<li class="muted">Limpio</li>'}</ul>
         <h3>Procesar</h3><form data-form="procesar" class="form">${fieldsHTML([{ k: 'kind', label: 'Acción', type: 'select', req: 1, def: 'multa',
           options: [['advertencia', 'Advertencia'], ['multa', 'Multa'], ['arresto', 'Arresto (multa + prisión)'], ['orden', 'Orden de arresto']] }])}
-          <div class="charges">${Object.entries(KIND).map(([k, l]) => `<details ${k === 'infraccion' ? 'open' : ''}><summary>${l}</summary>${code.filter(x => x.kind === k).map(x => `<label class="chk charge"><input type="checkbox" name="cargo" value="${esc(x.code)}" data-fine="${x.fine}" data-years="${x.years}">
-            <b>${esc(x.code)}</b> ${esc(x.title)}<span class="grow"></span><small>${x.fine ? money(x.fine * cpi()) : ''}${x.years ? ` · ${x.years} año${x.years > 1 ? 's' : ''}` : ''}</small></label>`).join('')}</details>`).join('')}</div>
+          <div class="charges">${Object.entries(KIND).map(([k, l]) => `<details ${k === 'infraccion' ? 'open' : ''}><summary>${l}</summary>${code.filter(x => x.kind === k).map(x => `<label class="chk charge" title="${esc(x.notes || '')}"><input type="checkbox" name="cargo" value="${esc(x.code)}" data-fine="${x.fine}" data-years="${x.years}" data-lic="${x.lic ? 1 : ''}">
+            <b>${esc(x.code)}</b> ${esc(x.title)}${x.lic ? ' <span class="tag">licencia</span>' : ''}${x.notes ? ` <small class="muted">· ${esc(x.notes)}</small>` : ''}<span class="grow"></span><small>${[x.fine ? money(x.fine * cpi()) : '', pena(x.years)].filter(Boolean).join(' · ')}</small></label>`).join('')}</details>`).join('')}</div>
+          <div class="row gap wrap"><label class="chk"><input type="checkbox" name="atenuante"> Atenuante (Art. 4): coopera, confiesa o repara el daño · −30 % de multa</label>
+          <label class="chk"><input type="checkbox" name="agravante"> Agravante (Art. 5): reincidente, insulta a la autoridad o discrimina · +11 meses de prisión (o +$2,500 si no hay prisión)</label>
+          <label class="chk" data-licbox hidden><input type="checkbox" name="quitarLic" checked> Retirar su licencia de conducir (los cargos marcados con «licencia» lo permiten)</label></div>
           <div class="totals" data-totals>Selecciona cargos</div>${fieldsHTML([{ k: 'description', label: 'Narrativa / detalles', type: 'textarea', req: 1 }])}
           <button class="btn" type="submit">Registrar</button></form>`;
     } else if (st.tab === 'buscados') {
@@ -904,26 +910,34 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
       async procesar(v, form) {
         const picked = [...form.querySelectorAll('[name=cargo]:checked')].map(i => code.find(x => x.code === i.value));
         if (!picked.length && v.kind !== 'orden') throw new Error('Selecciona al menos un cargo');
-        const fine = picked.reduce((s, x) => s + Number(x.fine), 0) * cpi(), years = picked.reduce((s, x) => s + Number(x.years), 0);
+        let fine = picked.reduce((s, x) => s + Number(x.fine), 0) * cpi(), years = picked.reduce((s, x) => s + Number(x.years), 0);
+        if (v.atenuante) fine *= 0.7;
+        if (v.agravante) years > 0 ? years += 11 / 12 : fine += 2500 * cpi();
+        if (v.kind === 'arresto' && !years) throw new Error('Ningún cargo marcado tiene prisión: usa Multa');
+        if (v.quitarLic && picked.some(x => x.lic)) { const lic = (await db.list('requests', { eq: { character_id: st.id, type: 'licencia_conducir', status: 'approved' } }))[0];
+          if (lic) { await db.rpc('revoke_doc', { r: lic.id, motivo: picked.filter(x => x.lic).map(x => x.code + ' ' + x.title).join(', '), officer: S.char?.id || null }); toast('Licencia de conducir retirada'); } }
         const charges = picked.map(x => ({ code: x.code, title: x.title })), desc = `${charges.map(x => x.code + ' ' + x.title).join(', ')}${v.description ? ' — ' + v.description : ''}`;
-        if (v.kind === 'arresto' && years >= Number(set('trial_years'))) {
+        if (v.kind !== 'orden' && years > Number(set('trial_years'))) { // más de N años: juicio sí o sí, aunque hayan elegido multa o advertencia
           await db.insert('requests', { type: 'juicio', dept: TRAMITES.juicio.dept, character_id: st.id, data: { acusado: cname(st.id), cargos: desc, anos: years, multa: Math.round(fine), oficial: cname(S.char?.id), charges } });
           await db.insert('records', { kind: 'orden', character_id: st.id, officer_id: S.char?.id || null, description: 'En espera de juicio: ' + desc, charges });
-          return toast(`Son ${years} años: requiere juicio. Se envió el caso a los jueces.`), go({});
+          return toast(`Son ${pena(years)}: requiere juicio. Se envió el caso a los jueces y quedó con orden de arresto.`), go({});
         }
         await db.insert('records', { kind: v.kind === 'advertencia' ? 'advertencia' : v.kind, character_id: st.id, officer_id: S.char?.id || null, amount: v.kind === 'multa' || v.kind === 'arresto' ? Math.round(fine) : null, description: desc, charges });
         if (v.kind === 'arresto' && years > 0) {
           const minutes = years * Number(set('prison_min_per_year'));
           await db.insert('inmates', { character_id: st.id, officer_id: S.char?.id || null, charges, years, minutes, started_at: new Date().toISOString(), ends_at: new Date(Date.now() + minutes * 6e4).toISOString(), status: 'en_prision' });
-          toast(`Arrestado: ${years} años = ${minutes} min reales. El contador ya empezó.`);
+          toast(`Arrestado: ${pena(years)} = ${Math.round(minutes)} min reales. El contador ya empezó.`);
         } else toast('Registrado');
         go({});
       },
     });
     const box = el.querySelector('[data-totals]');
-    el.querySelector('.charges')?.addEventListener('change', () => {
-      const p = [...el.querySelectorAll('[name=cargo]:checked')], f = p.reduce((s, i) => s + Number(i.dataset.fine), 0) * cpi(), y = p.reduce((s, i) => s + Number(i.dataset.years), 0);
-      box.innerHTML = p.length ? `Multa total <b>${money(f)}</b> · Prisión <b>${y} años</b> (${y * Number(set('prison_min_per_year'))} min reales)${y >= Number(set('trial_years')) ? ' · <b class="neg">requiere juicio</b>' : ''}` : 'Selecciona cargos';
+    el.querySelector('form[data-form=procesar]')?.addEventListener('change', () => {
+      const fm = el.querySelector('form[data-form=procesar]'), p = [...el.querySelectorAll('[name=cargo]:checked')];
+      let f = p.reduce((s, i) => s + Number(i.dataset.fine), 0) * cpi(), y = p.reduce((s, i) => s + Number(i.dataset.years), 0);
+      if (fm.atenuante.checked) f *= 0.7; if (fm.agravante.checked) y > 0 ? y += 11 / 12 : f += 2500 * cpi();
+      el.querySelector('[data-licbox]').hidden = !p.some(i => i.dataset.lic);
+      box.innerHTML = p.length ? `Multa total <b>${money(f)}</b>${y ? ` · Prisión <b>${pena(y)}</b> (${Math.round(y * Number(set('prison_min_per_year')))} min reales)` : ' · Sin prisión'}${y > Number(set('trial_years')) ? ' · <b class="neg">más de ' + set('trial_years') + ' años: va a juicio sí o sí</b>' : ''}` : 'Selecciona cargos';
     });
     if (st.tab === 'pend') reviewQueue(el.querySelector('.tabbody'), { types: ['dni', 'licencia_conducir', 'licencia_armas', 'placa'], title: 'Trámites en comisaría',
       extra: r => `<button class="link" data-act="ver" data-id="${r.character_id}">ver antecedentes</button>` });
@@ -936,11 +950,11 @@ const prision = { id: 'prision', name: 'LA County Jail', icon: '🔒', bg: '#4a4
     const mine = now.filter(i => S.chars.some(c => c.id === i.character_id));
     view(el, `<div class="jail-h"><b>Los Angeles County Jail</b><span>${now.length} reclusos</span></div>
       ${mine.map(i => `<div class="alert">Tu vida <b>${esc(cname(i.character_id))}</b> está en prisión. Le faltan <b data-left="${i.ends_at}">${clockTxt(left(i))}</b>. Si entras al servidor, debes estar dentro de la prisión.</div>`).join('')}
-      <p class="muted">La condena corre desde el arresto, aunque el preso no esté conectado. 1 año = ${set('prison_min_per_year')} minutos reales. Desde ${set('trial_years')} años decide un juez.</p>
+      <p class="muted">La condena corre desde el arresto, aunque el preso no esté conectado. 1 mes = ${Math.round(set('prison_min_per_year') / 12)} minutos reales (1 año = ${set('prison_min_per_year')} min). Más de ${set('trial_years')} años decide un juez.</p>
       <table class="tbl"><thead><tr><th>Recluso</th><th>Cargos</th><th>Condena</th><th>Le falta</th>${can ? '<th></th>' : ''}</tr></thead><tbody>
-      ${now.map(i => `<tr><td>${av(skin(i.character_id), 'av sm')} ${esc(cname(i.character_id))}</td><td>${(i.charges || []).map(x => esc(x.code)).join(', ')}</td><td>${i.years} años</td>
+      ${now.map(i => `<tr><td>${av(skin(i.character_id), 'av sm')} ${esc(cname(i.character_id))}</td><td>${(i.charges || []).map(x => esc(x.code)).join(', ')}</td><td>${pena(i.years)}</td>
         <td><b data-left="${i.ends_at}">${clockTxt(left(i))}</b></td>${can ? `<td class="nowrap"><button class="btn sm" data-act="libre" data-id="${i.id}">Liberar</button><button class="btn sm bad" data-act="fuga" data-id="${i.id}">Fuga aprobada</button></td>` : ''}</tr>`).join('') || `<tr><td colspan="5" class="muted">Nadie en prisión.</td></tr>`}</tbody></table>
-      <h3>Historial</h3><ul class="list">${past.map(i => `<li><span class="grow">${esc(cname(i.character_id))} · ${i.years} años</span>${badge(i.status === 'en_prision' ? 'cumplida' : i.status)}</li>`).join('') || '<li class="muted">Sin historial</li>'}</ul>`, {
+      <h3>Historial</h3><ul class="list">${past.map(i => `<li><span class="grow">${esc(cname(i.character_id))} · ${pena(i.years)}</span>${badge(i.status === 'en_prision' ? 'cumplida' : i.status)}</li>`).join('') || '<li class="muted">Sin historial</li>'}</ul>`, {
       async libre(d) { await db.update('inmates', d.id, { status: 'liberado', ends_at: new Date().toISOString(), note: 'Liberado por ' + (cname(S.char?.id) || S.me.username) }); prision.render(el); },
       async fuga(d) {
         if (!await ask('¿Registrar fuga APROBADA por el staff? Se le pondrá orden de arresto.')) return;
@@ -1435,7 +1449,7 @@ const staffApp = { id: 'staff', name: 'Panel Staff', icon: '🛡️', bg: '#8e2d
           <button class="btn" type="submit">Guardar</button></form>
         <h3>Otros</h3>${form('otros', [{ k: 'start_money', label: 'Dinero inicial de cada vida', type: 'number', min: 0, req: 1 }, { k: 'visa_days', label: 'Días para que un extranjero registre visa', type: 'number', min: 1, req: 1 },
           { k: 'job_min_minutes', label: 'Minutos mínimos de turno al día', type: 'number', min: 1, req: 1 }, { k: 'fed_rate', label: 'Tasa de la Reserva Federal (%)', type: 'number', min: 0, max: 25, req: 1 },
-          { k: 'prison_min_per_year', label: 'Minutos reales por cada año de prisión', type: 'number', min: 1, req: 1 }, { k: 'trial_years', label: 'Años a partir de los cuales hay juicio', type: 'number', min: 1, req: 1 }],
+          { k: 'prison_min_per_year', label: 'Minutos reales por cada año de prisión', type: 'number', min: 1, req: 1 }, { k: 'trial_years', label: 'Más de cuántos años de prisión va a juicio', type: 'number', min: 1, req: 1 }],
           { start_money: set('start_money'), visa_days: set('visa_days'), job_min_minutes: set('job_min_minutes'), fed_rate: set('fed_rate'), prison_min_per_year: set('prison_min_per_year'), trial_years: set('trial_years') }, 'Guardar')}`;
       const save = async (key, value) => { await db.upsert('settings', { key, value }); S.settings[key] = value; };
       Object.assign(acts, {
@@ -1481,17 +1495,18 @@ const staffApp = { id: 'staff', name: 'Panel Staff', icon: '🛡️', bg: '#8e2d
     if (tab === 'cfg') {
       body = `<p>Carga o actualiza los datos base: quién aprueba cada trámite, ajustes por defecto, y (si están vacíos) autos, casas y trabajos del gobierno de ejemplo.</p>
         <button class="btn" data-act="seed">Cargar / actualizar datos base</button>
-        <h3>Código penal</h3><form data-form="penal" class="form"><table class="tbl"><tr><th>Código</th><th>Delito</th><th>Tipo</th><th>Multa base</th><th>Años</th></tr>
-        ${(await db.list('penal_code', { order: 'code', asc: true })).map(x => `<tr><td>${esc(x.code)}</td><td><input name="${esc(x.code)}|title" value="${esc(x.title)}"></td><td>${esc(x.kind)}</td>
-          <td><input type="number" min="0" name="${esc(x.code)}|fine" value="${x.fine}"></td><td><input type="number" min="0" step="any" name="${esc(x.code)}|years" value="${x.years}"></td></tr>`).join('')}</table>
+        <h3>Código penal</h3><form data-form="penal" class="form"><table class="tbl"><tr><th>Código</th><th>Delito</th><th>Tipo</th><th>Multa base</th><th>Meses de prisión</th><th>Quita licencia</th></tr>
+        ${(await db.list('penal_code', { order: 'code', asc: true })).sort((a, b) => a.code.localeCompare(b.code, 'es', { numeric: true })).map(x => `<tr><td>${esc(x.code)}</td><td><input name="${esc(x.code)}|title" value="${esc(x.title)}"></td><td>${esc(x.kind)}</td>
+          <td><input type="number" min="0" name="${esc(x.code)}|fine" value="${x.fine}"></td><td><input type="number" min="0" step="1" name="${esc(x.code)}|months" value="${Math.round(x.years * 12)}"></td><td><input type="checkbox" name="${esc(x.code)}|lic" ${x.lic ? 'checked' : ''}></td></tr>`).join('')}</table>
         <button class="btn" type="submit">Guardar código penal</button></form>
         <h4>Agregar artículo</h4>${form('penalNew', [{ k: 'code', label: 'Código', req: 1, ph: 'G-31' }, { k: 'title', label: 'Delito', req: 1 },
           { k: 'kind', label: 'Tipo', type: 'select', options: [['advertencia', 'Advertencia'], ['infraccion', 'Infracción'], ['menor', 'Delito menor'], ['grave', 'Delito grave']], req: 1 },
-          { k: 'fine', label: 'Multa', type: 'number', min: 0, def: 0 }, { k: 'years', label: 'Años de prisión', type: 'number', min: 0, def: 0 }], {}, 'Agregar')}`;
+          { k: 'fine', label: 'Multa', type: 'number', min: 0, def: 0 }, { k: 'months', label: 'Meses de prisión (1 mes = 5 min reales)', type: 'number', min: 0, def: 0 }, { k: 'lic', label: 'Quita licencia', type: 'check', text: 'permite retirar la licencia de conducir' }], {}, 'Agregar')}`;
       Object.assign(acts, {
-        async penal(d) { const rows = {}; for (const [k, v] of Object.entries(d)) { const [code, f] = k.split('|'); (rows[code] ??= { code })[f] = f === 'title' ? v : Number(v); }
+        async penal(d) { const rows = {}; for (const [k, v] of Object.entries(d)) { const [code, f] = k.split('|'); const r = rows[code] ??= { code, lic: false };
+            if (f === 'title') r.title = v; else if (f === 'lic') r.lic = v; else if (f === 'months') r.years = Number(v) / 12; else r[f] = Number(v); }
           for (const r of Object.values(rows)) await db.upsert('penal_code', r, 'code'); toast('Código penal guardado'); go('cfg'); },
-        async penalNew(d) { await db.upsert('penal_code', d, 'code'); toast('Artículo agregado'); go('cfg'); },
+        async penalNew({ months, ...d }) { await db.upsert('penal_code', { ...d, years: Number(months || 0) / 12 }, 'code'); toast('Artículo agregado'); go('cfg'); },
       });
       acts.seed = async () => { await seed(); toast('Datos base cargados ✅'); };
     }
@@ -1538,7 +1553,7 @@ export async function seed() {
   const jobs = await db.list('jobs', { limit: 1000 });
   for (const [title, employer, role_tag] of SEED_JOBS) if (!jobs.some(j => j.role_tag === role_tag)) await db.insert('jobs', { title, employer, role_tag, description: 'Trabajo de gobierno con sueldo diario. Al ser aceptado entras con el rango más bajo; tus mandos te pueden ascender.' });
   const pc = await db.list('penal_code', { order: null, limit: 1000 });
-  await all(PENAL_CODE.filter(([code]) => !pc.some(x => x.code === code)).map(([code, title, kind, fine, years]) => db.upsert('penal_code', { code, title, kind, fine, years }, 'code')));
+  await all(PENAL_CODE.filter(([code]) => !pc.some(x => x.code === code)).map(([code, title, kind, fine, years, lic, notes]) => db.upsert('penal_code', { code, title, kind, fine, years, lic, notes: notes || null }, 'code')));
   if (!(await db.list('companies', { eq: { industry: 'ETF' } })).length) await db.insert('companies', { name: 'LA500 ETF', industry: 'ETF', owners: [], description: 'Fondo que sigue el promedio de todas las empresas de Los Ángeles.' });
   const g = (await db.list('accounts', { eq: { kind: 'gov' } }))[0];
   if (g && Number(g.balance) === 0) await db.rpc('staff_pay', { acc: g.id, amount: 13950000000, concept: 'Presupuesto inicial FY 2025-26', mint: true });

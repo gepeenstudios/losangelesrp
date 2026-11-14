@@ -842,3 +842,4 @@ tr.click{cursor:pointer}tr.click:hover{background:#ffffff08}
 .vreg-h em{font-style:normal;font-weight:900;letter-spacing:2px;font-size:13px;color:#ffd166}
 .vreg-g{display:grid;grid-template-columns:repeat(3,1fr);gap:7px 12px}.vreg-g .w{grid-column:span 2}.vreg-g .big{grid-column:span 1}.vreg-g .big b{font-size:20px;letter-spacing:2px;font-family:"Courier New",monospace}
 .vreg-g small{display:block;font-size:8.5px;color:#1f4e79;letter-spacing:.5px}.vreg-g b{font-size:12.5px;overflow-wrap:anywhere}.vreg-n{margin:8px 0 0;padding:5px 8px;background:#ffd16633;border:1px dashed #b8860b;border-radius:5px;font-size:11px}
+.charge b{white-space:nowrap}

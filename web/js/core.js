@@ -233,7 +233,7 @@ export const ON_APPROVE = {
     await db.insert('inmates', { character_id: r.character_id, charges: r.data.charges || [], years: Number(r.data.anos), minutes, started_at: new Date().toISOString(), ends_at: new Date(Date.now() + minutes * 6e4).toISOString(), status: 'en_prision', note: 'Sentencia judicial' });
     await db.insert('records', { kind: 'arresto', character_id: r.character_id, amount: r.data.multa || null, description: 'Sentencia: ' + r.data.cargos, charges: r.data.charges || [] });
     for (const o of await db.list('records', { eq: { character_id: r.character_id, kind: 'orden', paid: false } })) if (o.description.startsWith('En espera de juicio')) await db.update('records', o.id, { paid: true });
-    return `Culpable: ${r.data.anos} años (${minutes} min reales). Ya está corriendo su condena.`;
+    return `Culpable: ${Math.round(r.data.anos * 12)} meses de prisión (${Math.round(minutes)} min reales). Ya está corriendo su condena.`;
   },
   async warn_prision(r) {
     const c = S.all.find(x => x.id === r.data.preso_id), p = c && await db.get('profiles', c.user_id);
