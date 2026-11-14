@@ -1,5 +1,5 @@
 // Capa de datos: Supabase si config.js tiene llaves; si no, modo demo en localStorage (mismas funciones).
-import { incomeTax, TRAMITES } from './data.js';
+import { incomeTax, TRAMITES, SHOP, GUN_CLASSES } from './data.js';
 import { SUPABASE_URL, SUPABASE_KEY } from '../config.js';
 
 export const DEMO = !SUPABASE_URL;
@@ -185,7 +185,7 @@ const RPC = {
     guard(lvlLocal() >= 3, 'Solo admins');
     T('properties').filter(p => p.owner_char === c).forEach(p => Object.assign(p, { owner_char: null, for_sale: true, sale_price: null }));
     const accs = T('accounts').filter(a => a.owners[0] === c && ['personal', 'savings'].includes(a.kind)).map(a => a.id);
-    for (const [t, f] of [['vehicles', 'owner_char'], ['holdings', 'character_id'], ['requests', 'character_id'], ['employments', 'character_id'], ['records', 'character_id'], ['inmates', 'character_id'], ['work_shifts', 'character_id']]) mem.t[t] = T(t).filter(x => x[f] !== c);
+    for (const [t, f] of [['vehicles', 'owner_char'], ['items', 'owner_char'], ['holdings', 'character_id'], ['requests', 'character_id'], ['employments', 'character_id'], ['records', 'character_id'], ['inmates', 'character_id'], ['work_shifts', 'character_id']]) mem.t[t] = T(t).filter(x => x[f] !== c);
     mem.t.transactions = T('transactions').filter(x => !accs.includes(x.from_acc) && !accs.includes(x.to_acc));
     mem.t.accounts = T('accounts').filter(a => !accs.includes(a.id)); mem.t.characters = T('characters').filter(x => x.id !== c);
   },
@@ -274,6 +274,15 @@ const RPC = {
   },
   join_jam({ jam_code, c }) { const j = T('jams').find(x => x.code === String(jam_code).trim().toUpperCase()); guard(j, 'No existe una Jam con ese código'); j.members = [...j.members.filter(m => m !== c), c]; return j.id; },
   server_now() { return new Date().toISOString(); },
+  buy_item({ c, it, q = 1 }) { const x = SHOP.find(s => s[0] === it); if (!x) throw new Error('Ese producto no existe'); const [, name, , price, gun] = x, rk = t => GUN_CLASSES.indexOf(t) + 1;
+    if (q < 1 || q > 20 || (gun && gun !== 'any' && q > 1)) throw new Error('Cantidad inválida (armas: una por compra)');
+    if (gun) { const lic = Math.max(0, ...T('requests').filter(r => r.character_id === c && r.type === 'licencia_armas' && r.status === 'approved').map(r => rk(r.data.tipo)));
+      if (!lic) throw new Error('Necesitas una licencia de armas vigente. Tramítala en la comisaría.'); if (gun !== 'any' && lic < rk(gun)) throw new Error(`Tu licencia no cubre ${name}. Necesitas licencia de ${gun} o superior.`); }
+    const total = Math.round(price * cpi() * q * 100) / 100; move(personal(c), gov(), total, 'Tool Store · ' + name + (q > 1 ? ' ×' + q : ''));
+    for (let k = 0; k < q; k++) T('items').push({ id: crypto.randomUUID(), owner_char: c, item: it, serial: gun && gun !== 'any' ? crypto.randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase() : null, price: total / q, created_at: now() }); },
+  confiscate_item({ i, motivo, officer }) { const x = T('items').find(y => y.id === i); if (!x) throw new Error('Ese objeto ya no existe'); if (!String(motivo || '').trim()) throw new Error('Escribe el motivo del decomiso');
+    const s = SHOP.find(y => y[0] === x.item); if (!s?.[5]) throw new Error((s?.[1] || 'Eso') + ' no se puede decomisar');
+    mem.t.items = T('items').filter(y => y.id !== i); T('records').push({ id: crypto.randomUUID(), kind: 'decomiso', character_id: x.owner_char, officer_id: officer, description: `Decomiso: ${s[1]}${x.serial ? ' (serie ' + x.serial + ')' : ''} — ${motivo}`, created_at: now() }); },
   revoke_doc({ r, motivo, officer }) { const q = T('requests').find(x => x.id === r && x.status === 'approved'); if (!q) throw new Error('Ese documento no existe o ya no está vigente'); if (!String(motivo || '').trim()) throw new Error('Escribe el motivo de la cancelación');
     Object.assign(q, { status: 'revoked', note: 'Cancelado por la policía: ' + motivo, reviewer_id: myId, reviewed_at: now() });
     T('records').push({ id: crypto.randomUUID(), kind: 'cancelacion', character_id: q.character_id, officer_id: officer, description: `${TRAMITES[q.type]?.name || q.type} cancelada: ${motivo}`, created_at: now() }); },

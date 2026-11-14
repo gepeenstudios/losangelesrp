@@ -26,6 +26,51 @@ export const ARMAS = [['Beretta M9','Armas Cortas'],['Desert Eagle','Armas Corta
   ['Tec 9','Armas Cortas'],['Skorpion','Armas Cortas'],['Kriss Vector SMG','Armas Largas'],['LMT','Armas Largas'],
   ['M14','Armas Largas'],['AK47','Armas Largas'],['Sniper','Armas Largas'],['M2','Armas Pesadas']];
 export const HERRAMIENTAS = ['Bate de béisbol','Dron','Martillo','Cuchillo','Tarjeta de robo','Ganzúa','Linterna','Taladro','Spray'];
+// Tool Store: [id, nombre, tienda, precio USD, licencia de armas que pide ('' no es arma, 'any' cualquiera), la policía lo puede decomisar, descripción]
+// Fotos en img/tienda/<id>.jpg. Los precios reales los cobra la base de datos (shop_items); estos son los mismos.
+export const SHOP = [
+  ['martillo', 'Martillo', 'herramientas', 25, '', false, 'Martillo de carpintero con mango de fibra de vidrio.'],
+  ['cuchillo', 'Cuchillo', 'herramientas', 45, '', true, 'Cuchillo táctico de hoja fija.'],
+  ['disruptor_rfid', 'Disruptor RFID', 'herramientas', 450, '', true, 'Interfiere cerraduras y tarjetas RFID. Su uso para delinquir es ilegal.'],
+  ['ganzua', 'Ganzúa (lockpick)', 'herramientas', 35, '', true, 'Juego de ganzúas para abrir cerraduras.'],
+  ['palanca', 'Palanca', 'herramientas', 30, '', true, 'Barra de acero de 60 cm.'],
+  ['cortador_cristal', 'Cortador de cristal', 'herramientas', 20, '', true, 'Corta vidrio con punta de carburo.'],
+  ['linterna', 'Linterna', 'herramientas', 15, '', false, 'Linterna LED resistente al agua.'],
+  ['escaner', 'Escáner de radio', 'herramientas', 150, '', true, 'Escucha frecuencias de radio abiertas.'],
+  ['aerosol', 'Pintura en aerosol', 'herramientas', 8, '', false, 'Lata de pintura en spray.'],
+  ['bate', 'Bate de béisbol', 'herramientas', 60, '', true, 'Bate de madera profesional.'],
+  ['pearphone_retro', 'Pearphone Retro', 'gadgets', 299, '', false, 'El celular de siempre. Toda vida lo trae incluido.'],
+  ['pearphone_x', 'Pearphone X', 'gadgets', 999, '', false, 'Pantalla OLED de 6.1", triple cámara.'],
+  ['nebula_g7', 'Nebula G7', 'gadgets', 499, '', false, 'Gama media con gran batería.'],
+  ['nebula_g20', 'Nebula G20', 'gadgets', 899, '', false, 'Gama alta con cámara de 108 MP.'],
+  ['plusultra', 'PlusUltra', 'gadgets', 1199, '', false, 'El más potente del mercado.'],
+  ['dron', 'Dron', 'gadgets', 1299, '', false, 'Dron plegable con cámara 4K y 30 min de vuelo.'],
+  ['beretta_m9', 'Beretta M9', 'armeria', 650, 'Armas Cortas', true, 'Pistola 9 mm, cargador de 15.'],
+  ['colt_m1911', 'Colt M1911', 'armeria', 900, 'Armas Cortas', true, 'Pistola .45 ACP clásica.'],
+  ['desert_eagle', 'Desert Eagle', 'armeria', 1900, 'Armas Cortas', true, 'Pistola .50 AE de alto calibre.'],
+  ['colt_python', 'Colt Python', 'armeria', 1600, 'Armas Cortas', true, 'Revólver .357 Magnum.'],
+  ['tec9', 'TEC-9', 'armeria', 650, 'Armas Cortas', true, 'Pistola semiautomática 9 mm.'],
+  ['skorpion', 'Skorpion', 'armeria', 1500, 'Armas Cortas', true, 'Subfusil compacto .32 ACP.'],
+  ['remington_870', 'Remington 870', 'armeria', 500, 'Armas Largas', true, 'Escopeta de bombeo calibre 12.'],
+  ['remington_700', 'Remington 700', 'armeria', 1100, 'Armas Largas', true, 'Rifle de cerrojo para caza.'],
+  ['m14', 'M14', 'armeria', 2200, 'Armas Largas', true, 'Rifle semiautomático 7.62 mm.'],
+  ['ak47', 'AK47', 'armeria', 1300, 'Armas Largas', true, 'Rifle 7.62×39 mm.'],
+  ['kriss_vector', 'Kriss Vector', 'armeria', 2400, 'Armas Largas', true, 'Subfusil .45 ACP.'],
+  ['ppsh41', 'PPSh-41', 'armeria', 2800, 'Armas Largas', true, 'Subfusil de colección con tambor.'],
+  ['lmt_l129a1', 'LMT L129A1', 'armeria', 4200, 'Armas Largas', true, 'Rifle de tirador designado 7.62 mm.'],
+  ['remington_msr', 'Remington MSR', 'armeria', 6800, 'Armas Largas', true, 'Rifle de francotirador modular.'],
+  ['m249', 'M249', 'armeria', 9500, 'Armas Pesadas', true, 'Ametralladora ligera 5.56 mm.'],
+  ['municion', 'Caja de munición', 'armeria', 60, 'any', true, 'Caja de munición para cualquier arma registrada.'],
+  ['tienda_basica', 'Tienda de campaña básica', 'camping', 80, '', false, 'Para 2 personas.'],
+  ['tienda_avanzada', 'Tienda de campaña avanzada', 'camping', 350, '', false, 'Para 6 personas, con dos cuartos.'],
+  ['silla_camping', 'Silla de camping', 'camping', 35, '', false, 'Plegable, con portavasos.'],
+  ['silla_plastico', 'Silla de plástico', 'camping', 15, '', false, 'Apilable.'],
+  ['asiento_tronco', 'Asiento de tronco', 'camping', 25, '', false, 'Tronco de madera natural.'],
+  ['fogata', 'Fogata portátil', 'camping', 60, '', false, 'Kit de fogata con piedras.'],
+  ['parrilla', 'Parrilla de carbón', 'camping', 120, '', false, 'Asador de carbón con ruedas.'],
+];
+export const SHOP_STORES = { herramientas: 'Herramientas', gadgets: 'Electrónica', armeria: 'Armería', camping: 'Camping' };
+export const GUN_CLASSES = ['Armas Cortas', 'Armas Largas', 'Armas SWAT', 'Armas Pesadas']; // una licencia cubre su clase y las de abajo
 // Reglas oficiales de CK del servidor (se muestran al registrar o apelar un CK)
 export const CK_RULES = [
   ['Motivo sólido y coherente', 'Un CK debe estar justificado por un motivo sólido en la historia. No puedes matar a alguien por una simple discusión o sin razones claras relacionadas con el roleplay.'],

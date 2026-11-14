@@ -7,7 +7,7 @@ import { openWizardOverlay } from './vida.js';
 import { openTramite } from './portal.js';
 import { ico } from './icons.js';
 import { birthCert, idCard, passport, visa, vehicleReg, diploma, docNumber, homeCountry, homePassport, ssnCard } from './docs.js';
-import { incomeTax, CK_RULES, JOB_DESC, TRAMITES, ROLES, STAFF, STAFF_NAME, LVL, CITIES, NATIONS, WALLPAPERS, DEFAULT_SETTINGS, SEED_MODELS, SEED_PROPS, SEED_JOBS, CAR_PHOTOS, DEPTS, PENAL_CODE } from './data.js';
+import { incomeTax, CK_RULES, JOB_DESC, TRAMITES, ROLES, STAFF, STAFF_NAME, LVL, CITIES, NATIONS, SHOP, SHOP_STORES, GUN_CLASSES, WALLPAPERS, DEFAULT_SETTINGS, SEED_MODELS, SEED_PROPS, SEED_JOBS, CAR_PHOTOS, DEPTS, PENAL_CODE } from './data.js';
 
 const ST = { revoked: 'Cancelado por la policía', cumplida: 'Cumplida', liberado: 'Liberado', fugado: 'Fugado', en_prision: 'En prisión', pending: 'Pendiente', active: 'Activo', dead: 'CK', rejected: 'Rechazado', approved: 'Aprobado', abierto: 'Abierto', tomado: 'En atención', cerrado: 'Cerrado', vacation: 'Vacaciones' };
 const badge = s => `<span class="st st-${s}">${ST[s] || s}</span>`;
@@ -227,6 +227,40 @@ const trabajo = { id: 'trabajo', name: 'Workday', icon: '💼', bg: '#f5a623,#e5
     if (tab === 'equipo') reviewQueue(el.querySelector('.q'), { types: ['job', 'vacaciones'], title: 'Solicitudes de empleo y vacaciones' });
   } };
 
+
+// ============ TOOL STORE (herramientas, electrónica, armería, camping) + inventario ============
+const SHOPI = Object.fromEntries(SHOP.map(([id, name, store, price, gun, conf, desc]) => [id, { id, name, store, price, gun, conf, desc }]));
+const gunRank = t => GUN_CLASSES.indexOf(t) + 1;
+const toolstore = { id: 'toolstore', name: 'Tool Store', icon: '🧰', bg: '#ff7a00,#c43e00', url: 'toolstore.rp', show: () => true,
+  async render(el, tab = 'herramientas') {
+    if (typeof tab === 'object') tab = 'herramientas';
+    if (!needChar(el)) return;
+    const [mine, reqs, accs] = await Promise.all([db.list('items', { eq: { owner_char: S.char.id }, limit: 1000 }), myRequests(), myAccounts()]);
+    const lic = Math.max(0, ...approvedOf(reqs, 'licencia_armas').map(r => gunRank(r.data.tipo))), have = id => mine.filter(i => i.item === id).length;
+    const why = it => !it.gun ? '' : !lic ? 'Necesitas licencia de armas' : it.gun !== 'any' && lic < gunRank(it.gun) ? `Tu licencia no cubre ${it.gun}` : '';
+    const card = it => { const no = why(it); return `<div class="ts-card"><div class="ts-img"><img src="img/tienda/${it.id}.jpg" alt="${esc(it.name)}" loading="lazy">${have(it.id) ? `<span class="ts-have">Tienes ${have(it.id)}</span>` : ''}</div>
+      <div class="ts-b"><b>${esc(it.name)}</b><small class="muted">${esc(it.desc)}</small>
+      ${it.gun ? `<span class="tag ${no ? 'bad' : ''}">🪪 ${it.gun === 'any' ? 'Licencia de armas' : 'Licencia: ' + esc(it.gun)}</span>` : ''}${it.conf && !it.gun ? '<span class="tag">La policía lo puede decomisar</span>' : ''}
+      <div class="row"><b class="ts-price">${money(it.price * cpi())}</b><span class="grow"></span>${no ? `<button class="btn sm ghost" data-act="lic">${esc(no)}</button>` : `<button class="btn sm" data-act="comprar" data-id="${it.id}">Comprar</button>`}</div></div></div>`; };
+    let body;
+    if (tab === 'inv') {
+      const groups = Object.values(mine.reduce((g, i) => ((g[i.item] ??= []).push(i), g), {}));
+      body = `<p class="muted">Lo que traes contigo. Las armas quedan registradas a tu nombre con su número de serie.</p><ul class="list ts-inv">
+        <li><img src="img/tienda/pearphone_retro.jpg" alt=""><div class="grow"><b>Pearphone Retro</b><div class="muted">Celular incluido con tu vida · no se puede quitar ni decomisar</div></div><span class="tag">Incluido</span></li>
+        ${groups.map(g => { const it = SHOPI[g[0].item] || { name: g[0].item }; return `<li><img src="img/tienda/${g[0].item}.jpg" alt=""><div class="grow"><b>${esc(it.name)}${g.length > 1 ? ` ×${g.length}` : ''}</b>
+          <div class="muted">${g.filter(i => i.serial).map(i => 'Serie ' + esc(i.serial)).join(' · ') || esc(SHOP_STORES[it.store] || '')}</div></div>${it.conf ? '<span class="tag">Decomisable</span>' : ''}</li>`; }).join('')}</ul>`;
+    } else body = `<p class="muted">${tab === 'armeria' ? `Armería con licencia: necesitas tu <b>licencia de armas</b> aprobada (una licencia cubre su clase y las de abajo: Cortas → Largas → SWAT → Pesadas). Cada arma sale registrada con número de serie. Tu licencia: <b>${lic ? GUN_CLASSES[lic - 1] : 'ninguna'}</b>.` : 'Precios en dólares con impuestos incluidos. Pagas con tu cuenta personal.'}</p>
+      <div class="ts-grid">${SHOP.filter(x => x[2] === tab).map(x => card(SHOPI[x[0]])).join('')}</div>`;
+    view(el, `<div class="ts"><header class="ts-h"><b>🧰 Tool Store</b><span>Los Ángeles</span></header>${tabs([...Object.entries(SHOP_STORES), ['inv', `Mi inventario (${mine.length + 1})`]], tab)}<div class="tabbody">${body}</div></div>`, {
+      tab: d => toolstore.render(el, d.t),
+      lic: () => openTramite('licencia_armas'),
+      comprar: d => { const it = SHOPI[d.id], gun = it.gun && it.gun !== 'any';
+        modal('Comprar ' + esc(it.name), `<img class="ts-modal-img" src="img/tienda/${it.id}.jpg" alt="">` + form('go', [...(gun ? [] : [{ k: 'q', label: 'Cantidad', type: 'number', min: 1, max: 20, def: 1, req: 1 }])], {}, `Pagar ${money(it.price * cpi())}${gun ? '' : ' c/u'}`)
+          + `<p class="muted">Se cobra de tu cuenta personal (saldo ${money(accs.find(a => a.kind === 'personal')?.balance || 0)}).</p>`, {
+          async go(v, _, close) { await db.rpc('buy_item', { c: S.char.id, it: it.id, q: Number(v.q || 1) }); close(); toast(`Compraste ${it.name} 🧰`); toolstore.render(el, tab); window.liveRefresh?.(); } }); },
+    });
+  } };
+
 // ============ DOCUMENTOS (wallet) ============
 // Documentos personales y licencias: Wallet los junta todos; Documentos y Licencias salen en el escritorio cuando tienes alguno
 const LIC_TYPES = ['licencia_conducir', 'licencia_armas', 'licencia_abogado', 'licencia_juez'];
@@ -254,7 +288,8 @@ function docApp(id, name, bg, kind, show) {
       const [reqs, vehs, models] = await Promise.all([myRequests(), db.list('vehicles', { eq: { owner_char: S.char.id } }), db.list('vehicle_models', { order: null })]), ok = t => approvedOf(reqs, t), { list, dni } = myDocs(S.char, reqs, vehs, models), all = kind ? list.filter(d => d.kind === kind) : list;
       const regs = kind ? [] : [...ok('placa').map(r => [ico('placa'), `Placa ${esc(r.data.placa.toUpperCase())}`, `${esc(r.data.tipo)} · ${esc(r.data.estado)}`]),
         ...ok('registro_arma').map(r => [ico('registro_arma'), esc(r.data.arma), 'Serie ' + esc(r.data.serie)]),
-        ...ok('registro_herramienta').map(r => [ico('registro_herramienta'), esc(r.data.herramienta), 'Registrada'])];
+        ...ok('registro_herramienta').map(r => [ico('registro_herramienta'), esc(r.data.herramienta), 'Registrada']),
+        ...(await db.list('items', { eq: { owner_char: S.char.id }, limit: 500 })).filter(i => i.serial).map(i => [ico('registro_arma'), esc(SHOPI[i.item]?.name || i.item), 'Serie ' + esc(i.serial) + ' · comprada en Tool Store'])];
       const tiles = all.map((d, i) => `<button class="dfile" data-act="zoom" data-k="${i}"><div class="dthumb"><div class="doc">${d.html}</div></div><b>${esc(d.title)}</b></button>`).join('');
       view(el, `<p class="muted">${kind === 'lic' ? 'Tus licencias vigentes. Toca una para verla en grande.' : kind === 'doc' ? 'Tus documentos oficiales. Toca uno para verlo en grande.' : 'Todos tus documentos, licencias y registros.'}</p>
         <div class="dgrid">${tiles || `<p class="empty">${kind === 'lic' ? 'Todavía no tienes licencias. Tramítalas en el portal del gobierno.' : 'Sin documentos.'}</p>`}</div>
@@ -464,6 +499,7 @@ const buscar = { id: 'buscar', name: 'Google', icon: '🔎', bg: '#4285f4,#1a73e
       ['linkedin.rp', 'LinkedIn: Empleos en Los Ángeles', 'Vacantes del gobierno y de empresas privadas.', 'trabajo empleo vacante linkedin'],
       ['zillow.rp', 'Zillow: Casas y locales en venta', 'Encuentra casas y locales comerciales en Los Ángeles.', 'casa casas propiedad zillow renta local'],
       ['carmax.rp', 'CarMax: Autos nuevos y usados', 'Más de 100 modelos disponibles.', 'auto autos carro coche carmax'],
+      ['toolstore.rp', 'Tool Store: herramientas, celulares, armería y camping', 'Compra con tu cuenta personal. Armas solo con licencia.', 'tienda herramientas celular telefono armas pistola camping dron toolstore'],
       ['gbm.rp', 'GBM+: Invierte en la bolsa de Los Ángeles', 'Compra acciones y el ETF LA500.', 'bolsa acciones invertir gbm trading etf portafolio'],
       ['latimes.rp', 'Los Angeles Times', 'Últimas noticias de la ciudad.', 'noticias periodico times'], ['lacourt.rp', 'Superior Court of Los Angeles', 'Demandas, juicios y abogados.', 'corte juez demanda abogado juicio'],
       ['vote.rp', 'Vote.gov: Elecciones', 'Partidos, campañas y votaciones.', 'votar elecciones partido campaña']];
@@ -508,7 +544,7 @@ const companySite = { async render(el, params) {
 
 // Navegador: cada dirección .rp abre su sitio. Las empresas tienen su propio sitio: nombre.rp
 export async function resolveSite(host) {
-  const map = { 'google.rp': buscar, 'lacity.rp': gobierno, 'latimes.rp': news, 'linkedin.rp': empleos, 'zillow.rp': casas, 'carmax.rp': autos, 'gbm.rp': bolsa, 'vote.rp': fec, 'lacourt.rp': corte };
+  const map = { 'google.rp': buscar, 'lacity.rp': gobierno, 'latimes.rp': news, 'linkedin.rp': empleos, 'zillow.rp': casas, 'carmax.rp': autos, 'toolstore.rp': toolstore, 'gbm.rp': bolsa, 'vote.rp': fec, 'lacourt.rp': corte };
   if (map[host]) return (el, params) => map[host].render(el, params);
   if (host === 'robpedia.rp' || host === 'wikipedia.rp') return robpedia;
   if (host === 'sites.google.rp') return siteBuilder;
@@ -830,7 +866,7 @@ const corte = { id: 'corte', name: 'LA Courts', icon: '⚖️', bg: '#5b3a1e,#8c
   } };
 
 // ============ POLICÍA (MDT) + PRISIÓN ============
-const REC = { arresto: 'Arresto', multa: 'Multa', orden: 'Orden de arresto', advertencia: 'Advertencia', cancelacion: 'Documento cancelado' };
+const REC = { arresto: 'Arresto', multa: 'Multa', orden: 'Orden de arresto', advertencia: 'Advertencia', cancelacion: 'Documento cancelado', decomiso: 'Decomiso' };
 const KIND = { advertencia: 'Advertencias', infraccion: 'Infracciones (solo multa)', menor: 'Delitos menores (hasta 1 año)', grave: 'Delitos graves (más de 1 año)' };
 // años de prisión → texto («6 meses», «2 años y 6 meses», «Perpetua»)
 const pena = y => { const m = Math.round(Number(y) * 12); if (m >= 1188) return 'Perpetua'; if (!m) return ''; const a = Math.floor(m / 12), r = m % 12;
@@ -853,6 +889,7 @@ async function searchPeople(q) {
   vehs.filter(v => v.vin?.toLowerCase() === q).forEach(v => add(v.owner_char, 'VIN ' + v.vin));
   reqs.filter(r => r.type === 'placa' && r.data.placa?.toLowerCase() === q).forEach(r => add(r.character_id, 'Placa ' + r.data.placa.toUpperCase()));
   reqs.filter(r => r.type === 'registro_arma' && r.data.serie?.toLowerCase() === q).forEach(r => add(r.character_id, 'Arma serie ' + r.data.serie));
+  (await db.list('items', { limit: 5000 })).filter(i => i.serial?.toLowerCase() === q).forEach(i => add(i.owner_char, `Arma serie ${i.serial} (${SHOPI[i.item]?.name || i.item})`));
   return [...hit].map(([id, why]) => ({ c: S.all.find(x => x.id === id), why })).filter(x => x.c);
 }
 const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#243b55', show: isPolice,
@@ -870,7 +907,7 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
         ${res.map(({ c, why }) => `<button class="result" data-act="ver" data-id="${c.id}">${av(c.skin_url, 'av sm')}<div><b>${esc(c.first_name)} ${esc(c.last_name)}</b><div class="muted">Coincide por: ${esc(why)}</div></div>${badge(c.status)}</button>`).join('')}`;
     } else if (st.tab === 'ver') {
       const c = S.all.find(x => x.id === st.id), [recs, reqs, vehs, models, inm] = await Promise.all([db.list('records', { eq: { character_id: c.id } }),
-        db.list('requests', { eq: { character_id: c.id, status: 'approved' } }), db.list('vehicles', { eq: { owner_char: c.id } }), db.list('vehicle_models', { order: null }), db.list('inmates', { eq: { character_id: c.id } })]);
+        db.list('requests', { eq: { character_id: c.id, status: 'approved' } }), db.list('vehicles', { eq: { owner_char: c.id } }), db.list('vehicle_models', { order: null }), db.list('inmates', { eq: { character_id: c.id } })]), inv = await db.list('items', { eq: { owner_char: c.id }, limit: 500 });
       const f = st.f || 'todos', shown = recs.filter(r => f === 'todos' || r.kind === f), jail = inm.find(inPrison);
       const lic = reqs.filter(r => ['dni', 'licencia_conducir', 'licencia_armas', 'registro_arma', 'visa', 'pasaporte', 'placa'].includes(r.type));
       body = `<button class="link" data-act="tab" data-t="buscar">‹ Volver</button><div class="card row">${av(c.skin_url, 'big-av')}<div class="grow"><h3>${esc(c.first_name)} ${esc(c.last_name)}</h3>
@@ -881,6 +918,8 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
         ${recs.some(r => r.kind === 'orden' && !r.paid) ? '<div class="alert">ORDEN DE ARRESTO ACTIVA</div>' : ''}</div></div>
         <h3>Documentos</h3><ul class="list">${lic.map(r => `<li><span class="li-ico">${ico(r.type)}</span><span class="grow">${esc(TRAMITES[r.type].name)} ${esc(r.data.clase || r.data.tipo || r.data.arma || r.data.placa || '')}</span><button class="btn sm bad" data-act="cancelarDoc" data-id="${r.id}" data-n="${esc(TRAMITES[r.type].name)}">Cancelar</button></li>`).join('') || '<li class="muted">Sin documentos</li>'}</ul>
         <h3>Vehículos</h3><ul class="list">${vehs.map(v => { const m = models.find(x => x.id === v.model_id); const exp = new Date(v.registered_at || v.created_at); exp.setFullYear(exp.getFullYear() + 1); return `<li><div class="grow"><b>${esc(m?.brand)} ${esc(m?.model)}</b> · ${esc(v.plate || 'sin placa')}<div class="muted">VIN ${esc(v.vin || '—')} · Registro ${exp < new Date() ? '<b class="neg">VENCIDO</b>' : 'vigente hasta ' + fdate(exp.toISOString())}</div></div></li>`; }).join('') || '<li class="muted">Ninguno</li>'}</ul>
+        <h3>Inventario</h3>${inv.some(i => SHOPI[i.item]?.gun) ? '<button class="btn sm bad" data-act="decomisarArmas">Decomisar todas las armas y munición</button>' : ''}<ul class="list">
+          <li class="muted">Celular incluido (no se decomisa)</li>${inv.map(i => { const it = SHOPI[i.item] || { name: i.item }; return `<li><span class="grow">${esc(it.name)}${i.serial ? ` · <b>serie ${esc(i.serial)}</b>` : ''}</span>${it.conf ? `<button class="btn sm bad" data-act="decomisar" data-id="${i.id}" data-n="${esc(it.name)}">Decomisar</button>` : ''}</li>`; }).join('')}</ul>
         <h3>Antecedentes</h3><div class="chips">${['todos', 'advertencia', 'multa', 'arresto', 'orden'].map(k => `<button data-act="f" data-f="${k}" class="${f === k ? 'on' : ''}">${k === 'todos' ? 'Todos' : REC[k]} (${k === 'todos' ? recs.length : recs.filter(r => r.kind === k).length})</button>`).join('')}</div>
         <ul class="list">${shown.map(r => `<li><div class="grow"><b>${REC[r.kind] || esc(r.kind)}</b> ${r.amount ? money(r.amount) : ''} ${r.paid ? `<span class="tag">${r.kind === 'orden' ? 'Cumplida' : 'Pagada'}</span>` : ''}
           <div>${esc(r.description)}</div><div class="muted">${fdate(r.created_at)} · Oficial ${esc(cname(r.officer_id))}</div></div>
@@ -901,6 +940,12 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
     view(el, `${tabs([['buscar', 'Consultar'], ['buscados', 'Buscados'], ['pend', 'Trámites']], st.tab === 'ver' ? 'buscar' : st.tab)}<div class="tabbody">${body}</div>`, {
       tab: d => go({ tab: d.t, q: '' }), buscar: d => go({ q: d.q }), ver: d => go({ tab: 'ver', id: d.id, f: 'todos' }), f: d => go({ f: d.f }),
       cumplir: async d => { await db.update('records', d.id, { paid: true }); go({}); },
+      decomisar: d => modal('Decomisar ' + esc(d.n), form('go', [{ k: 'motivo', label: 'Motivo', type: 'textarea', req: 1, ph: 'Ej. portaba el arma durante un asalto (Art. 45)' }], {}, 'Decomisar'), {
+        async go(v, _, close) { await db.rpc('confiscate_item', { i: d.id, motivo: v.motivo, officer: S.char?.id || null }); close(); toast(d.n + ' decomisado'); go({}); } }),
+      decomisarArmas: () => modal('Decomisar armas y munición', form('go', [{ k: 'motivo', label: 'Motivo', type: 'textarea', req: 1 }], {}, 'Decomisar todo'), {
+        async go(v, _, close) { const inv = await db.list('items', { eq: { owner_char: st.id }, limit: 500 });
+          for (const i of inv.filter(i => SHOPI[i.item]?.gun)) await db.rpc('confiscate_item', { i: i.id, motivo: v.motivo, officer: S.char?.id || null });
+          close(); toast('Armas decomisadas'); go({}); } }),
       cancelarDoc: d => modal('Cancelar ' + esc(d.n), `<p class="muted">El documento deja de ser válido: desaparece de su cartera y tendrá que volver a tramitarlo. Queda en sus antecedentes.</p>` + form('go', [{ k: 'motivo', label: 'Motivo', type: 'textarea', req: 1, ph: 'Ej. arrestado por conducir en estado de ebriedad' }], {}, 'Cancelar documento'), {
         async go(v, _, close) { await db.rpc('revoke_doc', { r: d.id, motivo: v.motivo, officer: S.char?.id || null }); close(); toast(d.n + ' cancelado'); go({}); } }),
       async reportar(d) {
@@ -1561,4 +1606,4 @@ export async function seed() {
 
 export const APPS = [vida, banco, gobierno, safari, docs, documentos, licencias, archivos, spotify, trabajo, mensajes,
   social('x', 'X', '𝕏', '#000000,#1c1c1c'), social('insta', 'Instagram', '📸', '#833ab4,#fd1d1d,#fcb045'),
-  news, buscar, empleos, bolsa, casas, autos, fec, corte, policia, prision, taxi, soporte, resenas, robstore, staffApp, ajustes];
+  news, buscar, empleos, bolsa, casas, autos, toolstore, fec, corte, policia, prision, taxi, soporte, resenas, robstore, staffApp, ajustes];
