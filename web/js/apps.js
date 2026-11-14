@@ -1001,60 +1001,146 @@ const robstore = { id: 'robstore', name: 'App Store', icon: '🛍️', bg: '#1fa
   } };
 
 // ============ SPOTIFY ============
-// el audio vive fuera de la ventana: la música sigue aunque cierres Spotify
-const player = window.rpPlayer ??= { audio: new Audio(), queue: [], i: -1, onchange: null };
-const playAt = k => { const s = player.queue[k]; if (!s) return; player.i = k; player.audio.src = s.url; player.audio.play().catch(() => {}); player.onchange?.(); mini(); };
-player.audio.onended = () => playAt(player.i + 1 < player.queue.length ? player.i + 1 : 0);
+// El audio vive fuera de la ventana: la música sigue aunque cierres Spotify. Con una Jam, todos escuchan lo mismo al mismo segundo.
+const GENRES = ['Pop', 'Reguetón', 'Hip-Hop / Rap', 'Corridos', 'Rock', 'Electrónica', 'R&B', 'Banda / Regional', 'Indie', 'Podcast', 'Otro'];
+const player = window.rpPlayer ??= { audio: new Audio(), queue: [], i: -1, loop: 'off', shuffle: false, jam: null, lib: {}, onchange: null, off: 0 };
+const fmtT = s => !isFinite(s) ? '0:00' : `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+const curSong = () => player.queue[player.i];
+const jamPush = p => player.jam && db.update('jams', player.jam, { ...p, updated_at: new Date(Date.now() + player.off).toISOString() }).catch(() => {});
+function playAt(k, push = true) {
+  const s = player.queue[k]; if (!s) return;
+  player.i = k; player.audio.src = s.url; player.audio.play().catch(() => {});
+  if (push) jamPush({ song_id: s.id, playing: true, position: 0 });
+  player.onchange?.(); mini();
+}
+const nextIdx = () => player.shuffle && player.queue.length > 1 ? (player.i + 1 + Math.floor(Math.random() * (player.queue.length - 1))) % player.queue.length : player.i + 1;
+function next(auto) {
+  if (auto && player.loop === 'one') { player.audio.currentTime = 0; player.audio.play(); return jamPush({ playing: true, position: 0 }); }
+  const k = nextIdx(); if (k < player.queue.length) return playAt(k);
+  if (player.loop === 'all' || !auto) return playAt(0);
+  jamPush({ playing: false, position: 0 }); player.onchange?.(); mini();
+}
+const toggle = () => { const a = player.audio; if (!a.src) return; a.paused ? a.play() : a.pause(); jamPush({ playing: !a.paused, position: a.currentTime }); };
+player.audio.onended = () => next(true);
 player.audio.onplay = player.audio.onpause = () => { player.onchange?.(); mini(); };
-function mini() { // mini reproductor flotante para controlar la música desde cualquier lado
-  let m = document.querySelector('.sp-mini'); const s = player.queue[player.i];
+// sincroniza con la Jam cada 2 s: misma canción, mismo segundo, misma pausa
+clearInterval(player.timer);
+player.timer = setInterval(async () => {
+  if (!player.jam) return;
+  const j = await db.get('jams', player.jam).catch(() => null);
+  if (!j) { player.jam = null; toast('La Jam terminó'); player.onchange?.(); return; }
+  player.jamRow = j;
+  const s = player.lib[j.song_id], a = player.audio;
+  if (s && curSong()?.id !== s.id) { const k = player.queue.findIndex(x => x.id === s.id); if (k < 0) player.queue.push(s); playAt(k < 0 ? player.queue.length - 1 : k, false); }
+  const want = Number(j.position) + (j.playing ? (Date.now() + player.off - new Date(j.updated_at)) / 1000 : 0);
+  if (a.src && Math.abs(a.currentTime - want) > 2.5 && isFinite(a.duration)) a.currentTime = Math.min(want, a.duration - 0.5);
+  if (j.playing && a.paused && a.src) a.play().catch(() => {}); if (!j.playing && !a.paused) a.pause();
+}, 2000);
+function mini() { // mini reproductor flotante para controlar la música desde cualquier app
+  let m = document.querySelector('.sp-mini'); const s = curSong();
   if (!s) return m?.remove();
   if (!m) { m = Object.assign(document.createElement('div'), { className: 'sp-mini' }); document.body.append(m); }
-  m.innerHTML = `${s.cover ? `<img src="${esc(s.cover)}" alt="">` : `<span class="sp-ph">${ico('s_music', 'i')}</span>`}<div><b>${esc(s.title)}</b><small>${esc(s.artist || '')}</small></div>
+  m.innerHTML = `${s.cover ? `<img src="${esc(s.cover)}" alt="">` : `<span class="sp-ph">${ico('s_music', 'i')}</span>`}<div><b>${esc(s.title)}</b><small>${player.jam ? '🎧 Jam · ' : ''}${esc(s.artist || '')}</small></div>
     <button data-m="prev" aria-label="Anterior">${ico('s_prevb', 'i')}</button><button data-m="pp" aria-label="Reproducir o pausar">${ico(player.audio.paused ? 's_playb' : 's_pause', 'i')}</button><button data-m="next" aria-label="Siguiente">${ico('s_next', 'i')}</button><button data-m="x" aria-label="Cerrar">✕</button>`;
-  m.onclick = e => { const k = e.target.closest('[data-m]')?.dataset.m; if (k === 'pp') player.audio.paused ? player.audio.play() : player.audio.pause(); if (k === 'next') playAt((player.i + 1) % player.queue.length);
-    if (k === 'prev') playAt(Math.max(0, player.i - 1)); if (k === 'x') { player.audio.pause(); player.queue = []; player.i = -1; m.remove(); } };
+  m.onclick = e => { const k = e.target.closest('[data-m]')?.dataset.m; if (k === 'pp') toggle(); if (k === 'next') next(); if (k === 'prev') playAt(Math.max(0, player.i - 1));
+    if (k === 'x') { player.audio.pause(); jamPush({ playing: false, position: player.audio.currentTime }); player.queue = []; player.i = -1; m.remove(); } };
 }
-const likedSongs = () => { try { return JSON.parse(localStorage.getItem('rp_songs') || '[]'); } catch { return []; } };
 const spotify = { id: 'spotify', name: 'Spotify', icon: '🎧', bg: '#1db954,#13863b', show: () => true,
-  async render(el, tab = 'home') {
-    if (typeof tab === 'object') tab = 'home';
-    const songs = await db.list('songs', { order: 'created_at', asc: false }).catch(() => []), liked = likedSongs(), q = (el.dataset.q || '').toLowerCase();
-    const list = tab === 'liked' ? songs.filter(s => liked.includes(s.id)) : tab === 'mine' ? songs.filter(s => S.chars.some(c => c.id === s.uploader_char)) : songs.filter(s => !q || (s.title + ' ' + s.artist).toLowerCase().includes(q));
-    const cur = player.queue[player.i], artists = [...new Set(songs.map(s => s.artist).filter(Boolean))].slice(0, 8);
+  async render(el, view_ = 'home', arg) {
+    if (typeof view_ === 'object') view_ = 'home';
+    if (!needChar(el)) return;
+    const me = S.char.id, go = (v = view_, x = arg) => spotify.render(el, v, x);
+    const [songs, profs, likes, lists] = await Promise.all([db.list('songs', { order: 'created_at', asc: false }).catch(() => []), db.list('sp_profiles', { order: null }).catch(() => []),
+      db.list('song_likes', { order: null, limit: 5000 }).catch(() => []), db.list('playlists', { order: 'created_at', asc: true }).catch(() => [])]);
+    if (!player.off && db.rpc) db.rpc('server_now', {}).then(t => { if (t) player.off = new Date(t) - Date.now(); }).catch(() => {});
+    songs.forEach(s => player.lib[s.id] = s);
+    const prof = profs.find(p => p.character_id === me), pname = id => profs.find(p => p.character_id === id)?.name || cname(id);
+    // cuenta de Spotify: cada quien se registra con el nombre y foto que quiera
+    if (!prof) return view(el, `<div class="spfy sp-reg"><div class="sp-regbox"><b class="sp-logo">${ico('spotify', 'i')} Spotify</b><h2>Crea tu cuenta de Spotify</h2><p class="muted">Es gratis. Elige cómo te verán los demás.</p>
+        ${form('reg', [{ k: 'name', label: 'Nombre de usuario', req: 1, def: cname(me) }, { k: 'avatar', label: 'Foto de perfil', type: 'file' }, { k: 'color', label: 'Tu color', type: 'color', def: '#1db954' }, { k: 'bio', label: 'Bio (opcional)', type: 'textarea' }], {}, 'Registrarme')}</div></div>`,
+      { reg: async d => { await db.insert('sp_profiles', { character_id: me, name: d.name, avatar: d.avatar || S.char.skin_url || null, color: d.color, bio: d.bio || null }); toast('¡Bienvenido a Spotify! 🎧'); go('home'); } });
+    const liked = new Set(likes.filter(l => l.character_id === me).map(l => l.song_id)), myLists = lists.filter(p => p.owner_char === me);
+    const q = (el.dataset.q || '').toLowerCase();
+    let title = 'Lo más nuevo', list = songs, head = '';
+    if (view_ === 'liked') { title = 'Tus me gusta'; list = songs.filter(s => liked.has(s.id)); }
+    else if (view_ === 'mine') { title = 'Tus canciones'; list = songs.filter(s => s.uploader_char === me); }
+    else if (view_ === 'genre') { title = arg; list = songs.filter(s => (s.genre || 'Otro') === arg); }
+    else if (view_ === 'artist') { title = arg; list = songs.filter(s => (s.artist || '').toLowerCase() === arg.toLowerCase()); }
+    else if (view_ === 'list') { const p = lists.find(x => x.id === arg); title = p?.name || 'Playlist'; list = (p?.songs || []).map(id => songs.find(s => s.id === id)).filter(Boolean);
+      head = `<p class="muted">Playlist de ${esc(pname(p?.owner_char))} · ${list.length} canciones ${p?.owner_char === me ? `<button class="link" data-act="delList" data-id="${p.id}">Borrar playlist</button>` : ''}</p>`; }
+    else if (view_ === 'profile') { const p = profs.find(x => x.character_id === arg) || prof; title = p.name; list = songs.filter(s => s.uploader_char === p.character_id);
+      head = `<div class="sp-prof" style="--c:${esc(p.color || '#1db954')}"><img class="sp-pav" src="${esc(p.avatar || '')}" alt=""><div><small>PERFIL</small><h1>${esc(p.name)}</h1><p>${esc(p.bio || '')}</p>
+        <small>${list.length} canciones subidas · ${lists.filter(x => x.owner_char === p.character_id).length} playlists · ${likes.filter(l => l.character_id === p.character_id).length} me gusta</small>
+        ${p.character_id === me ? '<br><button class="btn sm ghost" data-act="editProf">Editar perfil</button>' : ''}</div></div>`; title = 'Canciones'; }
+    else if (q) { title = 'Resultados para "' + el.dataset.q + '"'; list = songs.filter(s => [s.title, s.artist, s.genre].join(' ').toLowerCase().includes(q)); }
+    const cur = curSong(), artists = [...new Set(songs.map(s => s.artist).filter(Boolean))].slice(0, 12), jam = player.jamRow && player.jam ? player.jamRow : null;
+    const row = (s, k) => `<div class="sp-row ${cur?.id === s.id ? 'on' : ''}" data-act="play" data-k="${k}"><span class="sp-n">${cur?.id === s.id && !player.audio.paused ? '<i class="eq"><b></b><b></b><b></b></i>' : k + 1}</span>
+        ${s.cover ? `<img src="${esc(s.cover)}" alt="">` : `<span class="sp-ph">${ico('s_music', 'i')}</span>`}<div class="sp-t"><b title="${esc(s.title)}">${esc(s.title)}</b><button class="link" data-act="artist" data-a="${esc(s.artist || '')}">${esc(s.artist || 'Artista desconocido')}</button></div>
+        <span class="sp-g">${esc(s.genre || '')}</span><button class="sa ${liked.has(s.id) ? 'on' : ''}" data-act="like" data-id="${s.id}" aria-label="Me gusta">${ico('s_heart', 'i')}</button>
+        <button class="sa" data-act="addList" data-id="${s.id}" aria-label="Agregar a playlist">${ico('s_new', 'i')}</button>${s.uploader_char === me || lvl() >= 2 ? `<button class="sa" data-act="del" data-id="${s.id}" aria-label="Borrar">${ico('s_trash', 'i')}</button>` : ''}</div>`;
+    const home = view_ === 'home' && !q;
     view(el, `<div class="spfy"><aside class="sp-side"><b class="sp-logo">${ico('spotify', 'i')} Spotify</b>
-        <button class="${tab === 'home' ? 'on' : ''}" data-act="tab" data-t="home">${ico('s_home', 'i')} Inicio</button><button class="${tab === 'liked' ? 'on' : ''}" data-act="tab" data-t="liked">${ico('s_heart', 'i')} Tus me gusta</button>
-        <button class="${tab === 'mine' ? 'on' : ''}" data-act="tab" data-t="mine">${ico('s_music', 'i')} Mis canciones</button>${S.char?.status === 'active' ? `<button data-act="subir">${ico('s_new', 'i')} Subir canción</button>` : ''}</aside>
-      <main class="sp-main"><form data-form="buscar" class="sp-search">${ico('s_search', 'i')}<input name="q" value="${esc(el.dataset.q || '')}" placeholder="¿Qué quieres escuchar?" autocomplete="off"></form>
-        ${tab === 'home' && !q && artists.length ? `<h2>Artistas de Los Ángeles</h2><div class="sp-artists">${artists.map(a => `<button data-act="artist" data-a="${esc(a)}"><span>${esc(a[0] || '?')}</span><b>${esc(a)}</b></button>`).join('')}</div>` : ''}
-        <h2>${tab === 'liked' ? 'Tus me gusta' : tab === 'mine' ? 'Mis canciones' : q ? 'Resultados' : 'Lo más nuevo'}</h2>
-        <div class="sp-list">${list.map((s, k) => `<div class="sp-row ${cur?.id === s.id ? 'on' : ''}" data-act="play" data-k="${k}"><span class="sp-n">${cur?.id === s.id && !player.audio.paused ? '♪' : k + 1}</span>
-          ${s.cover ? `<img src="${esc(s.cover)}" alt="">` : `<span class="sp-ph">${ico('s_music', 'i')}</span>`}<div class="grow"><b>${esc(s.title)}</b><small>${esc(s.artist || 'Artista desconocido')}</small></div>
-          <small class="muted">${esc(cname(s.uploader_char))}</small><button class="sa ${liked.includes(s.id) ? 'on' : ''}" data-act="like" data-id="${s.id}" aria-label="Me gusta">${ico('s_heart', 'i')}</button>
-          ${S.chars.some(c => c.id === s.uploader_char) || lvl() >= 2 ? `<button class="sa" data-act="del" data-id="${s.id}" aria-label="Borrar">${ico('s_trash', 'i')}</button>` : ''}</div>`).join('') || '<p class="empty">No hay canciones aquí. ¡Sube la primera!</p>'}</div></main>
-      <footer class="sp-bar">${cur ? `${cur.cover ? `<img src="${esc(cur.cover)}" alt="">` : `<span class="sp-ph">${ico('s_music', 'i')}</span>`}<div class="sp-now"><b>${esc(cur.title)}</b><small>${esc(cur.artist || '')}</small></div>` : '<div class="sp-now muted">Elige una canción</div>'}
-        <div class="sp-ctl"><button data-act="prev" aria-label="Anterior">${ico('s_prevb', 'i')}</button><button class="sp-pp" data-act="pp" aria-label="Reproducir o pausar">${ico(player.audio.paused ? 's_playb' : 's_pause', 'i')}</button><button data-act="next" aria-label="Siguiente">${ico('s_next', 'i')}</button>
-          <input type="range" class="sp-seek" min="0" max="1000" value="0" aria-label="Avance"></div><input type="range" class="sp-vol" min="0" max="100" value="${Math.round(player.audio.volume * 100)}" aria-label="Volumen"></footer></div>`, {
-      tab: d => { el.dataset.q = ''; spotify.render(el, d.t); },
-      buscar: d => { el.dataset.q = d.q || ''; spotify.render(el, 'home'); },
-      artist: d => { el.dataset.q = d.a; spotify.render(el, 'home'); },
-      play: (d, t) => { if (t.closest('[data-act=like],[data-act=del]')) return; player.queue = list; playAt(+d.k); },
-      pp: () => player.audio.src ? (player.audio.paused ? player.audio.play() : player.audio.pause()) : list.length && (player.queue = list, playAt(0)),
-      next: () => player.queue.length && playAt((player.i + 1) % player.queue.length), prev: () => player.queue.length && playAt(Math.max(0, player.i - 1)),
-      like: d => { const l = likedSongs(), k = l.indexOf(d.id); k < 0 ? l.push(d.id) : l.splice(k, 1); localStorage.setItem('rp_songs', JSON.stringify(l)); spotify.render(el, tab); },
-      del: async d => { if (!confirm('¿Borrar esta canción?')) return; await db.remove('songs', d.id); spotify.render(el, tab); },
-      subir: () => modal('Subir canción', form('up', [{ k: 'title', label: 'Título', req: 1 }, { k: 'artist', label: 'Artista', def: S.char ? cname(S.char.id) : '' },
+        <button class="${home ? 'on' : ''}" data-act="nav" data-v="home">${ico('s_home', 'i')} Inicio</button>
+        <button class="${view_ === 'jam' ? 'on' : ''}" data-act="nav" data-v="jam">🎧 Jam ${player.jam ? '<span class="sp-live">EN VIVO</span>' : ''}</button>
+        <div class="sp-lib"><small>TU BIBLIOTECA</small>
+          <button class="${view_ === 'liked' ? 'on' : ''}" data-act="nav" data-v="liked"><span class="sp-lk">♥</span> Tus me gusta <em>${liked.size}</em></button>
+          <button class="${view_ === 'mine' ? 'on' : ''}" data-act="nav" data-v="mine">${ico('s_music', 'i')} Tus canciones</button>
+          ${myLists.map(p => `<button class="${view_ === 'list' && arg === p.id ? 'on' : ''}" data-act="list" data-id="${p.id}">${ico('s_save', 'i')} ${esc(p.name)}</button>`).join('')}
+          <button data-act="newList">${ico('s_new', 'i')} Crear playlist</button><button data-act="subir">${ico('s_new', 'i')} Subir canción</button></div>
+        <button class="sp-me" data-act="profile" data-id="${me}"><img src="${esc(prof.avatar || '')}" alt=""><span>${esc(prof.name)}</span></button></aside>
+      <main class="sp-main" style="--c:${esc(prof.color || '#1db954')}"><form data-form="buscar" class="sp-search">${ico('s_search', 'i')}<input name="q" value="${esc(el.dataset.q || '')}" placeholder="¿Qué quieres escuchar?" autocomplete="off"></form>
+        ${view_ === 'jam' ? (jam ? `<div class="sp-jam"><h1>🎧 Jam en vivo</h1><p>Comparte este código para que se unan y escuchen lo mismo al mismo tiempo. Si alguien pausa o cambia de canción, cambia para todos.</p>
+              <div class="sp-code">${esc(jam.code)}</div><div class="sp-mem">${jam.members.map(m => `<span><img src="${esc(profs.find(p => p.character_id === m)?.avatar || '')}" alt="">${esc(pname(m))}</span>`).join('')}</div>
+              <button class="btn bad" data-act="leaveJam">${jam.host_char === me ? 'Terminar Jam' : 'Salir de la Jam'}</button></div>`
+            : `<div class="sp-jam"><h1>🎧 Jam</h1><p>Escuchen música juntos en tiempo real, aunque cada quien esté en su compu o su celular.</p><button class="btn" data-act="newJam">Iniciar una Jam</button>
+              ${form('joinJam', [{ k: 'code', label: 'O únete con un código', req: 1, ph: 'Ej. K7P2QX' }], {}, 'Unirme')}</div>`)
+        : `${home ? `<h2>Géneros</h2><div class="sp-genres">${GENRES.map((g, n) => `<button data-act="genre" data-g="${esc(g)}" style="--h:${n * 33}">${esc(g)}</button>`).join('')}</div>
+            ${artists.length ? `<h2>Artistas</h2><div class="sp-artists">${artists.map(a => `<button data-act="artist" data-a="${esc(a)}"><span>${esc(a[0] || '?')}</span><b>${esc(a)}</b></button>`).join('')}</div>` : ''}` : ''}
+          ${head}<div class="sp-bar-h"><h2>${esc(title)}</h2>${list.length ? `<button class="sp-bigplay" data-act="playAll" aria-label="Reproducir todo">${ico('s_playb', 'i')}</button>` : ''}</div>
+          <div class="sp-list">${list.map(row).join('') || '<p class="empty">No hay canciones aquí todavía. Sube la primera con «Subir canción».</p>'}</div>`}</main>
+      <footer class="sp-bar">${cur ? `${cur.cover ? `<img src="${esc(cur.cover)}" alt="">` : `<span class="sp-ph">${ico('s_music', 'i')}</span>`}<div class="sp-now"><b title="${esc(cur.title)}">${esc(cur.title)}</b><small>${esc(cur.artist || '')}</small></div>` : '<div class="sp-now muted">Elige una canción</div>'}
+        <div class="sp-mid"><div class="sp-ctl"><button class="${player.shuffle ? 'on' : ''}" data-act="shuffle" aria-label="Aleatorio" title="Aleatorio">🔀</button><button data-act="prev" aria-label="Anterior">${ico('s_prevb', 'i')}</button>
+          <button class="sp-pp" data-act="pp" aria-label="Reproducir o pausar">${ico(player.audio.paused ? 's_playb' : 's_pause', 'i')}</button><button data-act="next" aria-label="Siguiente">${ico('s_next', 'i')}</button>
+          <button class="${player.loop !== 'off' ? 'on' : ''}" data-act="loop" aria-label="Repetir" title="${player.loop === 'one' ? 'Repetir esta canción' : player.loop === 'all' ? 'Repetir todo' : 'Sin repetir'}">${player.loop === 'one' ? '🔂' : '🔁'}</button></div>
+          <div class="sp-prog"><small data-t>0:00</small><input type="range" class="sp-range sp-seek" min="0" max="1000" value="0" aria-label="Avance"><small data-d>0:00</small></div></div>
+        <div class="sp-volw"><span aria-hidden="true">${player.audio.volume === 0 ? '🔇' : '🔊'}</span><input type="range" class="sp-range sp-vol" min="0" max="100" value="${Math.round(player.audio.volume * 100)}" aria-label="Volumen"></div></footer></div>`, {
+      nav: d => { el.dataset.q = ''; go(d.v, null); }, list: d => go('list', d.id), genre: d => go('genre', d.g), artist: d => d.a && go('artist', d.a), profile: d => go('profile', d.id),
+      buscar: d => { el.dataset.q = d.q || ''; go('home'); },
+      play: d => { player.queue = list; playAt(+d.k); },
+      playAll: () => { player.queue = list; playAt(player.shuffle ? Math.floor(Math.random() * list.length) : 0); },
+      pp: () => player.audio.src ? toggle() : list.length && (player.queue = list, playAt(0)),
+      next: () => player.queue.length && next(), prev: () => player.queue.length && playAt(Math.max(0, player.i - 1)),
+      shuffle: () => { player.shuffle = !player.shuffle; go(); }, loop: () => { player.loop = { off: 'all', all: 'one', one: 'off' }[player.loop]; toast(player.loop === 'one' ? 'Repetir esta canción' : player.loop === 'all' ? 'Repetir todo' : 'Sin repetir'); go(); },
+      like: async d => { liked.has(d.id) ? await db.removeWhere('song_likes', { song_id: d.id, character_id: me }) : await db.insert('song_likes', { song_id: d.id, character_id: me }); go(); },
+      addList: d => !myLists.length ? toast('Primero crea una playlist', 'err') : modal('Agregar a playlist', form('al', [{ k: 'p', label: 'Playlist', type: 'select', options: myLists.map(p => [p.id, p.name]), req: 1 }]), {
+        async al(f, _, close) { const p = myLists.find(x => x.id === f.p); if (!p.songs.includes(d.id)) await db.update('playlists', p.id, { songs: [...p.songs, d.id] }); close(); toast('Agregada a ' + p.name); } }),
+      newList: () => modal('Nueva playlist', form('nl', [{ k: 'name', label: 'Nombre', req: 1 }, { k: 'cover', label: 'Portada', type: 'file' }]), {
+        async nl(f, _, close) { const p = await db.insert('playlists', { owner_char: me, name: f.name, cover: f.cover || null, songs: [] }); close(); go('list', p.id); } }),
+      delList: async d => { if (!confirm('¿Borrar esta playlist?')) return; await db.remove('playlists', d.id); go('home'); },
+      del: async d => { if (!confirm('¿Borrar esta canción?')) return; await db.remove('songs', d.id); go(); },
+      editProf: () => modal('Editar perfil', form('ep', [{ k: 'name', label: 'Nombre', req: 1 }, { k: 'avatar', label: 'Cambiar foto', type: 'file' }, { k: 'color', label: 'Color', type: 'color' }, { k: 'bio', label: 'Bio', type: 'textarea' }], prof), {
+        async ep(f, _, close) { if (!f.avatar) delete f.avatar; await db.updateWhere('sp_profiles', { character_id: me }, f); close(); go('profile', me); } }),
+      subir: () => modal('Subir canción', form('up', [{ k: 'title', label: 'Título', req: 1 }, { k: 'artist', label: 'Artista', def: prof.name }, { k: 'genre', label: 'Género', type: 'select', options: GENRES, req: 1 },
         { k: 'url', label: 'Archivo de audio (MP3, M4A, WAV…)', type: 'file', accept: 'audio/*', req: 1 }, { k: 'cover', label: 'Portada (opcional)', type: 'file' }]) + '<p class="muted small">Sube solo música tuya o que tengas permiso de compartir.</p>', {
-        async up(f, _, close) { await db.insert('songs', { ...f, cover: f.cover || null, uploader_char: S.char.id }); close(); toast('Canción subida 🎵'); spotify.render(el, 'mine'); } }),
+        async up(f, _, close) { await db.insert('songs', { ...f, cover: f.cover || null, uploader_char: me }); close(); toast('Canción subida 🎵'); go('mine'); } }),
+      newJam: async () => { const code = Math.random().toString(36).slice(2, 8).toUpperCase(), s = curSong();
+        const j = await db.insert('jams', { code, host_char: me, members: [me], song_id: s?.id || null, playing: !player.audio.paused, position: player.audio.currentTime || 0, updated_at: new Date(Date.now() + player.off).toISOString() });
+        player.jam = j.id; player.jamRow = j; toast('Jam creada: comparte el código ' + code); go('jam'); },
+      joinJam: async d => { player.jam = await db.rpc('join_jam', { jam_code: d.code, c: me }); player.jamRow = await db.get('jams', player.jam); toast('Te uniste a la Jam 🎧'); go('jam'); },
+      leaveJam: async () => { const j = player.jamRow; if (j?.host_char === me) await db.remove('jams', j.id); else if (j) await db.update('jams', j.id, { members: j.members.filter(m => m !== me) }).catch(() => {});
+        player.jam = null; player.jamRow = null; toast('Saliste de la Jam'); go('jam'); },
     });
-    // barra de avance y volumen en vivo
-    const seek = el.querySelector('.sp-seek'), vol = el.querySelector('.sp-vol'), a = player.audio;
-    const tick = () => { if (!el.isConnected) return a.removeEventListener('timeupdate', tick); if (a.duration) seek.value = a.currentTime / a.duration * 1000; };
-    a.addEventListener('timeupdate', tick);
-    seek.oninput = () => { if (a.duration) a.currentTime = seek.value / 1000 * a.duration; };
-    vol.oninput = () => { a.volume = vol.value / 100; };
-    player.onchange = () => el.isConnected && spotify.render(el, tab);
+    // barra de avance, tiempos y volumen en vivo
+    const seek = el.querySelector('.sp-seek'), vol = el.querySelector('.sp-vol'), a = player.audio, tt = el.querySelector('[data-t]'), dd = el.querySelector('[data-d]');
+    const paint = (r, v) => r.style.setProperty('--p', v + '%');
+    const tick = () => { if (!el.isConnected) return a.removeEventListener('timeupdate', tick); if (a.duration) { seek.value = a.currentTime / a.duration * 1000; paint(seek, a.currentTime / a.duration * 100); } tt.textContent = fmtT(a.currentTime); dd.textContent = fmtT(a.duration); };
+    a.addEventListener('timeupdate', tick); tick(); paint(vol, vol.value);
+    seek.oninput = () => { if (a.duration) a.currentTime = seek.value / 1000 * a.duration; paint(seek, seek.value / 10); };
+    seek.onchange = () => jamPush({ position: a.currentTime, playing: !a.paused });
+    vol.oninput = () => { a.volume = vol.value / 100; paint(vol, vol.value); localStorage.setItem('rp_vol', vol.value); };
+    player.onchange = () => el.isConnected && go();
   } };
+if (localStorage.getItem('rp_vol') != null) player.audio.volume = localStorage.getItem('rp_vol') / 100;
 
 // ============ AJUSTES ============
 const ajustes = { id: 'ajustes', name: 'Ajustes', icon: '⚙️', bg: '#8e8e93,#636366', show: () => true,

@@ -45,6 +45,8 @@ const SB = {
   async update(t, id, patch) { return ok(await sb.from(t).update(patch).eq('id', id).select().maybeSingle()); },
   async upsert(t, row, key = 'key') { return ok(await sb.from(t).upsert(row, { onConflict: key })); },
   async remove(t, id) { return ok(await sb.from(t).delete().eq('id', id)); },
+  async removeWhere(t, eq) { return ok(await sb.from(t).delete().match(eq)); },
+  async updateWhere(t, eq, patch) { return ok(await sb.from(t).update(patch).match(eq)); },
   async rpc(n, a) { return ok(await sb.rpc(n, a)); },
   async upload(file) {
     const f = await shrink(file), path = `${myId}/${Date.now()}-${(file.name || 'img').replace(/[^\w.]/g, '_')}`;
@@ -269,6 +271,8 @@ const RPC = {
       const a = personal(au.id); if (a) try { move(gov(), a, Math.round(Number(setting('influencer_like_pay', 15)) * cpi() * 100) / 100, 'Influencer · pago por like'); } catch {}
     }
   },
+  join_jam({ jam_code, c }) { const j = T('jams').find(x => x.code === String(jam_code).trim().toUpperCase()); guard(j, 'No existe una Jam con ese código'); j.members = [...j.members.filter(m => m !== c), c]; return j.id; },
+  server_now() { return new Date().toISOString(); },
   new_bot_key() { guard(lvlLocal() >= 5, 'Solo el Owner'); return 'demo-' + crypto.randomUUID().replace(/-/g, ''); },
   pay_gov({ c, amount, concept }) {
     guard(myChars().some(x => x.id === c), 'No es tu vida'); guard(amount > 0, 'Monto inválido');
@@ -338,6 +342,8 @@ const LOCAL = {
   async update(t, id, patch) { const r = T(t).find(x => x.id === id); Object.assign(r, structuredClone(patch)); if (t === 'requests') Object.assign(r, { reviewer_id: myId, reviewed_at: now() }); save(); return structuredClone(r); },
   async upsert(t, row, key = 'key') { const ks = key.split(','), i = T(t).findIndex(x => ks.every(k => x[k] === row[k])); i < 0 ? T(t).push(row) : (T(t)[i] = row); save(); },
   async remove(t, id) { mem.t[t] = T(t).filter(x => x.id !== id); save(); },
+  async removeWhere(t, eq) { mem.t[t] = T(t).filter(x => !Object.entries(eq).every(([k, v]) => x[k] === v)); save(); },
+  async updateWhere(t, eq, patch) { T(t).filter(x => Object.entries(eq).every(([k, v]) => x[k] === v)).forEach(x => Object.assign(x, structuredClone(patch))); save(); },
   async rpc(n, a) { const r = RPC[n](a); save(); return r; },
   async upload(file) {
     const f = await shrink(file, 800);
@@ -355,4 +361,4 @@ export function onChange(cb) {
   addEventListener('storage', e => { if (e.key === LS && e.newValue) { mem = JSON.parse(e.newValue); myId = mem.session; cb('*'); } });
 }
 const B = DEMO ? LOCAL : SB;
-export const { signUp, signIn, signOut, list, get, insert, update, upsert, remove, rpc, upload } = B;
+export const { signUp, signIn, signOut, list, get, insert, update, upsert, remove, removeWhere, updateWhere, rpc, upload, setPassword } = B;
