@@ -1,7 +1,7 @@
 // Arranque y "sistema operativo": macOS en PC, iOS en celular (lo decide el CSS por ancho de pantalla)
 import * as db from './db.js';
 import { S, esc, money, lvl, loadMe, toast, view, fieldsHTML, cname, myAccounts, modal, notify } from './core.js';
-import { APPS, seed, resolveSite } from './apps.js';
+import { APPS, seed, resolveSite, SVC911, canRespond } from './apps.js';
 import { WALLPAPERS, STAFF_NAME, TRAMITES } from './data.js';
 import { lifeWizard } from './vida.js';
 import { ico } from './icons.js';
@@ -318,7 +318,7 @@ async function boot() {
   if (S.me.banned) return wait('🔨', 'Tu cuenta está baneada. Puedes apelar desde soporte.');
   if (!S.chars.length) return lifeWizard(root, { onDone: boot }); // lo primero: crear tu vida
   if (!S.me.verified) return wait('⏳', `Hola <b>${esc(S.me.username)}</b>. Tu vida ya quedó registrada. Un admin está verificando tu Roblox <b>${esc(S.me.roblox)}</b> y tu Discord <b>${esc(S.me.discord)}</b>.`);
-  shell(); checkMessages(true).catch(() => {});
+  shell(); checkMessages(true).catch(() => {}); check911(true).catch(() => {});
 }
 window.refreshShell = async reopen => { await loadMe(); await shell(); if (reopen) openApp(reopen); };
 // ---------- tiempo real ----------
@@ -333,10 +333,24 @@ async function checkMessages(first) {
   inbox.slice(-3).forEach(m => notify({ icon: `<img class="av sm" src="${esc(S.all.find(c => c.id === m.from_char)?.skin_url || '')}" alt="">`, title: (m.via === 'insta' ? 'Instagram · ' : 'Mensajes · ') + cname(m.from_char), body: m.body,
     onclick: () => openApp(m.via === 'insta' ? 'insta' : 'mensajes') }));
 }
+// 911: alerta a las unidades cuando entra una llamada y a quien llamó cuando le contestan
+async function check911(first) {
+  if (!S.chars.some(c => c.status === 'active')) return;
+  const key = 'rp_911_' + S.me.id, seen = JSON.parse(localStorage.getItem(key) || '{}'), calls = await db.list('calls911', { order: 'created_at', asc: false, limit: 50 });
+  const mine = c => S.chars.some(x => x.id === c.caller_char), fresh = [];
+  for (const k of calls) { if (seen[k.id] !== k.status && !first) fresh.push(k); seen[k.id] = k.status; }
+  localStorage.setItem(key, JSON.stringify(Object.fromEntries(Object.entries(seen).slice(-200))));
+  for (const k of fresh.slice(0, 3)) {
+    const [ic, name] = SVC911[k.service];
+    if (k.status === 'abierta' && !mine(k) && canRespond(k.service)) notify({ icon: '🚨', title: `911 · ${name}`, body: `${k.location}: ${k.description}`, onclick: () => openApp('e911') });
+    else if (mine(k) && k.status === 'en_camino') notify({ icon: ic, title: '911 · Unidad en camino', body: `${k.responders.map(cname).join(', ')} va hacia ${k.location}`, onclick: () => openApp('e911') });
+    else if (mine(k) && k.status === 'cerrada') notify({ icon: ic, title: '911 · Llamada atendida', body: k.note || 'Tu emergencia fue atendida.', onclick: () => openApp('e911') });
+  }
+}
 const liveRefresh = async () => {
   if (!S.me || !root.querySelector('#os')) return;
   await loadMe();
-  checkMessages().catch(() => {});
+  checkMessages().catch(() => {}); check911().catch(() => {});
   myAccounts().then(a => { const p = a.find(x => x.kind === 'personal'); if (p) root.querySelectorAll('.cash,.wb-bal').forEach(x => x.textContent = money(p.balance)); });
   for (const a of APPS.filter(a => a.show() && a.badge)) a.badge().then(n => { const b = root.querySelector(`[data-b="${a.id}"]`); if (b) { b.hidden = !n; b.textContent = n; } });
   // vuelve a pintar las ventanas abiertas, salvo donde el usuario está escribiendo

@@ -855,3 +855,9 @@ tr.click{cursor:pointer}tr.click:hover{background:#ffffff08}
 .ts .btn{background:#e05a00;color:#fff}.ts .btn.ghost{background:#eee;color:#555}
 .ts-inv li{display:flex;align-items:center;gap:12px;background:#fff;border-radius:10px;padding:8px;margin-bottom:8px}.ts-inv img{width:72px;height:46px;object-fit:cover;border-radius:6px;background:#222}
 .ts-modal-img{width:100%;max-height:200px;object-fit:cover;border-radius:10px;margin-bottom:10px;background:#222}
+/* 911 */
+.e9-hero{display:flex;gap:14px;align-items:center;background:linear-gradient(90deg,#ff3b30,#a8000b);color:#fff;border-radius:12px;padding:14px 16px;margin-bottom:12px}.e9-hero b{font-size:34px;font-weight:900;letter-spacing:2px}
+.e9-svc{grid-template-columns:repeat(3,1fr)}@media (max-width:640px){.e9-svc{grid-template-columns:1fr}}.win.narrow .e9-svc{grid-template-columns:1fr}
+.e9-call{border-left:4px solid #888}.e9-call.abierta{border-left-color:#ff3b30;animation:e9 1.6s ease-in-out infinite}.e9-call.en_camino{border-left-color:#ff9f0a}.e9-call.cerrada{opacity:.75;border-left-color:#30d158}
+.e9-ic{font-size:26px}.e9-call p{margin:8px 0}@keyframes e9{50%{box-shadow:0 0 0 2px #ff3b3055}}
+.tag.warn{background:#ff9f0a22;color:#ff9f0a}

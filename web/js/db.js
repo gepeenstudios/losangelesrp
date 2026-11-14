@@ -274,6 +274,11 @@ const RPC = {
   },
   join_jam({ jam_code, c }) { const j = T('jams').find(x => x.code === String(jam_code).trim().toUpperCase()); guard(j, 'No existe una Jam con ese código'); j.members = [...j.members.filter(m => m !== c), c]; return j.id; },
   server_now() { return new Date().toISOString(); },
+  respond_call({ cid, act, c, note }) { const k = T('calls911').find(x => x.id === cid); if (!k) throw new Error('La llamada no existe');
+    if (act === 'cancel') return Object.assign(k, { status: 'cancelada', updated_at: now() });
+    if (['cerrada', 'cancelada'].includes(k.status)) throw new Error('Esa llamada ya terminó');
+    if (act === 'go') Object.assign(k, { status: 'en_camino', responders: [...new Set([...(k.responders || []), c])], updated_at: now() });
+    else Object.assign(k, { status: 'cerrada', note: note || null, updated_at: now() }); },
   buy_item({ c, it, q = 1 }) { const x = SHOP.find(s => s[0] === it); if (!x) throw new Error('Ese producto no existe'); const [, name, , price, gun] = x, rk = t => GUN_CLASSES.indexOf(t) + 1;
     if (q < 1 || q > 20 || (gun && gun !== 'any' && q > 1)) throw new Error('Cantidad inválida (armas: una por compra)');
     if (gun) { const lic = Math.max(0, ...T('requests').filter(r => r.character_id === c && r.type === 'licencia_armas' && r.status === 'approved').map(r => rk(r.data.tipo)));
@@ -354,6 +359,7 @@ const LOCAL = {
     const r = { id: crypto.randomUUID(), created_at: now(), ...structuredClone(DEF[t] || {}), ...row };
     if (BY_USER[t] && !r[BY_USER[t]]) r[BY_USER[t]] = myId;
     if (t === 'songs') r.approved = lvlLocal() >= 3;
+    if (t === 'calls911') Object.assign(r, { status: 'abierta', responders: [], note: null });
     if (t === 'accounts' && !r.number) r.number = String(Math.floor(Math.random() * 1e10)).padStart(10, '0');
     if (t === 'profiles' && !T('profiles').length) Object.assign(r, { staff_role: 'owner', verified: true });
     if (t === 'votes' && T('votes').some(v => v.election_id === r.election_id && v.user_id === myId)) throw new Error('Ya votaste en esta elección');

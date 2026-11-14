@@ -261,6 +261,45 @@ const toolstore = { id: 'toolstore', name: 'Tool Store', icon: '🧰', bg: '#ff7
     });
   } };
 
+
+// ============ 911 (llamadas de emergencia y despacho) ============
+export const SVC911 = { policia: ['🚓', 'Policía', 'Robo, pelea, persona armada, accidente con heridos'], ems: ['🚑', 'Ambulancia', 'Herido, desmayado, emergencia médica'], bomberos: ['🚒', 'Bomberos', 'Incendio, persona atrapada, fuga de gas'] };
+export const canRespond = sv => lvl() >= 2 || (sv === 'policia' ? isPolice() : sv === 'ems' ? has('Servicios Médicos') : has('Bomberos'));
+const ST911 = { abierta: ['Esperando unidad', 'bad'], en_camino: ['Unidad en camino', 'warn'], cerrada: ['Atendida', 'ok'], cancelada: ['Cancelada', ''] };
+const e911 = { id: 'e911', name: '911', icon: '🚨', bg: '#ff3b30,#a8000b', show: () => S.chars.some(c => c.status === 'active'),
+  badge: async () => Object.keys(SVC911).some(canRespond) ? (await db.list('calls911', { eq: { status: 'abierta' }, limit: 100 }).catch(() => [])).filter(k => canRespond(k.service)).length : 0,
+  async render(el, tab) {
+    if (!needChar(el)) return;
+    const resp = Object.keys(SVC911).some(canRespond); tab = typeof tab === 'string' ? tab : resp ? 'despacho' : 'llamar';
+    const calls = await db.list('calls911', { order: 'created_at', asc: false, limit: 200 }), mine = calls.filter(k => S.chars.some(c => c.id === k.caller_char));
+    const st = k => `<span class="tag ${ST911[k.status][1]}">${ST911[k.status][0]}</span>`, who = k => k.responders?.length ? 'Atiende: ' + k.responders.map(cname).join(', ') : '';
+    let body;
+    if (tab === 'llamar') body = `<div class="e9-hero"><b>911</b><span>Solo para emergencias reales. Las llamadas falsas son delito (Art. 63: $10,000 y prisión temporal).</span></div>
+      <form data-form="llamar" class="form"><span class="fld-l">¿Qué servicio necesitas?</span><div class="choices e9-svc">${Object.entries(SVC911).map(([k, [i, n, d]]) =>
+        `<label class="choice"><input type="radio" name="service" value="${k}" required><span><b>${i} ${n}</b><small>${d}</small></span></label>`).join('')}</div>
+      ${fieldsHTML([{ k: 'location', label: '¿Dónde estás?', req: 1, ph: 'Ej. Gasolinera de Springfield, frente al banco' }, { k: 'description', label: '¿Qué está pasando?', type: 'textarea', req: 1, ph: 'Describe lo que ves: cuántas personas, si hay armas, heridos…' },
+        { k: 'anonymous', label: 'Anónima', type: 'check', text: 'no mostrar mi nombre a las unidades' }])}<button class="btn bad big" type="submit">📞 Llamar al 911</button></form>
+      <h3>Mis llamadas</h3><ul class="list">${mine.map(k => `<li><div class="grow"><b>${SVC911[k.service][0]} ${SVC911[k.service][1]}</b> · ${esc(k.location)}<div class="muted">${esc(k.description)}</div><div class="muted">${fdate(k.created_at)} ${who(k)}${k.note ? ' · ' + esc(k.note) : ''}</div></div>
+        ${st(k)}${['abierta', 'en_camino'].includes(k.status) ? `<button class="btn sm ghost" data-act="cancelar" data-id="${k.id}">Cancelar</button>` : ''}</li>`).join('') || '<li class="muted">No has hecho llamadas.</li>'}</ul>`;
+    else {
+      const act = calls.filter(k => canRespond(k.service) && ['abierta', 'en_camino'].includes(k.status)), done = calls.filter(k => canRespond(k.service) && !['abierta', 'en_camino'].includes(k.status)).slice(0, 15);
+      const card = k => `<div class="card e9-call ${k.status}"><div class="row"><b class="e9-ic">${SVC911[k.service][0]}</b><div class="grow"><b>${esc(k.location)}</b><div class="muted">${SVC911[k.service][1]} · ${ago(k.created_at)} · ${k.anonymous ? 'Llamada anónima' : 'Llama ' + esc(cname(k.caller_char))}</div></div>${st(k)}</div>
+        <p>${esc(k.description)}</p>${who(k) ? `<div class="muted">${esc(who(k))}</div>` : ''}${k.note ? `<div class="muted">Nota: ${esc(k.note)}</div>` : ''}
+        ${['abierta', 'en_camino'].includes(k.status) ? `<div class="row gap">${k.responders?.includes(S.char.id) ? '' : `<button class="btn sm" data-act="voy" data-id="${k.id}">🚨 Voy en camino</button>`}<button class="btn sm ghost" data-act="cerrar" data-id="${k.id}">Cerrar llamada</button></div>` : ''}</div>`;
+      body = `<p class="muted">Llamadas para ${Object.keys(SVC911).filter(canRespond).map(k => SVC911[k][1]).join(', ')}. Te llega una alerta cada vez que entra una nueva.</p>
+        <h3>Activas (${act.length})</h3>${act.map(card).join('') || '<p class="empty">Sin emergencias activas 🙌</p>'}<h3>Recientes</h3>${done.map(card).join('') || '<p class="muted">—</p>'}`;
+    }
+    view(el, `${tabs([...(resp ? [['despacho', 'Despacho']] : []), ['llamar', 'Llamar']], tab)}<div class="tabbody">${body}</div>`, {
+      tab: d => e911.render(el, d.t),
+      async llamar(v) { await db.insert('calls911', { caller_char: S.char.id, service: v.service, location: v.location, description: v.description, anonymous: !!v.anonymous });
+        toast('📞 Llamada enviada. Las unidades ya recibieron la alerta.'); e911.render(el, 'llamar'); },
+      cancelar: async d => { if (!await ask('¿Cancelar la llamada?')) return; await db.rpc('respond_call', { cid: d.id, act: 'cancel' }); e911.render(el, 'llamar'); },
+      voy: async d => { await db.rpc('respond_call', { cid: d.id, act: 'go', c: S.char.id }); toast('Marcado: vas en camino'); e911.render(el, 'despacho'); },
+      cerrar: d => modal('Cerrar llamada', form('go', [{ k: 'note', label: 'Cómo terminó (opcional)', type: 'textarea', ph: 'Ej. Sospechoso detenido, sin heridos' }], {}, 'Cerrar'), {
+        async go(v, _, close) { await db.rpc('respond_call', { cid: d.id, act: 'close', note: v.note || null }); close(); e911.render(el, 'despacho'); } }),
+    });
+  } };
+
 // ============ DOCUMENTOS (wallet) ============
 // Documentos personales y licencias: Wallet los junta todos; Documentos y Licencias salen en el escritorio cuando tienes alguno
 const LIC_TYPES = ['licencia_conducir', 'licencia_armas', 'licencia_abogado', 'licencia_juez'];
@@ -1606,4 +1645,4 @@ export async function seed() {
 
 export const APPS = [vida, banco, gobierno, safari, docs, documentos, licencias, archivos, spotify, trabajo, mensajes,
   social('x', 'X', '𝕏', '#000000,#1c1c1c'), social('insta', 'Instagram', '📸', '#833ab4,#fd1d1d,#fcb045'),
-  news, buscar, empleos, bolsa, casas, autos, toolstore, fec, corte, policia, prision, taxi, soporte, resenas, robstore, staffApp, ajustes];
+  news, buscar, empleos, bolsa, casas, autos, toolstore, fec, corte, e911, policia, prision, taxi, soporte, resenas, robstore, staffApp, ajustes];
