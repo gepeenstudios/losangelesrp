@@ -251,6 +251,10 @@ const RPC = {
       const a = personal(au.id); if (a) try { move(gov(), a, Math.round(Number(setting('influencer_like_pay', 15)) * cpi() * 100) / 100, 'Influencer · pago por like'); } catch {}
     }
   },
+  pay_gov({ c, amount, concept }) {
+    guard(myChars().some(x => x.id === c), 'No es tu vida'); guard(amount > 0, 'Monto inválido');
+    move(personal(c), gov(), amount, concept);
+  },
   set_party_pass({ p, pass }) {
     const pa = T('parties').find(x => x.id === p); guard(pa && (myChars().some(c => c.id === pa.owner_char) || lvlLocal() >= 3), 'Solo el dueño del partido');
     guard((pass || '').length >= 4, 'La contraseña debe tener al menos 4 caracteres');

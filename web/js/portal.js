@@ -1,6 +1,6 @@
 // Cada trámite se abre en su propia ventana como una página del portal del gobierno de Los Ángeles
 import * as db from './db.js';
-import { S, esc, toast, view, fieldsHTML, resolveFields, approvedOf, fdate } from './core.js';
+import { S, esc, toast, view, fieldsHTML, resolveFields, approvedOf, fdate, money } from './core.js';
 import { TRAMITES, CK_RULES } from './data.js';
 import { homeCountry, homePassportNo } from './docs.js';
 import { ti } from './icons.js';
@@ -23,7 +23,7 @@ export async function openTramite(type, extra = {}, after) {
         <div class="crumbs">Inicio › Trámites › ${esc(t.cat)} › <b>${esc(t.name)}</b></div>${body}
         <footer class="gov-f">${sealMini}<span>City of Los Angeles · Portal de roleplay de Los Ángeles RP. Los documentos emitidos solo son válidos dentro del juego.</span></footer></div>`;
       const side = `<aside class="gov-side"><h3>Requisitos</h3><ul>${(t.needs || []).map(n => `<li class="${miss.includes(n) ? 'no' : 'ok'}">${miss.includes(n) ? '✕' : '✓'} ${esc(TRAMITES[n].name)}</li>`).join('') || '<li class="ok">✓ Ninguno</li>'}
-        <li class="ok">✓ Vida aprobada</li></ul><h3>Lo revisa</h3><p>${esc(who(extra.dept || t.dept))}</p><h3>Tiempo estimado</h3><p>24 a 48 horas</p><h3>Costo</h3><p>Sin costo</p></aside>`;
+        <li class="ok">✓ Vida aprobada</li></ul><h3>Lo revisa</h3><p>${esc(who(extra.dept || t.dept))}</p><h3>Tiempo estimado</h3><p>24 a 48 horas</p><h3>Costo</h3><p>${t.cost ? money(t.cost) + ' (se cobra de tu cuenta al enviar)' : 'Sin costo'}</p></aside>`;
       if (miss.length || pend) return view(el, page(`<main class="gov-main"><div class="gov-head"><span class="gov-ico">${ti(type)}</span><div><h1>${esc(t.name)}</h1><p class="lead">${esc(t.desc || '')}</p></div></div>
         <div class="gov-grid"><div class="notice">${pend ? `<b>Ya tienes una solicitud en revisión.</b><br>Folio ${pend.id.slice(0, 8).toUpperCase()} · enviada el ${fdate(pend.created_at)}` : `<b>No cumples los requisitos.</b><br>Primero tramita: ${miss.map(n => esc(TRAMITES[n].name)).join(', ')}.`}</div>${side}</div></main>`));
       view(el, page(`<main class="gov-main"><div class="gov-head"><span class="gov-ico">${ti(type)}</span><div><h1>${esc(t.name)}</h1><p class="lead">${esc(t.desc || 'Llena el formulario. Un servidor público revisará tu solicitud.')}</p></div></div>
@@ -35,6 +35,8 @@ export async function openTramite(type, extra = {}, after) {
           <section><h2>3. Declaración</h2><label class="chk"><input type="checkbox" required> Declaro bajo protesta de decir verdad que la información es correcta. Mentir es un delito federal.</label></section>
           <div class="gov-actions"><button class="btn big" type="submit">Enviar solicitud</button></div></form>${side}</div></main>`), {
         async send(data) {
+          // shortcut: si el insert fallara después de cobrar, el staff devuelve el dinero a mano; mover a una sola RPC si pasa seguido
+          if (t.cost) await db.rpc('pay_gov', { c: ch.id, amount: t.cost, concept: 'Pago de trámite · ' + t.name });
           const r = await db.insert('requests', { type, dept: extra.dept || t.dept, character_id: ch.id, data: { ...extra.data, ...data } });
           view(el, page(`<main class="gov-main"><div class="done"><div class="check">✓</div><h1>Solicitud recibida</h1>
             <p class="lead">Tu trámite <b>${esc(t.name)}</b> fue enviado y está en revisión.</p>

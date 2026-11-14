@@ -323,7 +323,7 @@ create policy vo_ins on votes for insert to authenticated with check (
   and exists(select 1 from characters c where c.id=character_id and c.status='active'));
 
 create policy sa_sel on store_apps for select to authenticated using (approved or owns_char(author_char) or staff_level()>=1);
-create policy sa_ins on store_apps for insert to authenticated with check (owns_char(author_char) and not approved);
+create policy sa_ins on store_apps for insert to authenticated with check (staff_level() >= 5); -- solo el Owner publica
 create policy sa_upd on store_apps for update to authenticated using (staff_level()>=2);
 create policy sa_del on store_apps for delete to authenticated using (staff_level()>=2 or owns_char(author_char));
 
@@ -758,6 +758,14 @@ begin
     a := personal_acc(p.character_id);
     if a is not null then begin perform move_money(gov_acc(), a, round(pay,2), 'Influencer · pago por like'); exception when others then null; end; end if;
   end if;
+end $$;
+
+create or replace function pay_gov(c uuid, amount numeric, concept text) returns void
+language plpgsql security definer set search_path=public as $$
+begin
+  if not owns_char(c) then raise exception 'No es tu vida'; end if;
+  if amount <= 0 then raise exception 'Monto inválido'; end if;
+  perform move_money(personal_acc(c), gov_acc(), amount, concept);
 end $$;
 
 -- ---------- Tiempo real: la web se actualiza sola ----------

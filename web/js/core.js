@@ -10,7 +10,7 @@ export const money = n => '$' + Number(n || 0).toLocaleString('en-US', { maximum
 export const fdate = d => d ? new Date(d).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' }) : '';
 export const lvl = () => LVL[S.me?.staff_role] || 0;
 export const has = (...r) => r.some(x => S.char?.roles?.includes(x));
-export const isPolice = () => has(...POLICE) || lvl() >= 2;
+export const isPolice = () => has(...POLICE); // solo quien tiene el rol de policía (el staff también necesita que se lo asignen)
 export const set = k => S.settings[k] ?? DEFAULT_SETTINGS[k];
 export const cname = id => { const c = S.all.find(x => x.id === id); return c ? `${c.first_name} ${c.last_name}` : '—'; };
 export const charOpts = (filter = c => c.status === 'active') => S.all.filter(filter).map(c => [c.id, `${c.first_name} ${c.last_name}`]);
@@ -171,6 +171,7 @@ export const ON_APPROVE = {
     await db.insert('parties', { name: r.data.nombre, siglas: r.data.siglas || null, ideologia: r.data.ideologia, logo: r.data.logo || null, owner_char: r.character_id });
     return 'Partido registrado. El dueño debe poner la contraseña del partido en Vote.gov → Mi partido.';
   },
+  app_store() { return 'Permiso aprobado. El Owner programará la app como la pediste y la publicará en el App Store.'; },
   async placa(r) { if (r.data.vehiculo && r.data.vehiculo !== 'inicial') await db.update('vehicles', r.data.vehiculo, { plate: r.data.placa.toUpperCase() }); return 'Placa asignada.'; },
   async job(r) {
     if (!r.data.role_tag) return '';

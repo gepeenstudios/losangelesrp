@@ -827,18 +827,18 @@ const resenas = { id: 'resenas', name: 'Staff', icon: '⭐', bg: '#ff9f0a,#ff6b0
 // ============ ROBSTORE ============
 const robstore = { id: 'robstore', name: 'App Store', icon: '🛍️', bg: '#1fa2ff,#0a6cff', show: () => true,
   async render(el) {
-    const apps = await db.list('store_apps');
-    view(el, `<div class="row"><p class="muted">Apps hechas por la comunidad. Sube tu app en un archivo HTML y el staff la revisa.</p>${S.char?.status === 'active' ? '<button class="btn sm" data-act="subir">+ Subir app</button>' : ''}</div>
-      <div class="tiles">${apps.filter(a => a.approved).map(a => `<button class="tile" data-act="abrir" data-id="${a.id}"><span class="ico">${esc(a.icon || '📱')}</span><b>${esc(a.name)}</b><small>${esc(cname(a.author_char))}</small></button>`).join('') || '<p class="empty">Aún no hay apps.</p>'}</div>
-      ${apps.some(a => !a.approved) ? `<h3>En revisión</h3><ul class="list">${apps.filter(a => !a.approved).map(a => `<li>${esc(a.icon)} ${esc(a.name)} · ${esc(cname(a.author_char))}
-        <span>${lvl() >= 2 ? `<button class="btn sm" data-act="abrir" data-id="${a.id}">Probar</button><button class="btn sm ok" data-act="ok" data-id="${a.id}">Aprobar</button><button class="btn sm bad" data-act="del" data-id="${a.id}">Rechazar</button>` : badge('pending')}</span></li>`).join('')}</ul>` : ''}`, {
+    const apps = await db.list('store_apps'), owner = lvl() >= 5;
+    view(el, `<div class="card row"><div class="grow"><b>¿Quieres tu propia app?</b><div class="muted">Paga el permiso de ${money(TRAMITES.app_store.cost)}, describe cómo la quieres y el equipo de la ciudad la programa y la publica con tu nombre.</div></div>
+        ${S.char?.status === 'active' ? '<button class="btn" data-act="pedir">Solicitar mi app</button>' : ''}${owner ? '<button class="btn ghost" data-act="subir">Publicar app (Owner)</button>' : ''}</div>
+      <div class="tiles">${apps.filter(a => a.approved).map(a => `<button class="tile" data-act="abrir" data-id="${a.id}"><span class="ico">${esc(a.icon || '📱')}</span><b>${esc(a.name)}</b><small>${esc(cname(a.author_char))}</small></button>`).join('') || '<p class="empty">Todavía no hay apps publicadas.</p>'}</div>
+      ${owner ? apps.filter(a => a.approved).map(a => `<div class="row sub"><span class="grow">${esc(a.icon)} ${esc(a.name)}</span><button class="btn sm bad" data-act="del" data-id="${a.id}">Quitar</button></div>`).join('') : ''}`, {
       abrir: d => { const a = apps.find(x => x.id === d.id); modal(esc(a.name), '<iframe class="appframe" sandbox="allow-scripts allow-forms" title="app"></iframe>'); [...document.querySelectorAll('.appframe')].pop().srcdoc = a.html; },
-      subir: () => modal('Subir app', form('up', [{ k: 'name', label: 'Nombre', req: 1 }, { k: 'icon', label: 'Ícono (emoji)', def: '📱', req: 1 },
+      pedir: () => openTramite('app_store'),
+      subir: () => modal('Publicar app', form('up', [{ k: 'author', label: 'Dueño de la app (quien pagó el permiso)', type: 'select', options: charOpts(), req: 1 }, { k: 'name', label: 'Nombre', req: 1 }, { k: 'icon', label: 'Ícono (emoji)', def: '📱', req: 1 },
         { k: 'file', label: 'Archivo .html', type: 'textfile' }, { k: 'html', label: '…o pega el HTML aquí', type: 'textarea' }]), {
         async up(f, _, close) { const html = f.file || f.html; if (!html) throw new Error('Falta el HTML');
-          await db.insert('store_apps', { name: f.name, icon: f.icon, html, author_char: S.char.id }); close(); toast('Enviada a revisión'); robstore.render(el); } }),
-      ok: async d => { await db.update('store_apps', d.id, { approved: true }); this.render(el); },
-      del: async d => { await db.remove('store_apps', d.id); this.render(el); },
+          await db.insert('store_apps', { name: f.name, icon: f.icon, html, author_char: f.author, approved: true }); close(); toast('App publicada'); robstore.render(el); } }),
+      del: async d => { if (!confirm('¿Quitar esta app del App Store?')) return; await db.remove('store_apps', d.id); robstore.render(el); },
     });
   } };
 
@@ -913,8 +913,13 @@ const staffApp = { id: 'staff', name: 'Panel Staff', icon: '🛡️', bg: '#8e2d
     }
 
     if (tab === 'users') {
-      body = `<input class="filter" placeholder="Filtrar por usuario / roblox / discord…" data-filter>${profiles.map(p => `<div class="card urow" data-s="${esc((p.username + ' ' + p.roblox + ' ' + p.discord).toLowerCase())}">
-        <div class="row">${av(p.avatar_url, 'av sm')}<b class="grow">${esc(p.username)}</b><span class="muted">${esc(p.roblox)} · ${esc(p.discord)}</span>
+      const rolesOf = p => S.all.filter(c => c.user_id === p.id && c.status === 'active').flatMap(c => c.roles || []);
+      body = `<div class="row gap"><input class="filter grow" placeholder="Buscar por usuario, Roblox, Discord o rol (ej. Policía)…" data-filter>
+        <select data-rolefilter aria-label="Filtrar por rol"><option value="">Todos los roles</option><optgroup label="Staff">${STAFF.map(([, l]) => `<option>${esc(l)}</option>`).join('')}</optgroup>
+          ${Object.entries(ROLES).map(([g, rs]) => `<optgroup label="${esc(g)}">${rs.map(r => `<option>${esc(r)}</option>`).join('')}</optgroup>`).join('')}</select></div>
+        <p class="muted">${L >= 3 ? 'Para dar un rol (Policía, EMS, Juez…) toca «Roles / estado» en la vida de la persona.' : 'Solo los Admin o más pueden cambiar roles.'}</p>
+        ${profiles.map(p => `<div class="card urow" data-s="${esc([p.username, p.roblox, p.discord, STAFF_NAME[p.staff_role] || '', ...rolesOf(p)].join(' ').toLowerCase())}">
+        <div class="row">${av(p.avatar_url, 'av sm')}<b class="grow">${esc(p.username)} ${p.staff_role ? `<span class="tag on">${esc(STAFF_NAME[p.staff_role])}</span>` : ''}</b><span class="muted">${esc(p.roblox)} · ${esc(p.discord)}</span>
         ${p.verified ? '' : '<span class="tag">Sin verificar</span>'}${p.banned ? '<span class="tag bad">Baneado</span>' : ''}</div>
         ${L >= 3 ? `<div class="row gap"><select data-role="${p.id}">${[['', 'Sin rango'], ...STAFF.filter(([, , n]) => n < L || L === 5).map(([k, l]) => [k, l])].map(([k, l]) => `<option value="${k}" ${p.staff_role === k || (!p.staff_role && !k) ? 'selected' : ''}>${l}</option>`).join('')}</select>
           <button class="btn sm" data-act="setRole" data-id="${p.id}">Guardar rango</button><button class="btn sm ${p.banned ? 'ok' : 'bad'}" data-act="tban" data-id="${p.id}" data-b="${p.banned ? '' : '1'}">${p.banned ? 'Desbanear' : 'Banear'}</button>${L >= 5 && p.id !== S.me.id ? `<button class="btn sm bad" data-act="delU" data-id="${p.id}">Eliminar cuenta</button>` : ''}</div>` : ''}
@@ -1054,7 +1059,9 @@ const staffApp = { id: 'staff', name: 'Panel Staff', icon: '🛡️', bg: '#8e2d
     }
 
     view(el, `${tabs(T, tab)}<div class="tabbody">${body}</div>`, acts);
-    el.querySelector('[data-filter]')?.addEventListener('input', e => el.querySelectorAll('.urow').forEach(r => r.hidden = !r.dataset.s.includes(e.target.value.toLowerCase())));
+    const fil = () => { const q = (el.querySelector('[data-filter]')?.value || '').toLowerCase(), r = (el.querySelector('[data-rolefilter]')?.value || '').toLowerCase();
+      el.querySelectorAll('.urow').forEach(x => x.hidden = !x.dataset.s.includes(q) || (r && !x.dataset.s.includes(r))); };
+    el.querySelector('[data-filter]')?.addEventListener('input', fil); el.querySelector('[data-rolefilter]')?.addEventListener('change', fil);
     if (tab === 'aprob') reviewQueue(el.querySelector('.q'), { title: 'Trámites para staff' });
   } };
 const rolesPicker = cur => `<div class="roles">${Object.entries(ROLES).map(([g, rs]) => `<fieldset><legend>${g}</legend>${rs.map(r => `<label class="chk"><input type="checkbox" name="role" value="${esc(r)}" ${cur.includes(r) || r === 'Ciudadano' ? 'checked' : ''} ${r === 'Ciudadano' ? 'disabled title="Toda vida es ciudadana"' : ''}> ${esc(r)}</label>`).join('')}</fieldset>`).join('')}</div>`;
