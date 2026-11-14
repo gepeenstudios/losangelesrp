@@ -67,7 +67,7 @@ export function idCard(c, dni, lic) {
 
 // ---------- Pasaporte (página de datos) ----------
 export function passport(c, req, foreign) {
-  const code = foreign ? String(req.data.pais || 'XXX').slice(0, 3).toUpperCase().normalize('NFD').replace(/[^A-Z]/g, 'X') : 'USA';
+  const code = foreign ? String(req.data.pais || 'XXX').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3).padEnd(3, 'X') : 'USA';
   const no = foreign ? String(req.data.pasaporte_ext).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 9) : pad(hash(c.id + 'p') % 1e9, 9);
   const iss = new Date(req.reviewed_at || req.created_at), exp = new Date(iss); exp.setFullYear(iss.getFullYear() + 10);
   const d6 = d => d.toISOString().slice(2, 10).replace(/-/g, '');
@@ -83,9 +83,18 @@ export function passport(c, req, foreign) {
         <div class="w">${f('Nationality / Nacionalidad', up(c.nationality))}</div>${f('Date of birth', fdate(c.dob))}${f('Sex / Sexo', up(c.sex?.[0]))}
         ${f('Place of birth', foreign ? up(req.data.pais) : 'CALIFORNIA, U.S.A.')}${f('Date of issue', fdate(iss.toISOString().slice(0, 10)))}${f('Date of expiration', fdate(exp.toISOString().slice(0, 10)))}
         ${f('Authority', foreign ? up(req.data.pais) : 'UNITED STATES DEPARTMENT OF STATE')}</div></div>
-    ${foreign ? `<div class="visa-strip"><b>VISA · ${up(req.data.tipo)}</b><span>Admitted until ${fdate(exp.toISOString().slice(0, 10))}</span></div>` : ''}
+    ${foreign === true ? `<div class="visa-strip"><b>VISA · ${up(req.data.tipo)}</b><span>Admitted until ${fdate(exp.toISOString().slice(0, 10))}</span></div>` : ''}
     <div class="mrz">${esc(mrz1)}<br>${esc(mrz2)}</div><div class="idc-micro">${RP.repeat(3)}</div></div>`;
 }
+
+// Pasaporte del país de origen: todo extranjero lo trae al llegar (lo necesita para su visa)
+const COUNTRY = { mexican: 'México', colombian: 'Colombia', guatemalte: 'Guatemala', salvadoreñ: 'El Salvador', hondureñ: 'Honduras', venezolan: 'Venezuela',
+  argentin: 'Argentina', peruan: 'Perú', chilen: 'Chile', cuban: 'Cuba', español: 'España', canadiense: 'Canadá', brasileñ: 'Brasil', dominican: 'República Dominicana',
+  ecuatorian: 'Ecuador', nicaragüense: 'Nicaragua', costarricense: 'Costa Rica', panameñ: 'Panamá', uruguay: 'Uruguay', paraguay: 'Paraguay', bolivian: 'Bolivia',
+  ingl: 'Reino Unido', británic: 'Reino Unido', frances: 'Francia', alemán: 'Alemania', aleman: 'Alemania', italian: 'Italia', japon: 'Japón', chin: 'China', corean: 'Corea del Sur', rus: 'Rusia' };
+export const homeCountry = c => { const n = String(c.nationality || '').toLowerCase().trim(); return Object.entries(COUNTRY).find(([k]) => n.startsWith(k))?.[1] || (c.nationality || 'País de origen'); };
+export const homePassportNo = c => String(homeCountry(c)).normalize('NFD').replace(/[^A-Za-z]/g, '').slice(0, 1).toUpperCase() + pad(hash(c.id + 'home') % 1e8, 8);
+export const homePassport = c => passport(c, { data: { pais: homeCountry(c), pasaporte_ext: homePassportNo(c) }, created_at: c.created_at }, 'home');
 
 // ---------- Diplomas y licencias profesionales ----------
 export function diploma(title, who, line, by, date) {

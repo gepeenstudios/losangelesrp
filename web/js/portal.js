@@ -2,6 +2,7 @@
 import * as db from './db.js';
 import { S, esc, toast, view, fieldsHTML, resolveFields, approvedOf, fdate } from './core.js';
 import { TRAMITES, CK_RULES } from './data.js';
+import { homeCountry, homePassportNo } from './docs.js';
 import { ti } from './icons.js';
 
 const sealMini = `<svg viewBox="0 0 40 40" class="gov-seal" aria-hidden="true"><circle cx="20" cy="20" r="18.5" fill="#fff" stroke="#c9a227" stroke-width="2"/><circle cx="20" cy="20" r="14" fill="#1d3b6e"/>
@@ -30,7 +31,7 @@ export async function openTramite(type, extra = {}, after) {
         <div class="gov-grid"><form class="gov-form" data-form="send">
           <section><h2>1. Datos del solicitante</h2><div class="ro"><div><small>Nombre</small><b>${esc(ch.first_name)} ${esc(ch.last_name)}</b></div>
             <div><small>Fecha de nacimiento</small><b>${esc(ch.dob)}</b></div><div><small>Residencia</small><b>${esc(ch.city)}</b></div><div><small>Nacionalidad</small><b>${esc(ch.nationality)}</b></div></div></section>
-          <section><h2>2. Información del trámite</h2>${fieldsHTML(fields, extra.values)}</section>
+          <section><h2>2. Información del trámite</h2>${fieldsHTML(fields, type === 'visa' ? { pais: homeCountry(ch), pasaporte_ext: homePassportNo(ch), ...extra.values } : extra.values)}</section>
           <section><h2>3. Declaración</h2><label class="chk"><input type="checkbox" required> Declaro bajo protesta de decir verdad que la información es correcta. Mentir es un delito federal.</label></section>
           <div class="gov-actions"><button class="btn big" type="submit">Enviar solicitud</button></div></form>${side}</div></main>`), {
         async send(data) {

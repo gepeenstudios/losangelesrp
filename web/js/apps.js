@@ -6,7 +6,7 @@ import { S, cpi, esc, money, fdate, lvl, has, isPolice, set, cname, charOpts, to
 import { openWizardOverlay } from './vida.js';
 import { openTramite } from './portal.js';
 import { ico } from './icons.js';
-import { birthCert, idCard, passport, diploma, docNumber } from './docs.js';
+import { birthCert, idCard, passport, diploma, docNumber, homeCountry, homePassport } from './docs.js';
 import { TRAMITES, ROLES, STAFF, STAFF_NAME, LVL, CITIES, WALLPAPERS, DEFAULT_SETTINGS, SEED_MODELS, SEED_PROPS, SEED_JOBS, CAR_PHOTOS, DEPTS, PENAL_CODE } from './data.js';
 
 const ST = { cumplida: 'Cumplida', liberado: 'Liberado', fugado: 'Fugado', en_prision: 'En prisión', pending: 'Pendiente', active: 'Activo', dead: 'CK', rejected: 'Rechazado', approved: 'Aprobado', abierto: 'Abierto', tomado: 'En atención', cerrado: 'Cerrado', vacation: 'Vacaciones' };
@@ -224,7 +224,7 @@ const LIC_TYPES = ['licencia_conducir', 'licencia_armas', 'licencia_abogado', 'l
 function myDocs(c, reqs) {
   const ok = t => approvedOf(reqs, t), name = `${c.first_name} ${c.last_name}`, when = r => r.reviewed_at || r.created_at, dni = ok('dni')[0], out = [];
   const add = (kind, title, html) => out.push({ kind, title, html });
-  add('doc', 'Acta de nacimiento', birthCert(c));
+  if (c.extranjero) add('doc', 'Pasaporte de ' + homeCountry(c), homePassport(c)); else add('doc', 'Acta de nacimiento', birthCert(c));
   if (dni) add('doc', 'Identificación (California ID)', idCard(c, dni));
   ok('pasaporte').forEach(p => add('doc', 'Pasaporte', passport(c, p, false)));
   ok('visa').forEach(v => add('doc', 'Pasaporte y visa', passport(c, v, true)));
