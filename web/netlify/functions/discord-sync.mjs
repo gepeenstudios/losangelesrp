@@ -47,5 +47,5 @@ export async function sync(env, { dry: DRY = false, log = console.log } = {}) {
   return log(`Listo: ${users.length} cuentas de la web, ${add} roles puestos, ${del} quitados.${miss.length ? ' No están en Discord: ' + miss.join(', ') + '.' : ''}${noRole.length ? ' Roles que no existen en el server (créalos si los usas): ' + noRole.join(', ') : ''}`);
 }
 
-export default async () => { const msg = await sync(process.env); console.log(msg); return new Response(String(msg)); };
+export default async () => { await sync(process.env); return new Response("ok"); };
 export const config = { schedule: '*/15 * * * *' };
