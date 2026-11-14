@@ -273,6 +273,7 @@ const RPC = {
   },
   join_jam({ jam_code, c }) { const j = T('jams').find(x => x.code === String(jam_code).trim().toUpperCase()); guard(j, 'No existe una Jam con ese código'); j.members = [...j.members.filter(m => m !== c), c]; return j.id; },
   server_now() { return new Date().toISOString(); },
+  signup_check({ u, d }) { const n = x => String(x || '').trim().replace(/^@/, '').toLowerCase(); return T('profiles').some(p => p.username === n(u)) ? 'Ese usuario de la web ya existe' : T('profiles').some(p => n(p.discord) === n(d)) ? 'Ese Discord ya tiene una cuenta. Solo se permite una cuenta por Discord.' : null; },
   new_bot_key() { guard(lvlLocal() >= 5, 'Solo el Owner'); return 'demo-' + crypto.randomUUID().replace(/-/g, ''); },
   pay_gov({ c, amount, concept }) {
     guard(myChars().some(x => x.id === c), 'No es tu vida'); guard(amount > 0, 'Monto inválido');

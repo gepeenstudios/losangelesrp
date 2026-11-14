@@ -30,7 +30,7 @@ function login(mode = 'in') {
     ? [{ k: 'u', label: 'Usuario', req: 1 }, { k: 'p', label: 'Contraseña', type: 'password', req: 1 }]
     : [{ k: 'u', label: 'Usuario de la web (3-20, letras/números)', req: 1, pattern: '[A-Za-z0-9_.]{3,20}' },
        { k: 'p', label: 'Contraseña (mín. 6)', type: 'password', req: 1, pattern: '.{6,}' },
-       { k: 'roblox', label: 'Usuario de Roblox', req: 1 }, { k: 'discord', label: 'Usuario de Discord', req: 1 },
+       { k: 'roblox', label: 'Usuario de Roblox', req: 1 }, { k: 'discord', label: 'Usuario de Discord (el de tu perfil, ej. juan_rp). Solo 1 cuenta por Discord; con él te ponemos tus roles', req: 1 },
        { k: 'avatar', label: 'Foto de tu avatar de Roblox (será tu foto de perfil)', type: 'file', req: 1, raw: 1 }]; // se sube después de crear la cuenta (antes no hay permiso)
   view(root, `<div class="lock" style="--wall:${wallCss(WALLPAPERS[1])}">${bigClock()}
     <div class="lock-c ${mode}"><img class="lock-logo" src="img/logo.png" alt="Los Angeles Roleplay"><h1 class="sr">${esc(CIUDAD)}</h1><p class="muted">Portal oficial de la Ciudad de Los Ángeles ${demoTag}</p>
@@ -40,7 +40,8 @@ function login(mode = 'in') {
     async go(d) {
       const u = d.u.toLowerCase(), keep = () => localStorage.setItem('rp_login', JSON.stringify({ u, p: d.p })); // solo en este dispositivo, para verla en Ajustes
       if (mode === 'in') { await db.signIn(u, d.p); keep(); return boot(); }
-      if (await db.get('profiles', u, 'username')) throw new Error('Ese usuario ya existe');
+      d.discord = d.discord.trim().replace(/^@/, '').toLowerCase();
+      const taken = await db.rpc('signup_check', { u, d: d.discord }); if (taken) throw new Error(taken);
       await db.signUp(u, d.p); keep(); toast('¡Cuenta creada! Bienvenido a Los Ángeles ✅');
       d.avatar = await db.upload(d.avatar);
       await db.insert('profiles', { id: db.uid(), username: u, roblox: d.roblox, discord: d.discord, avatar_url: d.avatar, avatar_full: d.avatar });
