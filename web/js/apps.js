@@ -1144,6 +1144,95 @@ const spotify = { id: 'spotify', name: 'Spotify', icon: '🎧', bg: '#1db954,#13
   } };
 if (localStorage.getItem('rp_vol') != null) player.audio.volume = localStorage.getItem('rp_vol') / 100;
 
+// ============ ARCHIVOS (carpetas, documentos, presentaciones, hojas) ============
+const FKIND = { folder: ['📁', 'Carpeta'], doc: ['📄', 'Documento'], slides: ['📊', 'Presentación'], sheet: ['📗', 'Hoja de cálculo'] };
+const THEMES = { Oscuro: '#111827,#fff', Claro: '#ffffff,#111', Azul: '#0b3d91,#fff', Atardecer: '#7b2ff7,#fff', Verde: '#0f5132,#fff' };
+const cleanHTML = html => { const d = new DOMParser().parseFromString(html || '', 'text/html'); d.querySelectorAll('script,iframe,object,embed,link,style,form').forEach(n => n.remove());
+  d.querySelectorAll('*').forEach(n => [...n.attributes].forEach(a => (/^on/i.test(a.name) || /^\s*javascript:/i.test(a.value)) && n.removeAttribute(a.name))); return d.body.innerHTML; };
+// fórmulas de la hoja: =A1+B2*2 y =SUMA(A1:A5). Solo números y + - * / ( ) llegan a evaluarse.
+export function calc(cells, raw, depth = 0) {
+  if (typeof raw !== 'string' || raw[0] !== '=') return raw ?? '';
+  if (depth > 30) return '#CICLO';
+  const val = (c, r) => +calc(cells, cells[r - 1]?.[c.charCodeAt(0) - 65], depth + 1) || 0;
+  const e = raw.slice(1).toUpperCase().replace(/(?:SUMA|SUM)\(([A-Z])(\d+):([A-Z])(\d+)\)/g, (_, c1, r1, c2, r2) => { let t = 0; for (let r = +r1; r <= +r2; r++) for (let c = c1.charCodeAt(0); c <= c2.charCodeAt(0); c++) t += val(String.fromCharCode(c), r); return `(${t})`; })
+    .replace(/([A-Z])(\d+)/g, (_, c, r) => `(${val(c, +r)})`);
+  if (!/^[\d+\-*/().\s]+$/.test(e)) return '#ERROR';
+  try { const r = Function('"use strict";return (' + e + ')')(); return Number.isFinite(r) ? Math.round(r * 1e6) / 1e6 : '#ERROR'; } catch { return '#ERROR'; }
+}
+function fileEditor(el, f, back) {
+  const win = el.closest('.win'); if (win) win.dataset.dirty = '1'; // que el refresco automático no borre lo que escribes
+  let t, dirty = false; const c = f.content ||= {};
+  const push = async () => { dirty = false; try { await db.update('files', f.id, { content: c, updated_at: new Date().toISOString() }); st().textContent = 'Guardado ✓'; } catch (e) { st().textContent = '⚠️ No se guardó'; toast('No se pudo guardar: ' + e.message, 'err'); } };
+  const st = () => el.querySelector('[data-st]') || {}, save = () => { dirty = true; st().textContent = 'Guardando…'; clearTimeout(t); t = setTimeout(push, 700); };
+  const head = extra => `<div class="fx-bar"><button class="btn sm ghost" data-act="volver">‹ Archivos</button><b class="fx-title">${FKIND[f.kind][0]} ${esc(f.name)}</b>${extra || ''}<span class="grow"></span><small class="muted" data-st>Guardado ✓</small></div>`;
+  const acts = { volver: async () => { clearTimeout(t); if (dirty) await push(); if (win) delete win.dataset.dirty; back(); } };
+  if (f.kind === 'doc') {
+    const B = (cmd, label, v, title) => `<button type="button" data-c="${cmd}" data-v="${v || ''}" title="${title || label}">${label}</button>`;
+    view(el, `<div class="fx">${head()}<div class="fx-tools">${B('bold', '<b>N</b>', '', 'Negrita')}${B('italic', '<i>K</i>', '', 'Cursiva')}${B('underline', '<u>S</u>', '', 'Subrayado')}${B('formatBlock', 'Título', 'h1')}${B('formatBlock', 'Subtítulo', 'h2')}${B('formatBlock', 'Texto', 'p')}
+      ${B('insertUnorderedList', '• Lista')}${B('insertOrderedList', '1. Lista')}${B('justifyLeft', '⬅', '', 'Izquierda')}${B('justifyCenter', '↔', '', 'Centrar')}${B('justifyRight', '➡', '', 'Derecha')}
+      <label title="Color del texto">🎨<input type="color" data-color></label><button type="button" data-act="bajar">⬇ Descargar .doc</button></div>
+      <div class="fx-page" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Documento">${cleanHTML(c.html)}</div></div>`, { ...acts,
+      bajar: () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['<html><meta charset="utf-8"><body>' + c.html + '</body></html>'], { type: 'application/msword' })); a.download = f.name + '.doc'; a.click(); } });
+    const page = el.querySelector('.fx-page'); page.oninput = () => { c.html = cleanHTML(page.innerHTML); save(); };
+    el.querySelectorAll('[data-c]').forEach(b => { b.onmousedown = e => e.preventDefault(); b.onclick = () => { page.focus(); document.execCommand(b.dataset.c, false, b.dataset.v || null); page.oninput(); }; });
+    el.querySelector('[data-color]').oninput = e => { page.focus(); document.execCommand('foreColor', false, e.target.value); page.oninput(); };
+  } else if (f.kind === 'slides') {
+    c.slides ||= [{ t: f.name, b: '' }]; c.theme ||= 'Oscuro'; let i = 0;
+    const sty = () => { const [bg, fg] = THEMES[c.theme].split(','); return `background:${bg};color:${fg}`; };
+    const draw = () => { i = Math.min(i, c.slides.length - 1); const s = c.slides[i];
+      view(el, `<div class="fx">${head(`<button class="btn sm" data-act="mas">＋ Diapositiva</button><button class="btn sm ghost" data-act="menos">🗑</button>
+        <select data-theme aria-label="Tema">${Object.keys(THEMES).map(k => `<option ${k === c.theme ? 'selected' : ''}>${k}</option>`).join('')}</select><button class="btn sm ok" data-act="play">▶ Presentar</button>`)}
+        <div class="sl"><div class="sl-list">${c.slides.map((x, k) => `<button class="${k === i ? 'on' : ''}" data-act="ir" data-k="${k}" style="${sty()}"><small>${k + 1}</small><b>${esc(x.t || 'Sin título')}</b></button>`).join('')}</div>
+        <div class="sl-main" style="${sty()}"><input class="sl-t" value="${esc(s.t)}" placeholder="Título" aria-label="Título"><textarea class="sl-b" placeholder="Escribe aquí el contenido…" aria-label="Contenido">${esc(s.b)}</textarea></div></div></div>`, { ...acts,
+        ir: d => { i = +d.k; draw(); }, mas: () => { c.slides.splice(++i, 0, { t: '', b: '' }); save(); draw(); },
+        menos: () => { if (c.slides.length < 2) return toast('Debe quedar al menos una diapositiva', 'err'); c.slides.splice(i, 1); save(); draw(); },
+        play: () => { let k = i; const o = document.createElement('div'); o.className = 'sl-show'; o.style.cssText = sty(); o.tabIndex = 0;
+          const show = () => { if (k >= c.slides.length) return end(); o.innerHTML = `<h1>${esc(c.slides[k].t)}</h1><p>${esc(c.slides[k].b)}</p><small>${k + 1} / ${c.slides.length} · clic o → para avanzar · Esc para salir</small>`; };
+          const end = () => { o.remove(); document.fullscreenElement && document.exitFullscreen(); };
+          o.onclick = () => { k++; show(); }; o.onkeydown = e => { if (e.key === 'Escape') end(); else if (e.key === 'ArrowLeft') { k = Math.max(0, k - 1); show(); } else if (['ArrowRight', ' ', 'Enter'].includes(e.key)) { k++; show(); } };
+          document.body.append(o); o.focus(); o.requestFullscreen?.().catch(() => {}); show(); } });
+      el.querySelector('.sl-t').oninput = e => { s.t = e.target.value; el.querySelector('.sl-list .on b').textContent = s.t || 'Sin título'; save(); };
+      el.querySelector('.sl-b').oninput = e => { s.b = e.target.value; save(); };
+      el.querySelector('[data-theme]').onchange = e => { c.theme = e.target.value; save(); draw(); }; };
+    draw();
+  } else {
+    const R = 30, C = 8; c.cells ||= []; for (let r = 0; r < R; r++) c.cells[r] ||= [];
+    view(el, `<div class="fx">${head('<small class="muted">Fórmulas: =A1+B1 · =SUMA(A1:A10)</small>')}<div class="sh"><table><tr><th></th>${[...Array(C)].map((_, k) => `<th>${String.fromCharCode(65 + k)}</th>`).join('')}</tr>
+      ${[...Array(R)].map((_, r) => `<tr><th>${r + 1}</th>${[...Array(C)].map((_, k) => `<td><input data-r="${r}" data-k="${k}" aria-label="${String.fromCharCode(65 + k)}${r + 1}"></td>`).join('')}</tr>`).join('')}</table></div></div>`, acts);
+    const ins = [...el.querySelectorAll('.sh input')], paint = () => ins.forEach(x => { if (x !== document.activeElement) x.value = calc(c.cells, c.cells[x.dataset.r][x.dataset.k]); });
+    ins.forEach(x => { x.onfocus = () => x.value = c.cells[x.dataset.r][x.dataset.k] ?? ''; x.onblur = paint;
+      x.oninput = () => { c.cells[x.dataset.r][x.dataset.k] = x.value; save(); };
+      x.onkeydown = e => { if (e.key === 'Enter') ins[ins.indexOf(x) + C]?.focus(); }; });
+    paint();
+  }
+}
+const archivos = { id: 'archivos', name: 'Archivos', icon: '📁', bg: '#1e90ff,#0a5fd1', show: () => true,
+  async render(el) {
+    const me = db.uid(), files = await db.list('files', { eq: { owner: me } }), again = () => archivos.render(el);
+    const open = files.find(f => f.id === el.dataset.open && f.kind !== 'folder');
+    if (open) return fileEditor(el, open, () => { el.dataset.open = ''; again(); });
+    const dir = files.find(f => f.id === el.dataset.dir && f.kind === 'folder'), kids = id => files.filter(f => f.parent === id).flatMap(f => [f, ...kids(f.id)]);
+    const here = files.filter(f => (f.parent || '') === (dir?.id || '')).sort((a, b) => (b.kind === 'folder') - (a.kind === 'folder') || a.name.localeCompare(b.name));
+    const path = []; for (let d = dir; d; d = files.find(f => f.id === d.parent)) path.unshift(d);
+    const get = d => files.find(f => f.id === d.id);
+    view(el, `<div class="fx"><div class="fx-bar"><nav class="fx-path" aria-label="Ruta"><button class="link" data-act="go" data-id="">🖥 Mi equipo</button>${path.map(p => ` › <button class="link" data-act="go" data-id="${p.id}">${esc(p.name)}</button>`).join('')}</nav><span class="grow"></span>
+      ${Object.entries(FKIND).map(([k, [ic, n]]) => `<button class="btn sm ${k === 'folder' ? '' : 'ghost'}" data-act="nuevo" data-k="${k}">${ic} ${k === 'folder' ? 'Nueva carpeta' : n}</button>`).join('')}</div>
+      <div class="fx-grid">${here.map(f => `<div class="fx-it"><button class="fx-open" data-act="abrir" data-id="${f.id}"><span class="fx-ic">${FKIND[f.kind][0]}</span><span class="fx-n" title="${esc(f.name)}">${esc(f.name)}</span></button>
+        <div class="fx-acts"><button data-act="ren" data-id="${f.id}" title="Renombrar" aria-label="Renombrar">✏️</button><button data-act="mover" data-id="${f.id}" title="Mover a otra carpeta" aria-label="Mover">📂</button><button data-act="borrar" data-id="${f.id}" title="Borrar" aria-label="Borrar">🗑</button></div></div>`).join('')
+        || '<p class="empty">Esta carpeta está vacía. Crea una carpeta, un documento, una presentación o una hoja de cálculo con los botones de arriba.</p>'}</div></div>`, {
+      go: d => { el.dataset.dir = d.id; again(); },
+      abrir: d => { el.dataset[get(d).kind === 'folder' ? 'dir' : 'open'] = d.id; again(); },
+      nuevo: d => modal('Nueva ' + FKIND[d.k][1].toLowerCase(), form('go', [{ k: 'name', label: 'Nombre', req: 1, def: FKIND[d.k][1] + ' sin título' }], {}, 'Crear'), {
+        async go(v, _, close) { const f = await db.insert('files', { owner: me, parent: dir?.id || null, name: v.name.trim().slice(0, 80), kind: d.k, content: {} }); close(); if (d.k !== 'folder') el.dataset.open = f.id; again(); } }),
+      ren: d => modal('Renombrar', form('go', [{ k: 'name', label: 'Nombre', req: 1 }], get(d), 'Guardar'), { async go(v, _, close) { await db.update('files', d.id, { name: v.name.trim().slice(0, 80) }); close(); again(); } }),
+      mover: d => { const no = new Set([d.id, ...kids(d.id).map(f => f.id)]);
+        modal('Mover «' + esc(get(d).name) + '»', form('go', [{ k: 'p', label: 'Carpeta destino', type: 'select', options: [['', '🖥 Mi equipo'], ...files.filter(f => f.kind === 'folder' && !no.has(f.id)).map(f => [f.id, '📁 ' + f.name])] }], { p: get(d).parent || '' }, 'Mover'), {
+          async go(v, _, close) { await db.update('files', d.id, { parent: v.p || null }); close(); again(); } }); },
+      borrar: async d => { const f = get(d), sub = kids(d.id); if (!await ask(`¿Borrar «${f.name}»${sub.length ? ` y los ${sub.length} archivos que tiene dentro` : ''}? No se puede deshacer.`)) return;
+        for (const x of [...sub.reverse(), f]) await db.remove('files', x.id); toast('Borrado'); again(); },
+    });
+  } };
+
 // ============ AJUSTES ============
 const ajustes = { id: 'ajustes', name: 'Ajustes', icon: '⚙️', bg: '#8e8e93,#636366', show: () => true,
   async render(el) {
@@ -1431,6 +1520,6 @@ export async function seed() {
   if (g && Number(g.balance) === 0) await db.rpc('staff_pay', { acc: g.id, amount: 13950000000, concept: 'Presupuesto inicial FY 2025-26', mint: true });
 }
 
-export const APPS = [vida, banco, gobierno, safari, docs, documentos, licencias, spotify, trabajo, mensajes,
+export const APPS = [vida, banco, gobierno, safari, docs, documentos, licencias, archivos, spotify, trabajo, mensajes,
   social('x', 'X', '𝕏', '#000000,#1c1c1c'), social('insta', 'Instagram', '📸', '#833ab4,#fd1d1d,#fcb045'),
   news, buscar, empleos, bolsa, casas, autos, fec, corte, policia, prision, taxi, soporte, resenas, robstore, staffApp, ajustes];

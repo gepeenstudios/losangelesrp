@@ -187,7 +187,7 @@ async function shell() {
         <button class="wdg w-life" data-act="open" data-id="vida">${c ? `<img src="${esc(c.skin_url)}" alt=""><div><b>${esc(cname(c.id))}</b><span>${c.status === 'active' ? 'Ciudadano activo' : 'En aprobación'}</span>
           <small>${(c.roles || []).slice(0, 3).map(esc).join(' · ')}</small></div>` : '<div><b>Sin vida activa</b><span>Tu vida está en aprobación o crea una nueva</span></div>'}</button>
       </section>
-      <section class="desk">${apps.filter(a => ['documentos', 'licencias'].includes(a.id)).map(a => `<button class="dfold" data-act="open" data-id="${a.id}"><span class="ic" style="background:linear-gradient(135deg,${a.bg})">${glyph(a)}</span><span>${esc(a.name)}</span></button>`).join('')}</section>
+      <section class="desk">${apps.filter(a => ['archivos', 'documentos', 'licencias'].includes(a.id)).map(a => `<button class="dfold" data-act="open" data-id="${a.id}"><span class="ic" style="background:linear-gradient(135deg,${a.bg})">${glyph(a)}</span><span>${esc(a.name)}</span></button>`).join('')}</section>
       <div class="grid">${apps.map(icon).join('')}</div>
     </main>
     <nav class="dock">${favs.map(a => dockIcon(a)).join('')}<span class="extra"></span><span class="sep"></span>
