@@ -509,7 +509,7 @@ const bitso = { id: 'bitso', name: 'Bitso', icon: '🪙', bg: '#0b2b1f,#0f7a4f',
 
 // ============ CASINO (el servidor decide todo; apuestas → Tesorería, premios ← Tesorería) ============
 const CAS = { dice: ['🎲', 'Dados'], limbo: ['🚀', 'Limbo'], coin: ['🪙', 'Volado'], roulette: ['🎡', 'Ruleta'], slots: ['🎰', 'Tragamonedas'], plinko: ['🔻', 'Plinko'], wheel: ['🛞', 'Rueda'],
-  blackjack: ['🃏', 'Blackjack'], poker: ['♠️', 'Video póker'], mines: ['💣', 'Minas'], hist: ['🧾', 'Mis apuestas'] };
+  blackjack: ['🃏', 'Blackjack'], poker: ['♠️', 'Video póker'], mines: ['💣', 'Minas'], mesas: ['👥', 'Con gente'], hist: ['🧾', 'Mis apuestas'] };
 const CAS_TABLE = ['blackjack', 'poker', 'mines'];
 const PLINKO = [13, 3, 1.3, 0.7, 0.4, 0.7, 1.3, 3, 13], WHEEL = [0, 1.2, 0, 1.5, 0, 1.2, 0, 2, 0, 4], REDS = [1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36];
 const SLOT_SYM = ['🍒', '🍋', '🔔', '⭐', '💎', '7️⃣'], WHEEL_COL = { 0: '#2f4553', 1.2: '#4cc3ff', 1.5: '#00e701', 2: '#ffd200', 4: '#ff4d6d' };
@@ -551,7 +551,7 @@ const casino = { id: 'casino', name: 'Casino', icon: '🎰', bg: '#0f212e,#1a2c3
   async render(el, game = 'dice', bet = 10) {
     if (typeof game !== 'string') game = 'dice';
     if (!needChar(el)) return;
-    const win = el.closest('.win'); if (win) win.dataset.dirty = '1'; // el refresco automático borraría la jugada en curso
+    const win = el.closest('.win'); if (win) { if (game === 'mesas') delete win.dataset.dirty; else win.dataset.dirty = '1'; } // el refresco automático borraría la jugada en curso (las mesas sí se refrescan solas)
     const accs = await myAccounts(), bal = Number(accs.find(a => a.kind === 'personal')?.balance || 0);
     const hand = CAS_TABLE.includes(game) ? await db.rpc('casino_open', { c: S.char.id, game }) : null;
     const betBox = `<label class="fld"><span>Apuesta (USD)</span><div class="cas-bet"><input name="bet" type="number" min="1" step="0.01" value="${bet}" required><button type="button" data-act="half">½</button><button type="button" data-act="dbl">2×</button><button type="button" data-act="max">Máx</button></div></label>`;
@@ -580,7 +580,30 @@ const casino = { id: 'casino', name: 'Casino', icon: '🎰', bg: '#0f212e,#1a2c3
     };
     const idle = () => `<div class="cas-out idle">${CAS[game][0]}<b>${CAS[game][1]}</b></div>`;
     let body;
-    if (game === 'hist') {
+    if (game === 'mesas') { // mesas con gente: juegan entre jugadores, el ganador se lleva el bote y la casa cobra 5%
+      const [tbs, seats] = await Promise.all([db.list('casino_tables', { limit: 40 }), db.list('casino_seats', { order: 'joined_at', asc: true, limit: 500 })]);
+      const open = tbs.filter(t => t.status === 'open'), done = tbs.filter(t => t.status === 'done').slice(0, 8), me = S.char.id, G = { jackpot: ['🎯', 'Jackpot'], dados: ['🎲', 'Duelo de dados'] };
+      const sits = t => seats.filter(x => x.table_id === t.id), pot = t => sits(t).reduce((n, x) => n + Number(x.amount), 0);
+      const seatHTML = (t, x) => `<div class="pvp-seat ${t.winner === x.character_id ? 'won' : ''}">${av(skin(x.character_id), 'av sm')}<b>${esc(cname(x.character_id))}</b>
+        <small>${money(x.amount)}${t.game === 'jackpot' && pot(t) ? ` · ${(x.amount / pot(t) * 100).toFixed(1)}%` : ''}${x.roll ? ` · 🎲 ${x.roll}` : ''}</small></div>`;
+      body = `<div class="pvp"><form class="form pvp-new" data-form="mesa"><b>Abrir una mesa</b>${fieldsHTML([{ k: 'g', label: 'Juego', type: 'select', options: [['jackpot', '🎯 Jackpot: cada quien pone lo que quiera; entre más pongas, más probabilidad'], ['dados', '🎲 Duelo de dados: todos ponen lo mismo y gana el tiro más alto']], req: 1, def: 'jackpot' },
+        { k: 'amount', label: 'Tu apuesta (USD)', type: 'number', min: 1, step: 0.01, req: 1, def: bet }, { k: 'maxp', label: 'Máximo de jugadores', type: 'number', min: 2, max: 10, def: 6 }])}<button class="btn" type="submit">Abrir mesa</button>
+        <p class="muted">El ganador se lleva todo el bote menos 5% de comisión, que va a la Tesorería. Si la mesa se llena se juega sola; si no, el anfitrión la inicia con 2 o más.</p></form>
+        <h3>Mesas abiertas</h3>${open.map(t => { const sd = sits(t), inn = sd.some(x => x.character_id === me), host = t.host === me;
+          return `<div class="pvp-t"><div class="row"><b class="grow">${G[t.game][0]} ${G[t.game][1]} · de ${esc(cname(t.host))}</b><span class="tag">${sd.length}/${t.max_players}</span><b class="cas-g">Bote ${money(pot(t))}</b></div>
+          <div class="pvp-seats">${sd.map(x => seatHTML(t, x)).join('')}</div><div class="row gap">
+          ${!inn ? (t.game === 'dados' ? `<button class="btn ok" data-act="unirme" data-id="${t.id}">Entrar por ${money(t.buy_in)}</button>` : `<input type="number" min="1" step="0.01" value="${t.buy_in}" data-amt="${t.id}" class="pvp-amt"><button class="btn ok" data-act="unirme" data-id="${t.id}">Entrar</button>`) : ''}
+          ${host && sd.length >= 2 ? `<button class="btn" data-act="iniciar" data-id="${t.id}">${t.game === 'dados' ? '🎲 Tirar dados' : '🎯 Girar'}</button>` : ''}
+          ${inn ? `<button class="btn ghost bad" data-act="salir" data-id="${t.id}">${host ? 'Cerrar mesa (devuelve todo)' : 'Salirme'}</button>` : ''}</div></div>`; }).join('') || '<p class="empty">No hay mesas abiertas. ¡Abre una!</p>'}
+        <h3>Últimos resultados</h3>${done.map(t => `<div class="pvp-t done ${t.winner === me ? 'mine' : ''}"><div class="row"><b class="grow">${G[t.game][0]} ${G[t.game][1]} · ganó <span class="cas-g">${esc(cname(t.winner))}</span></b><b>${money(t.result?.prize)}</b></div>
+          <div class="pvp-seats">${sits(t).map(x => seatHTML(t, x)).join('')}</div>${(t.result?.rounds || []).length > 1 ? `<small class="muted">Hubo empate: se volvió a tirar ${t.result.rounds.length - 1} vez/veces.</small>` : ''}<small class="muted">${fdate(t.finished_at)}</small></div>`).join('') || '<p class="muted">Aún no hay partidas.</p>'}</div>`;
+      Object.assign(acts, {
+        async mesa(v) { await db.rpc('pvp_create', { c: me, game: v.g, amount: +v.amount, maxp: +v.maxp || 6 }); toast('Mesa abierta 👥'); window.liveRefresh?.(); casino.render(el, 'mesas', v.amount); },
+        async unirme(d) { await db.rpc('pvp_join', { t: d.id, c: me, amount: +(el.querySelector(`[data-amt="${d.id}"]`)?.value || 0) || null }); toast('Entraste a la mesa'); window.liveRefresh?.(); casino.render(el, 'mesas'); },
+        async iniciar(d) { await db.rpc('pvp_start', { t: d.id }); const t = (await db.list('casino_tables', { eq: { id: d.id } }))[0]; toast(t?.winner === me ? `🎉 ¡Ganaste ${money(t.result?.prize)}!` : `Ganó ${cname(t?.winner)}`); casino.render(el, 'mesas'); },
+        async salir(d) { await db.rpc('pvp_leave', { t: d.id, c: me }); toast('Dinero devuelto'); window.liveRefresh?.(); casino.render(el, 'mesas'); },
+      });
+    } else if (game === 'hist') {
       const rows = await db.list('casino_bets', { eq: { character_id: S.char.id }, limit: 100 });
       const tb = rows.reduce((n, r) => n + Number(r.bet), 0), tp = rows.reduce((n, r) => n + Number(r.payout), 0);
       body = `<p>Últimas ${rows.length} apuestas · apostado ${money(tb)} · ganado ${money(tp)} · <b class="${tp - tb >= 0 ? 'pos' : 'neg'}">neto ${tp - tb >= 0 ? '+' : '−'}${money(Math.abs(tp - tb))}</b></p>
@@ -589,7 +612,7 @@ const casino = { id: 'casino', name: 'Casino', icon: '🎰', bg: '#0f212e,#1a2c3
       <div class="cas-stage"><div class="cas-show">${idle()}</div><div class="cas-res"></div></div></div>`;
     view(el, `<div class="cas"><header class="cas-h"><b>🎰 Casino Los Ángeles</b><span class="grow"></span><span>Saldo <b data-bal>${money(bal)}</b></span></header>
       ${tabs(Object.entries(CAS).map(([k, [i, n]]) => [k, i + ' ' + n]), game)}<div class="tabbody">${body}<p class="muted cas-legal">Juego responsable. Lo que pierdes va a la Tesorería del gobierno y los premios los paga la Tesorería. Apuesta máxima ${money(50000)}.</p></div></div>`, acts);
-    if (game === 'hist') return;
+    if (game === 'hist' || game === 'mesas') return;
     const form = el.querySelector('.cas-side'), show = el.querySelector('.cas-show'), res = el.querySelector('.cas-res'), go = el.querySelector('.cas-go'), acts2 = el.querySelector('.cas-acts');
     const refreshBal = () => myAccounts().then(a => { const b = money(a.find(y => y.kind === 'personal')?.balance); el.querySelector('[data-bal]').textContent = b; document.querySelectorAll('.cash,.wb-bal').forEach(x => x.textContent = b); });
     const result = r => { res.innerHTML = r.payout > 0 ? `<b class="cas-g cas-pop">Ganaste ${money(r.payout)} (×${fx(r.mult)})</b>` : `<b class="cas-r cas-pop">Perdiste ${money(r.bet)}</b>`; res.closest('.cas-stage').classList.toggle('cas-won', r.payout > 0); refreshBal(); };

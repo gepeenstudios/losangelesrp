@@ -970,3 +970,8 @@ tr.click{cursor:pointer}tr.click:hover{background:#ffffff08}
 .trial{border-left:4px solid #8c6239}.trial-h{display:flex;flex-direction:column;gap:2px;margin-bottom:6px}.trial-h small{letter-spacing:.08em;color:#b08a5a;font-weight:700}.trial-h b{font-size:1.15em;font-family:Georgia,serif}
 .trial .charges{max-height:300px;overflow:auto;margin:6px 0}.trial-sum{padding:8px 10px;border-radius:8px;background:rgba(140,98,57,.15);margin:6px 0}.trial textarea{width:100%;margin:6px 0}
 .reqs .tag{margin:2px 4px 2px 0;display:inline-block}
+
+.pvp h3{margin:14px 0 6px}.pvp-new{background:rgba(255,255,255,.04);border-radius:12px;padding:12px}
+.pvp-t{background:#1a2c38;border-radius:12px;padding:10px 12px;margin:8px 0;border:1px solid #2f4553}.pvp-t.done{opacity:.85}.pvp-t.mine{border-color:#00e701}
+.pvp-seats{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}.pvp-seat{display:flex;align-items:center;gap:6px;background:#0f212e;border-radius:20px;padding:4px 10px 4px 4px}
+.pvp-seat small{color:#b1bad3}.pvp-seat.won{outline:2px solid #00e701;animation:caspop .5s}.pvp-amt{width:120px}

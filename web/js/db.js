@@ -153,6 +153,16 @@ const myChars = () => T('characters').filter(c => c.user_id === myId);
 const lvlLocal = () => ({ helper: 1, mod: 2, admin: 3, coowner: 4, owner: 5 })[T('profiles').find(p => p.id === myId)?.staff_role] || 0;
 const isMgr = d => lvlLocal() >= 3 || T('employments').some(e => e.dept === d && e.status !== 'fired' && myChars().some(c => c.id === e.character_id && c.status === 'active')
   && T('dept_ranks').find(r => r.dept === d && r.rank === e.rank)?.manage);
+const pAcc = c => T('accounts').find(a => a.kind === 'personal' && a.owners[0] === c);
+const pvpEsc = () => T('accounts').find(a => a.name === 'Casino · mesas') || (T('accounts').push({ id: crypto.randomUUID(), kind: 'business', name: 'Casino · mesas', owners: [], balance: 0, number: '0000000777', created_at: now() }), T('accounts').at(-1));
+function pvpResolve(t) {
+  const ss = T('casino_seats').filter(x => x.table_id === t.id), total = ss.reduce((n, x) => n + x.amount, 0), rake = Math.round(total * 5) / 100; let w, rounds = [];
+  if (t.game === 'jackpot') { let r = Math.random() * total; w = ss.find(x => (r -= x.amount) < 0)?.character_id || ss.at(-1).character_id; }
+  else { let tied = ss.map(x => x.character_id); for (;;) { const rr = Object.fromEntries(tied.map(id => [id, 2 + Math.floor(Math.random() * 6) + Math.floor(Math.random() * 6)])); rounds.push(rr);
+    ss.forEach(x => { if (x.roll == null && rr[x.character_id]) x.roll = rr[x.character_id]; }); const best = Math.max(...Object.values(rr)); tied = tied.filter(id => rr[id] === best); if (tied.length === 1) break; } w = tied[0]; }
+  move(pvpEsc(), pAcc(w), total - rake, 'Casino con gente · ganaste el bote'); if (rake > 0) move(pvpEsc(), gov(), rake, 'Casino con gente · comisión de la casa');
+  Object.assign(t, { status: 'done', winner: w, pot: total, result: { pot: total, rake, prize: total - rake, rounds }, finished_at: now() });
+}
 const guard = (ok, msg) => { if (!ok) throw new Error(msg); };
 const ranksOf = d => T('dept_ranks').filter(r => r.dept === d).sort((a, b) => a.ord - b.ord);
 const dayMins = (c, d, day) => T('work_shifts').filter(w => w.character_id === c && w.dept === d).reduce((m, w) => {
@@ -424,6 +434,25 @@ const RPC = {
     const x = T(kind === 'property' ? 'properties' : 'vehicles').find(r => r.id === item);
     if (kind === 'property') { x.for_sale = price != null; x.sale_price = price; } else x.sale_price = price;
   },
+  // casino con gente (igual que pvp_* en SQL)
+  pvp_create({ c, game, amount, maxp }) {
+    guard(amount >= 1, 'La apuesta mínima es $1'); guard(!T('casino_tables').some(t => t.host === c && t.status === 'open'), 'Ya tienes una mesa abierta');
+    const t = { id: crypto.randomUUID(), game, buy_in: +amount, host: c, max_players: Math.min(10, Math.max(2, maxp || 8)), status: 'open', pot: +amount, created_at: now() };
+    move(pAcc(c), pvpEsc(), +amount, 'Casino con gente · entrada a mesa'); T('casino_tables').push(t); T('casino_seats').push({ table_id: t.id, character_id: c, amount: +amount, joined_at: now() }); return t.id;
+  },
+  pvp_join({ t: id, c, amount }) {
+    const t = T('casino_tables').find(x => x.id === id && x.status === 'open'); guard(t, 'Esa mesa ya no está abierta'); if (t.game === 'dados') amount = t.buy_in;
+    const ss = T('casino_seats').filter(x => x.table_id === id); guard(amount >= 1, 'La apuesta mínima es $1'); guard(!ss.some(x => x.character_id === c), 'Ya estás en esta mesa'); guard(ss.length < t.max_players, 'La mesa está llena');
+    move(pAcc(c), pvpEsc(), +amount, 'Casino con gente · entrada a mesa'); T('casino_seats').push({ table_id: id, character_id: c, amount: +amount, joined_at: now() });
+    if (ss.length + 1 >= t.max_players) pvpResolve(t);
+  },
+  pvp_leave({ t: id, c }) {
+    const t = T('casino_tables').find(x => x.id === id && x.status === 'open'); guard(t, 'La mesa ya se jugó');
+    for (const x of T('casino_seats').filter(x => x.table_id === id && (x.character_id === c || t.host === c))) { move(pvpEsc(), pAcc(x.character_id), x.amount, 'Casino con gente · devolución'); mem.t.casino_seats = T('casino_seats').filter(y => y !== x); }
+    if (t.host === c) t.status = 'cancelled';
+  },
+  pvp_start({ t: id }) { const t = T('casino_tables').find(x => x.id === id && x.status === 'open'); guard(t && myChars().some(c => c.id === t.host), 'Solo el anfitrión inicia la mesa');
+    guard(T('casino_seats').filter(x => x.table_id === id).length >= 2, 'Se necesitan al menos 2 jugadores'); pvpResolve(t); },
   budget_move({ d, amount }) {
     guard(lvlLocal() >= 3 || myChars().some(c => c.status === 'active' && (c.roles || []).some(r => r === 'Presidente' || r === 'Gobernador')), 'Solo el Presidente, el Gobernador o un admin manejan los presupuestos');
     let a = T('accounts').find(x => x.kind === 'dept' && x.dept === d);
