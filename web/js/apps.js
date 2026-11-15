@@ -362,7 +362,7 @@ const expedientes = { id: 'expedientes', name: 'Expedientes', icon: '🗂️', b
 
 
 
-// ============ BITSO (cripto simuladas: precios se mueven solos cada minuto en el servidor; el gobierno es la contraparte) ============
+// ============ BITSO (cripto con oferta fija; el precio lo mueven las compras y ventas de los jugadores contra un pool x·y=k) ============
 const cfmt = p => p >= 1000 ? money(p) : p >= 1 ? '$' + Number(p).toFixed(2) : '$' + Number(p).toFixed(4);
 const bitso = { id: 'bitso', name: 'Bitso', icon: '🪙', bg: '#0b2b1f,#0f7a4f', show: () => true,
   async render(el, sel = null, range = 1440) {
@@ -385,15 +385,17 @@ const bitso = { id: 'bitso', name: 'Bitso', icon: '🪙', bg: '#0b2b1f,#0f7a4f',
         <div class="bx-grid"><div class="card"><h3>Tu ${esc(c.sym)}</h3><p><b>${q.toFixed(8).replace(/\.?0+$/, '') || 0}</b> ${esc(c.sym)} ≈ <b>${money(val(c))}</b></p>${q ? `<p>Ganancia/pérdida: <b class="${pl >= 0 ? 'pos' : 'neg'}">${pl >= 0 ? '+' : '−'}${money(Math.abs(pl))}</b></p>` : ''}</div>
           <form class="card form" data-form="buy"><h3>Comprar</h3><label class="fld"><span>Dólares a invertir (saldo ${money(bal)})</span><input name="usd" type="number" min="1" step="0.01" required></label><button class="btn bx-buy">Comprar ${esc(c.sym)}</button></form>
           <form class="card form" data-form="sell"><h3>Vender</h3><label class="fld"><span>Cantidad de ${esc(c.sym)}</span><input name="qty" type="number" min="0" step="any" max="${q}" required></label><div class="row"><button type="button" class="btn ghost sm" data-act="all">Todo</button><span class="grow"></span><button class="btn bx-sell">Vender</button></div></form></div>
-        <p class="muted">Comisión 0.5% por operación. El precio se mueve solo cada minuto, de día y de noche.</p>
+        <div class="kpis"><div><small>Monedas que existen</small><b>${Number(c.supply || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}</b></div><div><small>En manos de jugadores</small><b>${Number((c.supply || 0) - (c.pool_coin || 0)).toLocaleString('en-US', { maximumFractionDigits: 4 })}</b></div>
+          <div><small>Capitalización</small><b>${money(Number(c.price) * Number(c.supply || 0))}</b></div><div><small>Dólares en la reserva</small><b>${money(c.pool_usd)}</b></div></div>
+        <p class="muted">Como una cripto real: hay una cantidad fija de monedas y el precio lo mueven las compras y ventas de todos los jugadores. Comprar sube el precio, vender lo baja, y entre más grande la orden más lo mueve. Comisión 0.5%. El gobierno no participa.</p>
         <h3>Tus movimientos</h3><ul class="list">${trades.map(t => `<li><span class="grow">${t.side === 'buy' ? '🟢 Compra' : '🔴 Venta'} ${Number(t.qty).toFixed(8).replace(/\.?0+$/, '')} ${esc(t.sym)} a ${cfmt(t.price)} <small class="muted">${fdate(t.created_at)}</small></span><b>${money(t.usd)}</b></li>`).join('') || '<p class="muted">Aún no operas esta moneda.</p>'}</ul>`;
     } else body = `<div class="bx-sum card"><div><small class="muted">Tu portafolio cripto</small><div class="bx-price">${money(total)}</div>${cost ? `<div class="${total - cost >= 0 ? 'pos' : 'neg'}">${total - cost >= 0 ? '+' : '−'}${money(Math.abs(total - cost))} desde que compraste</div>` : ''}</div><div><small class="muted">Saldo en tu cuenta</small><div><b>${money(bal)}</b></div></div></div>
       <h3>Mercado</h3><ul class="list bx-list">${coins.map(c => `<li data-act="coin" data-s="${c.sym}"><span class="bx-dot" style="background:${c.color}">${esc(c.sym[0])}</span><div class="grow"><b>${esc(c.name)}</b><div class="muted">${esc(c.sym)}${H[c.sym]?.qty > 0 ? ` · tienes ${money(val(c))}` : ''}</div></div>
-        <div class="bx-spark">${chart(day[c.sym], 120, 36, false)}</div><div class="bx-r"><b>${cfmt(c.price)}</b><div>${sgn(ch(c))}</div></div></li>`).join('')}</ul><p class="muted">Precios simulados del servidor. Se actualizan solos cada minuto.</p>`;
+        <div class="bx-spark">${chart(day[c.sym], 120, 36, false)}</div><div class="bx-r"><b>${cfmt(c.price)}</b><div>${sgn(ch(c))}</div></div></li>`).join('')}</ul><p class="muted">El precio de cada moneda lo deciden las compras y ventas de los jugadores. Se actualiza en vivo.</p>`;
     view(el, `<div class="bx"><header class="bx-h"><b>bitso</b><span class="grow"></span><span class="muted">en vivo ●</span></header><div class="tabbody">${body}</div></div>`, {
       home: () => bitso.render(el), coin: d => bitso.render(el, d.s), range: d => bitso.render(el, sel, +d.m),
       all: (_, b) => { b.form.qty.value = Number(H[sel]?.qty || 0); },
-      async buy(v) { const r = await db.rpc('crypto_trade', { c: S.char.id, s: sel, side: 'buy', amount: +v.usd }); toast(`Compraste ${Number(r.qty).toFixed(8).replace(/\.?0+$/, '')} ${sel}`); bitso.render(el, sel, range); window.liveRefresh?.(); },
+      async buy(v) { const r = await db.rpc('crypto_trade', { c: S.char.id, s: sel, side: 'buy', amount: +v.usd }); toast(`Compraste ${Number(r.qty).toFixed(8).replace(/\.?0+$/, '')} ${sel} · nuevo precio ${cfmt(r.new_price)}`); bitso.render(el, sel, range); window.liveRefresh?.(); },
       async sell(v) { const r = await db.rpc('crypto_trade', { c: S.char.id, s: sel, side: 'sell', amount: +v.qty }); toast(`Vendiste por ${money(r.usd)}`); bitso.render(el, sel, range); window.liveRefresh?.(); },
     });
     // en vivo: vuelve a pintar cada 30 s mientras la ventana siga abierta y nadie esté escribiendo

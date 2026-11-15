@@ -301,25 +301,29 @@ const RPC = {
   fund_company({ req, dest }) { const r = T('requests').find(x => x.id === req && x.type === 'empresa'), d = acc(dest), cap = Number(r?.data?.capital) || 0;
     if (!r) throw new Error('Solicitud no encontrada'); if (T('transactions').some(t => t.to_acc === dest)) throw new Error('El capital ya se depositó');
     if (cap > 0) { const p = personal(r.character_id); if (!p || p.balance < cap) throw new Error(`El dueño ya no tiene el capital disponible (${cap})`); move(p, d, cap, 'Capital inicial · ' + (r.data.nombre || 'empresa')); } },
-  // espejo demo de las funciones de cripto
+  // espejo demo de las funciones de cripto (pool x·y=k: el precio lo mueven las compras y ventas)
   crypto_tick() {
-    const C = T('crypto_coins'); if (!C.length) C.push(...[['BTC','Bitcoin',95000,0.0015,'#f7931a'],['ETH','Ethereum',3500,0.002,'#8c8cff'],['SOL','Solana',180,0.003,'#14f195'],['XRP','XRP',2.3,0.003,'#c9d1d9'],
-      ['DOGE','Dogecoin',0.35,0.004,'#c2a633'],['ADA','Cardano',0.9,0.003,'#3a7bff'],['LARP','LA Coin',1,0.006,'#ff4d6d']].map(([sym, name, p, vol, color], i) => ({ sym, name, price: p, base: p, vol, color, ord: i + 1 })));
-    const st = T('settings'), row = st.find(x => x.key === 'crypto_last') || (st.push({ key: 'crypto_last', value: new Date(Math.floor(Date.now() / 6e4) * 6e4 - 1440 * 6e4).toISOString() }), st.at(-1));
+    const C = T('crypto_coins'); if (!C.length) C.push(...[['BTC','Bitcoin',95000,'#f7931a'],['ETH','Ethereum',3500,'#8c8cff'],['SOL','Solana',180,'#14f195'],['XRP','XRP',2.3,'#c9d1d9'],
+      ['DOGE','Dogecoin',0.35,'#c2a633'],['ADA','Cardano',0.9,'#3a7bff'],['LARP','LA Coin',1,'#ff4d6d']].map(([sym, name, p, color], i) => { const y = (sym === 'LARP' ? 2e6 : 2e7) / p;
+        return { sym, name, price: p, color, ord: i + 1, supply: y, pool_coin: y, pool_usd: 0, virt_usd: p * y }; }));
+    const st = T('settings'), row = st.find(x => x.key === 'crypto_last') || (st.push({ key: 'crypto_last', value: new Date(Math.floor(Date.now() / 6e4) * 6e4 - 60 * 6e4).toISOString() }), st.at(-1));
     const last = new Date(row.value).getTime(), steps = Math.min(Math.floor((Date.now() - last) / 6e4), 1440); if (steps < 1) return;
-    for (const c of C) for (let k = 1; k <= steps; k++) { const g = Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(2 * Math.PI * Math.random());
-      c.price = Math.max(c.price * Math.exp(0.0005 * Math.log(c.base / c.price) + c.vol * g), c.base * 0.01); T('crypto_hist').push({ sym: c.sym, t: new Date(last + k * 6e4).toISOString(), price: c.price }); }
+    for (const c of C) for (let k = 1; k <= steps; k++) T('crypto_hist').push({ sym: c.sym, t: new Date(last + k * 6e4).toISOString(), price: c.price });
     row.value = new Date(last + steps * 6e4).toISOString(); mem.t.crypto_hist = T('crypto_hist').filter(h => new Date(h.t) > Date.now() - 7 * 864e5);
   },
   crypto_chart({ s, minutes }) { const h = T('crypto_hist').filter(x => x.sym === s && new Date(x.t) > Date.now() - minutes * 6e4), k = Math.max(1, Math.floor(minutes / 120)); return h.filter((_, i) => (h.length - 1 - i) % k === 0); },
   crypto_trade({ c, s, side, amount }) {
     if (!myChars().some(x => x.id === c)) throw new Error('No es tu personaje'); RPC.crypto_tick();
-    const coin = T('crypto_coins').find(x => x.sym === s); if (!coin) throw new Error('Moneda desconocida');
-    const H = T('crypto_hold'), h = H.find(x => x.character_id === c && x.sym === s) || (H.push({ character_id: c, sym: s, qty: 0, cost: 0 }), H.at(-1)), p = coin.price; let q, usd;
-    if (side === 'buy') { usd = Math.round(amount * 100) / 100; if (!(usd >= 1)) throw new Error('Mínimo $1'); q = usd * 0.995 / p; move(personal(c), gov(), usd, 'Bitso · compra ' + s); h.qty += q; h.cost += usd; }
-    else { q = +amount; if (!(q > 0)) throw new Error('Cantidad inválida'); if (h.qty < q - 1e-12) throw new Error('No tienes tanto ' + s); usd = Math.round(q * p * 0.995 * 100) / 100;
-      h.cost = h.qty - q <= 1e-12 ? 0 : h.cost * (h.qty - q) / h.qty; h.qty = Math.max(0, h.qty - q); move(gov(), personal(c), usd, 'Bitso · venta ' + s); }
-    T('crypto_trades').push({ id: crypto.randomUUID(), character_id: c, sym: s, side, qty: q, price: p, usd, created_at: now() }); return { qty: q, usd, price: p };
+    const k = T('crypto_coins').find(x => x.sym === s); if (!k) throw new Error('Moneda desconocida');
+    const H = T('crypto_hold'), h = H.find(x => x.character_id === c && x.sym === s) || (H.push({ character_id: c, sym: s, qty: 0, cost: 0 }), H.at(-1)), x = k.virt_usd + k.pool_usd; let q, usd;
+    const res = T('accounts').find(a => a.name === 'Bitso · reserva de liquidez') || (T('accounts').push({ id: crypto.randomUUID(), kind: 'business', name: 'Bitso · reserva de liquidez', owners: [], balance: 0, number: '0000000001', created_at: now() }), T('accounts').at(-1));
+    if (side === 'buy') { usd = Math.round(amount * 100) / 100; if (!(usd >= 1)) throw new Error('Mínimo $1'); q = Math.floor((k.pool_coin - x * k.pool_coin / (x + usd * 0.995)) * 1e8) / 1e8;
+      move(personal(c), res, usd, 'Bitso · compra ' + s); k.pool_usd += usd; k.pool_coin -= q; h.qty += q; h.cost += usd; }
+    else { q = +amount; if (!(q > 0)) throw new Error('Cantidad inválida'); if (h.qty < q - 1e-12) throw new Error('No tienes tanto ' + s);
+      usd = Math.floor((x - x * k.pool_coin / (k.pool_coin + q)) * 0.995 * 100) / 100; if (usd < 0.01) throw new Error('Muy poco para vender'); if (usd > k.pool_usd) throw new Error('La reserva no alcanza');
+      h.cost = h.qty - q <= 1e-12 ? 0 : h.cost * (h.qty - q) / h.qty; h.qty = Math.max(0, h.qty - q); move(res, personal(c), usd, 'Bitso · venta ' + s); k.pool_usd -= usd; k.pool_coin += q; }
+    k.price = (k.virt_usd + k.pool_usd) / k.pool_coin; T('crypto_hist').push({ sym: s, t: now(), price: k.price });
+    T('crypto_trades').push({ id: crypto.randomUUID(), character_id: c, sym: s, side, qty: q, price: usd / q, usd, created_at: now() }); return { qty: q, usd, price: usd / q, new_price: k.price };
   },
   // espejo demo de casino_start / casino_act / casino_open (la versión real está en el servidor)
   casino_open({ c, game }) { const h = T('casino_hands').find(x => x.character_id === c && x.game === game && x.status === 'open'); return h ? cView(h) : null; },
