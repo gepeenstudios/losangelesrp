@@ -1354,7 +1354,8 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
         ${(() => { const m = inm.find(i => i.mugshots)?.mugshots; return m ? `<div class="mugs">${MUG.map(([k, l]) => m[k] ? `<figure><img src="${esc(m[k])}" alt="${l}" data-act="zoom" data-src="${esc(m[k])}"><figcaption>${l}</figcaption></figure>` : '').join('')}</div>` : ''; })()}
         ${jail ? `<div class="alert">EN PRISIÓN · ${jail.status === 'preventiva' ? 'preventiva (espera juicio), lleva ' + clockTxt(since(jail)) : 'le faltan ' + clockTxt(left(jail))}. Si está en la calle sin fuga aprobada, repórtalo al staff (warn administrativo).
           <button class="btn sm bad" data-act="reportar" data-id="${jail.id}">Reportar al staff</button></div>` : ''}
-        ${recs.some(r => r.kind === 'orden' && !r.paid) ? '<div class="alert">ORDEN DE ARRESTO ACTIVA</div>' : ''}</div></div>
+        ${(() => { const o = recs.filter(r => r.kind === 'orden' && !r.paid); return o.length && !jail ? `<div class="alert wanted-alert"><b>🚨 SE BUSCA · ORDEN DE ARRESTO ACTIVA</b><ul>${o.map(r => `<li>${esc(r.description)}</li>`).join('')}</ul>
+          <button class="btn bad" data-act="capturar">🚔 Capturado: procesar arresto</button> <small class="muted">Carga los cargos de la orden; puedes agregar más antes de registrar.</small></div>` : ''; })()}</div></div>
         <h3>Documentos</h3><ul class="list">${lic.map(r => `<li><span class="li-ico">${ico(r.type)}</span><span class="grow">${esc(TRAMITES[r.type].name)} ${esc(r.data.clase || r.data.tipo || r.data.arma || r.data.placa || '')}</span><button class="btn sm bad" data-act="cancelarDoc" data-id="${r.id}" data-n="${esc(TRAMITES[r.type].name)}">Cancelar</button></li>`).join('') || '<li class="muted">Sin documentos</li>'}</ul>
         <h3>Vehículos</h3><ul class="list">${vehs.map(v => { const m = models.find(x => x.id === v.model_id); const exp = new Date(v.registered_at || v.created_at); exp.setFullYear(exp.getFullYear() + 1); return `<li><div class="grow"><b>${esc(m?.brand)} ${esc(m?.model)}</b> · ${esc(v.plate || 'sin placa')}<div class="muted">VIN ${esc(v.vin || '—')} · Registro ${exp < new Date() ? '<b class="neg">VENCIDO</b>' : 'vigente hasta ' + fdate(exp.toISOString())}</div></div></li>`; }).join('') || '<li class="muted">Ninguno</li>'}</ul>
         <h3>Inventario</h3>${inv.some(i => SHOPI[i.item]?.gun) ? '<button class="btn sm bad" data-act="decomisarArmas">Decomisar todas las armas y munición</button>' : ''}<ul class="list">
@@ -1399,6 +1400,11 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
         toast('Reporte enviado al staff');
       },
       zoom,
+      async capturar() { // pasa la orden al formulario de arresto con sus cargos marcados
+        const fm = el.querySelector('form[data-form=procesar]'), codes = (await db.list('records', { eq: { character_id: st.id, kind: 'orden', paid: false } })).flatMap(r => (r.charges || []).map(x => x.code));
+        fm.kind.value = 'arresto'; fm.querySelectorAll('[name=cargo]').forEach(i => { if (codes.includes(i.value)) { i.checked = true; i.closest('details').open = true; } });
+        fm.dataset.captura = '1'; fm.dispatchEvent(new Event('change')); fm.scrollIntoView({ behavior: 'smooth' }); toast('Orden cargada: revisa los cargos, agrega los nuevos y registra el arresto');
+      },
       async procesar(v, form) {
         if (v.kind === 'advertencia') { // solo historial: sin cargos, multa, prisión ni licencia
           await db.insert('records', { kind: 'advertencia', character_id: st.id, officer_id: S.char?.id || null, amount: null, description: v.description, charges: [] });
@@ -1417,11 +1423,13 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
           if (lic) { await db.rpc('revoke_doc', { r: lic.id, motivo: picked.filter(x => x.lic).map(x => x.code + ' ' + x.title).join(', '), officer: S.char?.id || null }); toast('Licencia de conducir retirada'); } }
         const charges = picked.map(x => ({ code: x.code, title: x.title })), desc = `${charges.map(x => x.code + ' ' + x.title).join(', ')}${v.description ? ' — ' + v.description : ''}`;
         const juicio = v.kind !== 'orden' && years > Number(set('trial_years')); // más de N años: también va a juicio, pero si lo arrestaste ya entra a prisión
-        if (juicio) await db.insert('requests', { type: 'juicio', dept: TRAMITES.juicio.dept, character_id: st.id, data: { acusado: cname(st.id), cargos: desc, anos: years, multa: Math.round(fine), oficial: cname(S.char?.id), charges, preso: v.kind === 'arresto' } });
+        const pend = juicio && (await db.list('requests', { eq: { character_id: st.id, type: 'juicio', status: 'pending' } }).catch(() => [])).length;
+        if (juicio && !pend) await db.insert('requests', { type: 'juicio', dept: TRAMITES.juicio.dept, character_id: st.id, data: { acusado: cname(st.id), cargos: desc, anos: years, multa: Math.round(fine), oficial: cname(S.char?.id), charges, preso: v.kind === 'arresto' } });
         if (juicio && v.kind !== 'arresto') {
           await db.insert('records', { kind: 'orden', character_id: st.id, officer_id: S.char?.id || null, description: 'En espera de juicio: ' + desc, charges });
           return toast(`Son ${pena(years)}: requiere juicio. Se envió el caso a los jueces y quedó con orden de arresto (si ya lo tienes, usa Arresto).`), go({});
         }
+        if (v.kind === 'arresto') for (const o of await db.list('records', { eq: { character_id: st.id, kind: 'orden', paid: false } })) await db.update('records', o.id, { paid: true }); // capturado: la orden queda cumplida
         await db.insert('records', { kind: v.kind === 'advertencia' ? 'advertencia' : v.kind, character_id: st.id, officer_id: S.char?.id || null, amount: v.kind === 'multa' || v.kind === 'arresto' ? Math.round(fine) : null, description: desc, charges });
         if (v.kind === 'arresto' && years > 0) {
           const minutes = years * Number(set('prison_min_per_year'));
@@ -1466,7 +1474,7 @@ const prision = { id: 'prision', name: 'LA County Jail', icon: '🔒', bg: '#4a4
         if (!await ask('¿Registrar fuga APROBADA por el staff? Se le pondrá orden de arresto.')) return;
         const i = inm.find(x => x.id === d.id);
         await db.update('inmates', d.id, { status: 'fugado', note: 'Fuga aprobada' });
-        await db.insert('records', { kind: 'orden', character_id: i.character_id, officer_id: S.char?.id || null, description: 'G-29 Fuga de prisión', charges: [{ code: 'G-29', title: 'Fuga de prisión' }] });
+        await db.insert('records', { kind: 'orden', character_id: i.character_id, officer_id: S.char?.id || null, description: 'Art. 90 Evasión de prisión (fuga consumada)', charges: [{ code: 'Art. 90', title: 'Evasión de prisión (fuga consumada)' }, ...(i.charges || [])] });
         prision.render(el);
       },
     });
