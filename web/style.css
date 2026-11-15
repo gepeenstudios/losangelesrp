@@ -945,3 +945,21 @@ tr.click{cursor:pointer}tr.click:hover{background:#ffffff08}
 .wa-newg{width:100%;margin:6px 0}.g-av{display:inline-grid;place-items:center;background:#25d366;border-radius:50%;width:28px;height:28px;font-size:15px}.g-from{display:block;font-size:11px;color:#25d366;margin-bottom:2px}.g-members{font-size:11px;padding:4px 12px}.g-pick{display:grid;gap:4px;max-height:220px;overflow:auto}
 .law{border:1px solid #d8dee8;border-radius:10px;padding:12px 14px;margin:8px 0;background:#fff}.law.derogada{opacity:.6}.law p{margin:6px 0}.law-eff{background:#eef4ff;border-radius:6px;padding:6px 10px;font-size:13px}
 .mug-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}.mugs{display:flex;gap:8px;margin:8px 0;flex-wrap:wrap}.mugs figure{margin:0;text-align:center}.mugs img{width:90px;height:110px;object-fit:cover;border-radius:6px;cursor:zoom-in;background:#000}.mugs figcaption{font-size:11px;color:#9aa0a6}
+
+.birthcert.death{filter:grayscale(.35)}.birthcert.death h3{color:#222}
+.will{max-width:620px;background-color:#fbf6e8;background-size:300px 150px;color:#2e2210;padding:10px;border:3px double #8a6a2f;font-family:Georgia,serif;box-shadow:0 10px 30px #0006}
+.will-in{border:1px solid #c9b98f;padding:18px 22px;background:#fffdf6e6}.will-h{display:flex;gap:14px;align-items:center;border-bottom:2px solid #8a6a2f;padding-bottom:10px;margin-bottom:10px}
+.will-h h2{margin:2px 0;font-size:30px;letter-spacing:1px}.will-h small{font-size:10px;letter-spacing:.5px}.will ol{padding-left:18px}.will li{margin:6px 0;line-height:1.45}.will p{line-height:1.5}
+.will-sig{display:flex;justify-content:space-between;gap:12px;margin-top:18px}.will-sig span{display:grid;text-align:center;border-top:1px solid #8a6a2f;padding-top:4px;min-width:140px}.will-sig small{font-size:10px}.will-note{font-size:10px;color:#7a6a4a;text-align:center}
+
+.story.arrest{border-left:4px solid #b3001b;padding-left:12px}
+.story.arrest .sec{color:#b3001b;font-weight:800;letter-spacing:.08em}
+.story.arrest h2{font-family:Georgia,'Times New Roman',serif;font-size:1.5em;line-height:1.15}
+.story.arrest figure{margin:8px 0;float:left;margin-right:14px;max-width:180px}
+.story.arrest figure img{width:100%;aspect-ratio:3/4;object-fit:cover;border:1px solid #999;background:repeating-linear-gradient(#e9e9e9 0 18px,#d4d4d4 18px 20px);filter:grayscale(.2)}
+.story.arrest figcaption{font-size:.72em;color:#666;font-style:italic}
+.story.arrest p{white-space:pre-line;font-family:Georgia,serif}
+.story.arrest::after{content:'';display:block;clear:both}
+.story p{white-space:pre-line}
+.miranda{border:2px solid #1a3a6e;background:#eef3fb;color:#14223d;border-radius:10px;padding:10px 14px;margin:8px 0}
+.miranda h4{margin:0 0 6px}.miranda ol{margin:0 0 6px 18px;padding:0}.miranda li{margin:3px 0}

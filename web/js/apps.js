@@ -6,7 +6,7 @@ import { GAME_DAY_MS, gameDay, gameStart, fgame, S, cpi, esc, money, fdate, lvl,
 import { openWizardOverlay } from './vida.js';
 import { openTramite } from './portal.js';
 import { ico } from './icons.js';
-import { birthCert, idCard, passport, visa, vehicleReg, diploma, docNumber, homeCountry, homePassport, ssnCard } from './docs.js';
+import { birthCert, idCard, passport, visa, vehicleReg, diploma, docNumber, homeCountry, homePassport, ssnCard, deathCert, will } from './docs.js';
 import { incomeTax, CK_RULES, JOB_DESC, TRAMITES, ROLES, STAFF, STAFF_NAME, LVL, CITIES, NATIONS, SHOP, SHOP_STORES, GUN_CLASSES, WALLPAPERS, DEFAULT_SETTINGS, SEED_MODELS, SEED_PROPS, SEED_JOBS, CAR_PHOTOS, DEPTS, PENAL_CODE } from './data.js';
 
 const ST = { revoked: 'Cancelado por la policía', cumplida: 'Cumplida', liberado: 'Liberado', fugado: 'Fugado', en_prision: 'En prisión', pending: 'Pendiente', active: 'Activo', dead: 'CK', rejected: 'Rechazado', approved: 'Aprobado', abierto: 'Abierto', tomado: 'En atención', cerrado: 'Cerrado', vacation: 'Vacaciones' };
@@ -52,10 +52,12 @@ const vida = { id: 'vida', name: 'Mi Vida', icon: '🧬', bg: '#7b2ff7,#f107a3',
         || '<p class="empty">No tienes vidas activas. Crea una nueva.</p>'}
       ${famHTML}
       ${dead.length ? `<h3>Vidas perdidas (CK)</h3><p class="muted">Esta vida ya no se puede usar. Al morir se pagaron sus deudas y su dinero y bienes pasaron a su heredero, a su familia o a tu siguiente vida (si la registras en 7 días); si no, a la Tesorería.</p>
-        ${dead.map(c => card(c) + (autos.some(r => r.character_id === c.id && r.type === 'autock') ? '<span class="tag">Auto-CK</span>' : appeals.some(r => r.character_id === c.id && r.status === 'pending') ? badge('pending') : `<button class="btn sm" data-act="apelar" data-id="${c.id}">Apelar CK</button>`) + (lvl() >= 3 ? `<button class="btn sm bad" data-act="borrar" data-id="${c.id}">Borrar</button>` : '') + '</div>').join('')}` : ''}`, {
+        ${dead.map(c => card(c) + `<button class="btn sm ghost" data-act="defuncion" data-id="${c.id}">⚰️ Acta de defunción</button>` + (autos.some(r => r.character_id === c.id && r.type === 'autock') ? '<span class="tag">Auto-CK</span>' : appeals.some(r => r.character_id === c.id && r.status === 'pending') ? badge('pending') : `<button class="btn sm" data-act="apelar" data-id="${c.id}">Apelar CK</button>`) + (lvl() >= 3 ? `<button class="btn sm bad" data-act="borrar" data-id="${c.id}">Borrar</button>` : '') + '</div>').join('')}` : ''}`, {
       borrar: async d => { if (!await ask('¿Borrar esta vida para siempre? Ya no se podrá apelar.')) return;
         try { await db.rpc('delete_char', { c: d.id }); } catch (e) { return toast(e.message); } toast('Vida borrada'); await window.liveRefresh?.(); vida.render(el); },
       nuevo: openWizardOverlay,
+      defuncion: async d => { const c = S.chars.find(x => x.id === d.id), auto = autos.find(r => r.character_id === c.id && r.type === 'autock'), inhr = (await db.list('inheritances', { order: null }).catch(() => [])).find(i => i.from_char === c.id);
+        modal('Acta de defunción', `<div class="doc big">${deathCert(c, { date: auto?.created_at || inhr?.created_at, cause: auto ? 'Auto-CK' + (auto.data?.motivo ? ' · ' + auto.data.motivo : '') : 'Homicidio (CK)', place: auto?.data?.lugar })}</div>`); },
       famnueva: async f => { await db.rpc('family_create', { c: me.id, name: f.name }); toast('Familia creada 👨‍👩‍👧 (y su grupo en Mensajes)'); vida.render(el); },
       faminv: async f => { await db.rpc('family_invite', { c: me.id, who: f.who, relation: f.relation }); toast('Invitación enviada'); vida.render(el); },
       famsi: async d => { await db.rpc('family_respond', { c: me.id, f: d.f, accept: true }); toast('¡Ya eres parte de la familia!'); vida.render(el); },
@@ -631,7 +633,8 @@ const casino = { id: 'casino', name: 'Casino', icon: '🎰', bg: '#0f212e,#1a2c3
 // ============ DOCUMENTOS (wallet) ============
 // Documentos personales y licencias: Wallet los junta todos; Documentos y Licencias salen en el escritorio cuando tienes alguno
 const LIC_TYPES = ['licencia_conducir', 'licencia_armas', 'licencia_abogado', 'licencia_juez'];
-function myDocs(c, reqs, vehs = [], models = []) {
+const myFamilyName = async () => { const m = (await db.list('family_members', { eq: { character_id: S.char?.id }, order: null }).catch(() => [])).find(x => x.status === 'active'); return m ? (await db.list('families', { order: null }).catch(() => [])).find(f => f.id === m.family_id)?.name || '' : ''; };
+function myDocs(c, reqs, vehs = [], models = [], famName = '') {
   const ok = t => approvedOf(reqs, t), name = `${c.first_name} ${c.last_name}`, when = r => r.reviewed_at || r.created_at, dni = ok('dni')[0], out = [];
   const add = (kind, title, html) => out.push({ kind, title, html });
   if (c.extranjero) add('doc', 'Pasaporte de ' + homeCountry(c), homePassport(c)); else add('doc', 'Acta de nacimiento', birthCert(c));
@@ -645,6 +648,7 @@ function myDocs(c, reqs, vehs = [], models = []) {
   ok('licencia_armas').forEach(t => add('lic', 'Licencia de armas', diploma('Licencia de portación · ' + t.data.tipo, name, 'autorizado(a) a portar armas de la categoría indicada', 'LAPD · Departamento de Licencias', when(t))));
   ok('licencia_abogado').forEach(t => add('lic', 'Licencia de abogado', diploma('Licencia para ejercer la abogacía', name, 'admitido(a) para ejercer ante los tribunales de Los Ángeles', 'State Bar of Los Angeles RP', when(t))));
   ok('licencia_juez').forEach(t => add('lic', 'Nombramiento de juez', diploma('Nombramiento judicial', name, 'como Juez de Distrito de la Corte de Los Ángeles', 'Corte Superior de Los Ángeles RP', when(t))));
+  if (c.heir) add('doc', 'Testamento', will(c, { heir: cname(c.heir), family: famName, date: c.heir_at || c.created_at }));
   vehs.forEach(v => { const m = models.find(x => x.id === v.model_id); add('doc', `Registro vehicular · ${m ? m.brand + ' ' + m.model : 'Vehículo'}`, vehicleReg(c, v, m)); });
   return { list: out, dni };
 }
@@ -652,7 +656,7 @@ function docApp(id, name, bg, kind, show) {
   const app = { id, name, icon: '🪪', bg, show,
     async render(el) {
       if (!needChar(el)) return;
-      const [reqs, vehs, models] = await Promise.all([myRequests(), db.list('vehicles', { eq: { owner_char: S.char.id } }), db.list('vehicle_models', { order: null })]), ok = t => approvedOf(reqs, t), { list, dni } = myDocs(S.char, reqs, vehs, models), all = kind ? list.filter(d => d.kind === kind) : list;
+      const [reqs, vehs, models] = await Promise.all([myRequests(), db.list('vehicles', { eq: { owner_char: S.char.id } }), db.list('vehicle_models', { order: null })]), famName = await myFamilyName(), ok = t => approvedOf(reqs, t), { list, dni } = myDocs(S.char, reqs, vehs, models, famName), all = kind ? list.filter(d => d.kind === kind) : list;
       const regs = kind ? [] : [...ok('placa').map(r => [ico('placa'), `Placa ${esc(r.data.placa.toUpperCase())}`, `${esc(r.data.tipo)} · ${esc(r.data.estado)}`]),
         ...ok('registro_arma').map(r => [ico('registro_arma'), esc(r.data.arma), 'Serie ' + esc(r.data.serie)]),
         ...ok('registro_herramienta').map(r => [ico('registro_herramienta'), esc(r.data.herramienta), 'Registrada']),
@@ -843,7 +847,7 @@ function social(id, name, icon, bg) {
 }
 
 // ============ PERIÓDICO ============
-const SECCIONES = ['Última hora', 'Política', 'Sucesos', 'Economía', 'Deportes', 'Obituarios', 'Publicidad'];
+const SECCIONES = ['Última hora', 'Política', 'Policía', 'Sucesos', 'Economía', 'Deportes', 'Obituarios', 'Publicidad'];
 const news = { id: 'news', name: 'LA Times', icon: '📰', bg: '#111111,#3a3a3a', url: 'latimes.rp', show: () => true,
   async render(el, sec) {
     if (typeof sec === 'object') sec = undefined;
@@ -851,8 +855,8 @@ const news = { id: 'news', name: 'LA Times', icon: '📰', bg: '#111111,#3a3a3a'
     view(el, `<header class="paper"><h1>Los Angeles Times</h1><small>Edición roleplay · ${new Date().toLocaleDateString('es-MX', { dateStyle: 'full' })}</small></header>
       <div class="chips"><button data-act="sec" class="${!sec ? 'on' : ''}">Todo</button>${SECCIONES.map(s => `<button data-act="sec" data-s="${s}" class="${sec === s ? 'on' : ''}">${s}</button>`).join('')}
       ${S.char?.status === 'active' ? '<button data-act="nueva">✍️ Publicar noticia</button>' : ''}</div>
-      <div class="news">${posts.map(p => `<article class="story ${p.section === 'Obituarios' ? 'obit' : ''}"><small class="sec">${esc(p.section || 'Noticias')}</small>
-        <h2>${esc(p.title)}</h2>${p.media_url ? `<img src="${esc(p.media_url)}" alt="" data-act="zoom" data-src="${esc(p.media_url)}">` : ''}<p>${esc(p.body)}</p>
+      <div class="news">${posts.map(p => `<article class="story ${p.section === 'Obituarios' ? 'obit' : ''} ${p.section === 'Policía' ? 'arrest' : ''}"><small class="sec">${esc(p.section || 'Noticias')}${p.section === 'Policía' ? ' · LAPD' : ''}</small>
+        <h2>${esc(p.title)}</h2>${p.media_url ? `<figure><img src="${esc(p.media_url)}" alt="" data-act="zoom" data-src="${esc(p.media_url)}">${p.section === 'Policía' ? '<figcaption>Foto de ficha · Cortesía LAPD</figcaption>' : ''}</figure>` : ''}<p>${esc(p.body)}</p>
         <small class="muted">${p.anonimo ? 'Redacción' : 'Por ' + esc(cname(p.character_id))} · ${fdate(p.created_at)}</small>
         ${S.chars.some(c => c.id === p.character_id) || lvl() >= 2 ? ` <button class="link" data-act="del" data-id="${p.id}">Borrar</button>` : ''}</article>`).join('') || '<p class="empty">Sin noticias.</p>'}</div>`, {
       sec: d => this.render(el, d.s),
@@ -1368,6 +1372,10 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
           <label class="chk"><input type="checkbox" name="agravante"> Agravante (Art. 5): reincidente, insulta a la autoridad o discrimina · +11 meses de prisión (o +$2,500 si no hay prisión)</label>
           <label class="chk" data-licbox hidden><input type="checkbox" name="quitarLic" checked> Retirar su licencia de conducir (los cargos marcados con «licencia» lo permiten)</label></div>
           <div class="totals" data-totals>Selecciona cargos</div></div>
+          <div data-mir hidden class="miranda"><h4>⚖️ Derechos Miranda — léelos en voz alta antes de interrogar</h4>
+            <ol><li>Tiene derecho a guardar silencio.</li><li>Todo lo que diga puede y será usado en su contra en un tribunal.</li><li>Tiene derecho a hablar con un abogado y a tenerlo presente durante el interrogatorio.</li><li>Si no puede pagar un abogado, se le asignará uno de oficio antes de cualquier interrogatorio.</li><li>¿Entiende los derechos que le acabo de leer? Teniéndolos en cuenta, ¿desea hablar conmigo?</li></ol>
+            <details><summary>English (Miranda warning)</summary><p class="small">You have the right to remain silent. Anything you say can and will be used against you in a court of law. You have the right to an attorney. If you cannot afford an attorney, one will be appointed for you. Do you understand the rights I have just read to you? With these rights in mind, do you wish to speak to me?</p></details>
+            <label class="chk"><input type="checkbox" name="miranda"> Le leí sus derechos y dijo que los entiende</label></div>
           <div data-mug hidden><h4>📸 Fotos de ficha (obligatorias para encarcelar)</h4><p class="muted">Toma una foto del personaje por cada lado.</p><div class="mug-grid">${fieldsHTML(MUG.map(([k, l]) => ({ k: 'mug_' + k, label: l, type: 'file', accept: 'image/*' })))}</div></div>
           ${fieldsHTML([{ k: 'description', label: 'Narrativa / detalles', type: 'textarea', req: 1 }])}
           <button class="btn" type="submit">Registrar</button></form>`;
@@ -1402,6 +1410,7 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
         if (v.atenuante) fine *= 0.7;
         if (v.agravante) years > 0 ? years += 11 / 12 : fine += 2500 * cpi();
         if (v.kind === 'arresto' && !years) throw new Error('Ningún cargo marcado tiene prisión: usa Multa');
+        if (v.kind === 'arresto' && !v.miranda) throw new Error('Primero léele sus derechos Miranda y marca la casilla');
         const miss = v.kind === 'arresto' ? MUG.filter(([k]) => !v['mug_' + k]).map(([, l]) => l) : [];
         if (miss.length && years <= Number(set('trial_years'))) throw new Error('Para encarcelar faltan las fotos de ficha: ' + miss.join(', '));
         if (v.quitarLic && picked.some(x => x.lic)) { const lic = (await db.list('requests', { eq: { character_id: st.id, type: 'licencia_conducir', status: 'approved' } }))[0];
@@ -1416,6 +1425,10 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
         if (v.kind === 'arresto' && years > 0) {
           const minutes = years * Number(set('prison_min_per_year'));
           await db.insert('inmates', { character_id: st.id, officer_id: S.char?.id || null, charges, years, minutes, mugshots: Object.fromEntries(MUG.map(([k]) => [k, v['mug_' + k]])), started_at: new Date().toISOString(), ends_at: new Date(Date.now() + minutes * 6e4).toISOString(), status: 'en_prision' });
+          const who = cname(st.id), list = charges.map(x => `• ${x.code} ${x.title}`).join('\n');
+          await db.insert('posts', { app: 'news', section: 'Policía', character_id: S.char?.id || null, anonimo: true, media_url: v.mug_frente || null,
+            title: `LAPD arresta a ${who}: ${pena(years)} de prisión`,
+            body: `LOS ÁNGELES — Agentes del Departamento de Policía de Los Ángeles detuvieron a ${who}, quien fue fichado y trasladado a prisión. Le leyeron sus derechos Miranda en el lugar.\n\nCargos:\n${list}\n\nSentencia: ${pena(years)} de prisión y multa de ${money(Math.round(fine))}.${v.description ? '\n\n' + v.description : ''}\n\nOficial a cargo: ${cname(S.char?.id) || 'LAPD'}.` }).catch(() => {});
           toast(`Arrestado: ${pena(years)} = ${Math.round(minutes)} min reales. El contador ya empezó.`);
         } else toast('Registrado');
         go({});
@@ -1424,7 +1437,7 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
     const box = el.querySelector('[data-totals]');
     el.querySelector('form[data-form=procesar]')?.addEventListener('change', () => {
       const fm = el.querySelector('form[data-form=procesar]'), p = [...el.querySelectorAll('[name=cargo]:checked')], adv = fm.kind.value === 'advertencia';
-      el.querySelector('[data-pen]').hidden = adv; el.querySelector('[data-adv]').hidden = !adv; el.querySelector('[data-mug]').hidden = fm.kind.value !== 'arresto';
+      el.querySelector('[data-pen]').hidden = adv; el.querySelector('[data-adv]').hidden = !adv; el.querySelector('[data-mug]').hidden = el.querySelector('[data-mir]').hidden = fm.kind.value !== 'arresto';
       let f = p.reduce((s, i) => s + Number(i.dataset.fine), 0) * cpi(), y = p.reduce((s, i) => s + Number(i.dataset.years), 0);
       if (fm.atenuante.checked) f *= 0.7; if (fm.agravante.checked) y > 0 ? y += 11 / 12 : f += 2500 * cpi();
       el.querySelector('[data-licbox]').hidden = !p.some(i => i.dataset.lic);

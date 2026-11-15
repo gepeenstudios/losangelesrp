@@ -174,3 +174,38 @@ export function diploma(title, who, line, by, date) {
     <div class="dip-sig"><span><i class="signature">${esc(by.split(' ')[0])}</i><small>Firma autorizada</small></span><span><b>${fdate(String(date).slice(0, 10))}</b><small>Fecha</small></span></div>
     ${micro()}</div></div>`;
 }
+
+// ---------- Acta de defunción (mismo estilo que el acta de nacimiento) ----------
+export function deathCert(c, { date, cause, place, informant } = {}) {
+  const d = date || c.updated_at || Date.now(), file = `${new Date(d).getFullYear()}39${pad(hash(c.id + 'd') % 1e6, 6)}`;
+  const f = (n, l, v, span = 1) => `<div class="bf" style="grid-column:span ${span}"><small>${n} ${l}</small><b>${v || '&nbsp;'}</b></div>`;
+  return `<div class="birthcert death" style="background-image:${guilloche('#9a9a9a', 300, 150)}">
+    <div class="bc-head">${seal('COUNTY OF LOS ANGELES', 'MEDICAL EXAMINER', '#333')}<div><small>STATE OF CALIFORNIA</small><h2>CERTIFICATION OF VITAL RECORD</h2>
+      <small>DEPARTMENT OF MEDICAL EXAMINER-CORONER · LOS ANGELES</small></div><div class="bc-no"><small>STATE FILE NUMBER</small><b>${file}</b></div></div>
+    <h3>CERTIFICATE OF DEATH <span>· ACTA DE DEFUNCIÓN</span></h3>
+    <div class="bc-grid">
+      ${f('1.', 'NAME OF DECEDENT', up(c.first_name + ' ' + c.last_name), 3)}${f('2.', 'SEX', up(c.sex))}${f('3.', 'DATE OF BIRTH', fdate(c.dob))}
+      ${f('4.', 'DATE OF DEATH', fdate(new Date(d).toISOString()), 2)}${f('5.', 'PLACE OF DEATH', up(place || 'LOS ANGELES, CA'), 3)}
+      ${f('6.', 'NATIONALITY', up(c.nationality), 2)}${f('7.', 'RESIDENCE', up(c.city), 3)}
+      ${f('8.', 'IMMEDIATE CAUSE OF DEATH', up(cause || 'HOMICIDIO (CK)'), 5)}${f('9.', 'INFORMANT', up(informant || 'LOS ANGELES COUNTY CORONER'), 3)}${f('10.', 'MANNER', /AUTO/i.test(cause || '') ? 'NATURAL / OTHER' : 'HOMICIDE', 2)}
+    </div>
+    <div class="bc-foot">${seal('STATE OF CALIFORNIA', 'DEPT. OF PUBLIC HEALTH', '#7a1f1f')}
+      <p>Copia certificada del registro de defunción inscrito en el Registro Civil de Los Ángeles RP. Documento válido únicamente dentro del roleplay.</p>
+      <div class="sig"><span class="signature">Dr. R. Okafor</span><small>MÉDICO FORENSE · CONDADO DE LOS ÁNGELES</small><small>DATE ISSUED ${up(new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }))}</small></div></div>
+    ${barcode(c.id + 'd', 300, 26)}${micro()}</div>`;
+}
+
+// ---------- Testamento ----------
+export function will(c, { heir, family, date } = {}) {
+  const no = 'T-' + pad(hash(c.id + 'w') % 1e6, 6), when = fdate(new Date(date || Date.now()).toISOString());
+  return `<div class="will" style="background-image:${guilloche('#c9b98f', 300, 150, 16)}"><div class="will-in">
+    <div class="will-h">${seal('NOTARÍA PÚBLICA', 'LOS ÁNGELES', '#5b3a12')}<div><small>ESTADO DE CALIFORNIA · CONDADO DE LOS ÁNGELES</small><h2>Testamento</h2><small>Last Will and Testament · Escritura ${no}</small></div></div>
+    <p>Yo, <b>${esc(c.first_name + ' ' + c.last_name)}</b>, nacido(a) el ${fdate(c.dob)}, con residencia en ${esc(c.city || 'Los Ángeles')}, en pleno uso de mis facultades, declaro que este es mi testamento y revoco cualquier otro anterior.</p>
+    <ol>
+      <li><b>Deudas.</b> Ordeno que de mis bienes se paguen primero todas mis deudas, incluidas las de mi tarjeta de crédito.</li>
+      <li><b>Heredero universal.</b> Instituyo como único y universal heredero(a) de todos mis bienes, dinero, cuentas, propiedades, vehículos, acciones, criptomonedas y empresas a <b>${esc(heir || '—')}</b>.</li>
+      <li><b>Sustitución.</b> Si mi heredero(a) no pudiera recibir la herencia, mis bienes pasarán a ${family ? `los miembros de la <b>Familia ${esc(family.replace(/^familia\s+/i, ""))}</b>, en partes iguales` : 'mis familiares; a falta de ellos, al Tesoro de la Ciudad de Los Ángeles'}.</li>
+    </ol>
+    <div class="will-sig"><span><i class="signature">${esc(c.first_name + ' ' + c.last_name)}</i><small>Firma del testador</small></span><span><i class="signature">Lic. E. Navarro</i><small>Notario Público No. 27</small></span><span><b>${when}</b><small>Fecha</small></span></div>
+    <p class="will-note">Documento válido únicamente dentro del roleplay de Los Ángeles RP.</p>${micro()}</div></div>`;
+}
