@@ -935,3 +935,9 @@ tr.click{cursor:pointer}tr.click:hover{background:#ffffff08}
 .tv-tf{display:flex;gap:6px;align-items:center;margin:8px 0}.tv-tf button{background:#1c2128;color:#9da7b3;border:0;border-radius:6px;padding:5px 11px;cursor:pointer;font-weight:600}.tv-tf button.on{background:#2f81f7;color:#fff}
 .tv-livedot{margin-left:auto;color:#26a69a;font-size:12px;animation:bxlive 2s infinite}.inv-sum{margin:6px 0 12px}
 .app-logo{width:100%;height:100%;object-fit:cover;border-radius:inherit}.app-logo.sm{width:22px;height:22px;border-radius:6px;vertical-align:middle}
+
+/* Libro de órdenes */
+.ord-type{margin-bottom:8px}.ob{margin-top:12px;font-family:ui-monospace,monospace;font-size:12px;background:#0b0e14;border-radius:10px;padding:8px}
+.ob-h{display:flex;justify-content:space-between;color:#7d8590;padding:0 6px 4px}.ob-r{position:relative;display:flex;justify-content:space-between;padding:3px 6px}
+.ob-r i{position:absolute;right:0;top:0;bottom:0;opacity:.18}.ob-r.ask i{background:#ef5350}.ob-r.bid i{background:#26a69a}.ob-r.ask span{color:#ef5350}.ob-r.bid span{color:#26a69a}.ob-r *{position:relative}
+.ob-mid{text-align:center;font-weight:800;font-size:15px;padding:6px;border-top:1px solid #ffffff14;border-bottom:1px solid #ffffff14;margin:4px 0}.ob-mid small{font-weight:400;color:#7d8590;margin-left:6px}.ob-e{color:#7d8590;text-align:center;padding:4px}

@@ -1,6 +1,6 @@
 // Todas las apps del sistema. Cada una: { id, name, icon, bg, show(), render(el) }
 import * as db from './db.js';
-import { sharePrice, coOut, coPremium, creditCap } from './db.js';
+import { sharePrice, coOut, coPremium, coFair, etfNav, creditCap } from './db.js';
 import { GAME_DAY_MS, gameDay, gameStart, fgame, S, cpi, esc, money, fdate, lvl, has, isPolice, set, cname, charOpts, toast, modal, ask, view, form, fieldsHTML, readForm, downloadImage,
   myRequests, approvedOf, requestHTML, reviewQueue, tabs, needChar, myAccounts, accSelect, stars, addRole } from './core.js';
 import { openWizardOverlay } from './vida.js';
@@ -975,6 +975,7 @@ const empleos = { id: 'empleos', name: 'LinkedIn', icon: '💼', bg: '#0a66c2,#0
 async function market() {
   const [cos, accs, props, vehs, models, holds, etfh] = await Promise.all(['companies', 'accounts', 'properties', 'vehicles', 'vehicle_models', 'holdings', 'etf_holdings'].map(t => db.list(t, { order: null, limit: 10000 }).catch(() => [])));
   return cos.map(c => ({ ...c, price: sharePrice(c, accs, props, vehs, models, cos, holds, etfh), out: c.industry === 'ETF' ? holds.filter(h => h.company_id === c.id && h.shares > 0).reduce((s, h) => s + Number(h.shares), 0) : coOut(c, holds, etfh),
+    fair: c.industry === 'ETF' ? etfNav(c, accs, props, vehs, models, cos, holds, etfh) : coFair(c, accs, props, vehs, models, holds, etfh),
     cash: Number(accs.find(a => a.id === c.account_id)?.balance || 0), etf: c.industry === 'ETF' ? etfh.filter(e => e.shares > 0) : null }));
 }
 // gráfica de línea en SVG a partir de una lista de precios
@@ -1011,6 +1012,7 @@ const bolsa = { id: 'bolsa', name: 'GBM+', icon: '📈', bg: '#0b1f3a,#1c4f8f', 
     const st = el._gbm ||= { tab: 'port', id: null };
     const [cos, hold, acc, hist, trades] = await Promise.all([market(), db.list('holdings', { eq: { character_id: S.char.id } }), personalAcc(),
       db.list('price_history', { order: 'created_at', limit: 5000 }).then(r => r.reverse()), db.list('trades', { eq: { character_id: S.char.id } })]);
+    const openOrders = await db.list('orders', { eq: { status: 'open' }, limit: 2000 }).catch(() => []), myOrders = openOrders.filter(o => o.character_id === S.char.id);
     const H = id => hold.find(x => x.company_id === id && x.shares > 0), series = c => [...hist.filter(p => p.company_id === c.id).map(p => +p.price), c.price];
     const day = c => { const s = hist.filter(p => p.company_id === c.id && new Date(p.created_at) > Date.now() - 864e5); return pct(c.price, s[0]?.price ?? series(c)[0]); };
     const mine = cos.filter(c => H(c.id)?.shares > 0), value = mine.reduce((s, c) => s + H(c.id).shares * c.price, 0), cost = mine.reduce((s, c) => s + Number(H(c.id).cost || 0), 0);
@@ -1019,14 +1021,23 @@ const bolsa = { id: 'bolsa', name: 'GBM+', icon: '📈', bg: '#0b1f3a,#1c4f8f', 
     if (st.id) {
       const c = cos.find(x => x.id === st.id), h = H(c.id), ser = series(c);
       body = `<button class="link" data-act="back">‹ Mercado</button><div class="q-h"><div><b>${esc(c.name)}</b><small>${esc(c.industry)}</small></div><div class="q-p"><b>${money(c.price)}</b>${sgn(pct(c.price, ser[0]))}</div></div>
-        ${tfBar(st.tf ||= 30 * 60e3)}${candles(hist.filter(p => p.company_id === c.id).map(p => ({ t: +new Date(p.created_at), p: +p.price })), st.tf, c.price)}<div class="kpis"><div><small>Valor de mercado</small><b>${money(c.price * (c.out || c.shares_total || 1000))}</b></div><div><small>Efectivo para recomprar</small><b>${c.industry === 'ETF' ? '—' : money(c.cash)}</b></div><div><small>Títulos en circulación</small><b>${(c.out || 0).toLocaleString()}</b></div>
+        ${tfBar(st.tf ||= 30 * 60e3)}${candles(hist.filter(p => p.company_id === c.id).map(p => ({ t: +new Date(p.created_at), p: +p.price })), st.tf, c.price)}<div class="kpis"><div><small>Último precio (bolsa)</small><b>${money(c.price)}</b></div><div><small>${c.industry === 'ETF' ? 'Valor del fondo por título' : 'Valor justo (en libros)'}</small><b>${money(c.fair)}</b><small> ${c.fair ? (c.price / c.fair).toFixed(2) + '× P/VL' : ''}</small></div><div><small>Valor de mercado</small><b>${money(c.price * (c.out || c.shares_total || 1000))}</b></div><div><small>Efectivo para recomprar</small><b>${c.industry === 'ETF' ? '—' : money(c.cash)}</b></div><div><small>Títulos en circulación</small><b>${(c.out || 0).toLocaleString()}</b></div>
           <div><small>Hoy</small><b>${sgn(day(c))}</b></div><div><small>Tu posición</small><b>${h ? h.shares + ' títulos' : '—'}</b></div></div>
         ${h ? `<p class="muted">Costo promedio ${money(h.cost / h.shares)} · Rendimiento ${sgn(pct(h.shares * c.price, h.cost))} (${money(h.shares * c.price - h.cost)})</p>` : ''}
         <div class="order"><div class="seg"><button data-act="side" data-s="buy" class="${st.side !== 'sell' ? 'on buy' : ''}">Comprar</button><button data-act="side" data-s="sell" class="${st.side === 'sell' ? 'on sell' : ''}">Vender</button></div>
-          <form data-form="orden" class="form">${fieldsHTML([{ k: 'qty', label: 'Títulos', type: 'number', min: 1, max: st.side === 'sell' ? h?.shares || 0 : undefined, req: 1, def: 1 }])}
+          <form data-form="orden" class="form"><div class="seg ord-type"><button type="button" data-act="otype" data-o="mkt" class="${st.otype !== 'lim' ? 'on' : ''}">A mercado</button><button type="button" data-act="otype" data-o="lim" class="${st.otype === 'lim' ? 'on' : ''}">Precio límite</button></div>
+          ${fieldsHTML([{ k: 'qty', label: 'Títulos', type: 'number', min: 1, max: st.side === 'sell' ? (h?.shares || 0) - (h?.locked || 0) : undefined, req: 1, def: 1 },
+            ...(st.otype === 'lim' ? [{ k: 'lim', label: st.side === 'sell' ? 'Vender a no menos de (por título)' : 'Comprar a no más de (por título)', type: 'number', min: 0.01, step: 0.01, req: 1, def: c.price }] : [])])}
           <div class="qty-btns">${[[0.25, '25%'], [0.5, '50%'], [1, st.side === 'sell' ? 'Todo' : 'Todo mi dinero']].map(([f, l]) => `<button type="button" class="btn ghost sm" data-act="frac" data-f="${f}">${l}</button>`).join('')}</div>
-          <p class="muted" data-est>Precio de mercado ${money(c.price)} · Poder de compra ${money(acc?.balance)}</p><p class="muted">Comprar emite acciones nuevas (tu dinero entra a la empresa) y empuja el precio hacia arriba; vender hace que la empresa te recompre con su efectivo y empuja el precio hacia abajo. Pedidos grandes mueven más el precio.</p>
-          <button class="btn big ${st.side === 'sell' ? 'bad' : 'ok'}" type="submit">${st.side === 'sell' ? 'Vender a mercado' : 'Comprar a mercado'}</button></form></div>`;
+          <p class="muted" data-est>Precio de mercado ${money(c.price)} · Poder de compra ${money(acc?.balance)}</p><p class="muted">Como en la bolsa real: tu orden se cruza primero con las de otros jugadores (el libro de abajo). Si es a mercado y no hay nadie, la empresa emite o recompra títulos a su valor justo. Con precio límite tu orden espera en el libro hasta que alguien acepte tu precio.</p>
+          <button class="btn big ${st.side === 'sell' ? 'bad' : 'ok'}" type="submit">${st.otype === 'lim' ? (st.side === 'sell' ? 'Poner orden de venta' : 'Poner orden de compra') : st.side === 'sell' ? 'Vender a mercado' : 'Comprar a mercado'}</button></form>
+          ${(() => { const ob = openOrders.filter(o => o.company_id === c.id), lv = sd => Object.entries(ob.filter(o => o.side === sd).reduce((m, o) => (m[o.limit_price] = (m[o.limit_price] || 0) + o.qty - o.filled, m), {}))
+              .map(([p, q]) => [+p, q]).sort((x, y) => sd === 'sell' ? x[0] - y[0] : y[0] - x[0]).slice(0, 6), asks = lv('sell'), bids = lv('buy'), mxq = Math.max(1, ...asks.map(x => x[1]), ...bids.map(x => x[1]));
+            const row = ([p, q], sd) => `<div class="ob-r ${sd}"><i style="width:${(q / mxq * 100).toFixed(0)}%"></i><span>${money(p)}</span><b>${q.toLocaleString()}</b></div>`;
+            return `<div class="ob"><div class="ob-h"><span>Precio</span><span>Títulos</span></div>${asks.slice().reverse().map(x => row(x, 'ask')).join('') || '<div class="ob-e">Nadie está vendiendo</div>'}
+              <div class="ob-mid">${money(c.price)} ${asks[0] && bids[0] ? `<small>spread ${money(asks[0][0] - bids[0][0])}</small>` : ''}</div>${bids.map(x => row(x, 'bid')).join('') || '<div class="ob-e">Nadie está comprando</div>'}</div>`; })()}</div>
+        ${myOrders.filter(o => o.company_id === c.id).length ? `<h3>Tus órdenes abiertas</h3><ul class="list">${myOrders.filter(o => o.company_id === c.id).map(o => `<li><span class="grow"><b class="${o.side === 'buy' ? 'pos' : 'neg'}">${o.side === 'buy' ? 'Compra' : 'Venta'}</b> ${o.qty - o.filled} títulos a ${money(o.limit_price)}${o.filled ? ` <small class="muted">(${o.filled} ya ejecutados)</small>` : ''}</span><button class="btn sm ghost" data-act="cancelar" data-id="${o.id}">Cancelar</button></li>`).join('')}</ul>` : ''}
+        ${c.industry !== 'ETF' && (c.owners || []).some(o => S.chars?.some?.(x => x.id === o) || o === S.char.id) ? `<form class="card form" data-form="dividendo"><h3>Repartir dividendos</h3><p class="muted">Reparte efectivo de ${esc(c.name)} (${money(c.cash)}) entre todas las acciones en circulación, incluidas las del ETF.</p>${fieldsHTML([{ k: 'amount', label: 'Total a repartir', type: 'number', min: 1, step: 0.01, req: 1 }])}<button class="btn">Repartir</button></form>` : ''}`;
     } else if (st.tab === 'port') body = mine.length ? `<div class="kpis inv-sum"><div><small>Invertiste</small><b>${money(cost)}</b></div><div><small>Vale hoy</small><b>${money(value)}</b></div>
         <div><small>Vas ${value - cost >= 0 ? 'ganando' : 'perdiendo'}</small><b class="${value - cost >= 0 ? 'pos' : 'neg'}">${value - cost >= 0 ? '+' : '−'}${money(Math.abs(value - cost))}</b></div><div><small>Rendimiento</small><b>${sgn(pct(value, cost))}</b></div></div>
         <table class="tbl"><thead><tr><th>Emisora</th><th>Títulos</th><th>Costo prom.</th><th>Invertiste</th><th>Precio</th><th>Vale hoy</th><th>Ganancia</th><th>%</th></tr></thead><tbody>
@@ -1034,7 +1045,7 @@ const bolsa = { id: 'bolsa', name: 'GBM+', icon: '📈', bg: '#0b1f3a,#1c4f8f', 
           <td class="${g >= 0 ? 'pos' : 'neg'}">${g >= 0 ? '+' : '−'}${money(Math.abs(g))}</td><td>${sgn(pct(v, h.cost))}</td></tr>`; }).join('')}</tbody></table>` : `<p class="empty">Aún no tienes inversiones. Ve a Mercado para comprar tus primeras acciones.</p>`;
     else if (st.tab === 'mkt') body = `<div class="mkt">${cos.map(c => `<button class="mkt-row" data-act="ver" data-id="${c.id}"><div><b>${esc(c.name)}</b><small>${esc(c.industry)}</small></div>${chart(series(c).slice(-30), 120, 36, false)}
         <div class="q-p"><b>${money(c.price)}</b>${sgn(day(c))}</div></button>`).join('') || '<p class="empty">Aún no hay emisoras en la bolsa.</p>'}</div>`;
-    else body = `<ul class="list">${trades.map(t => `<li><div><b class="${t.side === 'compra' ? 'pos' : 'neg'}">${t.side === 'compra' ? 'Compra' : 'Venta'}</b> ${t.qty} × ${esc(cos.find(c => c.id === t.company_id)?.name || '—')}
+    else body = `${myOrders.length ? `<h3>Órdenes abiertas</h3><ul class="list">${myOrders.map(o => `<li><span class="grow"><b class="${o.side === 'buy' ? 'pos' : 'neg'}">${o.side === 'buy' ? 'Compra' : 'Venta'}</b> ${o.qty - o.filled} × ${esc(cos.find(c => c.id === o.company_id)?.name || '—')} a ${money(o.limit_price)}</span><button class="btn sm ghost" data-act="cancelar" data-id="${o.id}">Cancelar</button></li>`).join('')}</ul><h3>Historial</h3>` : ''}<ul class="list">${trades.map(t => `<li><div><b class="${t.side === 'compra' ? 'pos' : 'neg'}">${t.side === 'compra' ? 'Compra' : 'Venta'}</b> ${t.qty} × ${esc(cos.find(c => c.id === t.company_id)?.name || '—')}
         <div class="muted">${fdate(t.created_at)} · ${money(t.price)} por título</div></div><b>${money(t.total)}</b></li>`).join('') || '<li class="muted">Sin operaciones.</li>'}</ul>`;
     view(el, `<div class="gbm"><header class="gbm-h"><b>GBM<span>+</span></b><span>${esc(cname(S.char.id))}</span></header>
       <div class="gbm-sum"><div><small>Valor del portafolio</small><b>${money(value)}</b>${sgn(pct(value, cost))}</div><div><small>Poder de compra</small><b>${money(acc?.balance)}</b></div>
@@ -1044,15 +1055,19 @@ const bolsa = { id: 'bolsa', name: 'GBM+', icon: '📈', bg: '#0b1f3a,#1c4f8f', 
       tab: d => go({ tab: d.t, id: null }), ver: d => go({ id: d.id, side: 'buy' }), back: () => go({ id: null, tab: 'mkt' }), tf: d => go({ tf: +d.ms }), side: d => go({ side: d.s }),
       async orden(f) {
         if (!acc) throw new Error('Necesitas tu cuenta personal');
-        const r = st.side === 'sell' ? await db.rpc('sell_shares', { company: st.id, qty: f.qty, acc: acc.id }) : await db.rpc('buy', { kind: 'shares', item: st.id, acc: acc.id, qty: f.qty });
-        toast(`Orden ejecutada: ${st.side === 'sell' ? 'vendiste' : 'compraste'} ${f.qty} títulos por ${money(r)}`); go({}); window.liveRefresh?.();
+        const r = await db.rpc('place_order', { c: S.char.id, company: st.id, side: st.side === 'sell' ? 'sell' : 'buy', qty: +f.qty, lim: st.otype === 'lim' ? +f.lim : null });
+        toast(r.done ? `${st.side === 'sell' ? 'Vendiste' : 'Compraste'} ${r.done} títulos por ${money(r.total)}${r.waiting ? ` · ${r.waiting} quedan esperando en el libro` : ''}` : `Tu orden quedó en el libro esperando a alguien que ${st.side === 'sell' ? 'compre' : 'venda'} a ese precio`);
+        go({}); window.liveRefresh?.();
       },
+      otype: d => go({ otype: d.o }),
+      async cancelar(d) { await db.rpc('cancel_order', { id: d.id }); toast('Orden cancelada'); go({}); window.liveRefresh?.(); },
+      async dividendo(f) { const p = await db.rpc('pay_dividend', { company: st.id, amount: +f.amount }); toast(`Repartiste ${money(p)} en dividendos`); go({}); window.liveRefresh?.(); },
     });
     clearTimeout(el._live); if (st.id) el._live = setTimeout(() => { if (el.isConnected && el.querySelector('.tv') && !el.contains(document.activeElement)) bolsa.render(el, params); }, 10000); // en vivo
     const q = el.querySelector('[name=qty]'), est = el.querySelector('[data-est]'), c = st.id && cos.find(x => x.id === st.id);
     if (!q || !c) return;
     // mismo cálculo que buy_shares/sell_shares del servidor: el precio se mueve mientras compras o vendes
-    const prem0 = coPremium(c), bookPs = c.price / prem0, outQ = Math.max(c.out || 0, 1), cashBal = Number(acc?.balance || 0), myShares = Number(H(c.id)?.shares || 0), isSell = st.side === 'sell';
+    const prem0 = coPremium(c), bookPs = (c.fair || c.price) / prem0, outQ = Math.max(c.out || 0, 1), cashBal = Number(acc?.balance || 0), myShares = Number(H(c.id)?.shares || 0), isSell = st.side === 'sell';
     const tradeCost = n => isSell ? bookPs * (prem0 + Math.max(prem0 * Math.exp(-n / outQ), 0.2)) / 2 * n : bookPs * (prem0 + Math.min(prem0 * Math.exp(n / outQ), 5)) / 2 * n;
     const maxBuyQty = budget => { let lo = 0, hi = 1; while (tradeCost(hi) <= budget && hi < 1e12) hi *= 2; while (hi - lo > 1) { const m = Math.floor((lo + hi) / 2); tradeCost(m) <= budget ? lo = m : hi = m; } return lo; };
     const maxSellQty = () => { let n = myShares; while (n > 0 && tradeCost(n) > c.cash) n = Math.floor(n * 0.9); return n; };
