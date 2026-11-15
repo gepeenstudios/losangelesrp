@@ -165,7 +165,7 @@ export const TRAMITES = {
       {k:'giro',label:'Giro',type:'select',options:GIROS.map(g=>g[0]),req:1},
       {k:'marca',label:'Si eres concesionaria oficial de una marca, ¿cuál?',help:'La marca oficial compra autos al 10%. Las demás concesionarias al 30%.'},
       {k:'socios',label:'Socios (nombres de sus personajes)'},
-      {k:'capital',label:'Capital inicial (USD)',type:'number',min:0,req:1},
+      {k:'capital',label:'Capital inicial (USD)',type:'number',min:0,req:1,help:'Al aprobarse, este dinero sale de tu cuenta personal y pasa a la cuenta de la empresa. Debes tenerlo disponible.'},
       {k:'ubicacion',label:'Ubicación en el mapa',req:1},
       {k:'descripcion',label:'¿Qué hace tu empresa?',type:'textarea',req:1},
       {k:'logo',label:'Logo',type:'file'}]},

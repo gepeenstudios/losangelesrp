@@ -36,6 +36,8 @@ export async function openTramite(type, extra = {}, after) {
           <div class="gov-actions"><button class="btn big" type="submit">Enviar solicitud</button></div></form>${side}</div></main>`), {
         async send(data) {
           // shortcut: si el insert fallara después de cobrar, el staff devuelve el dinero a mano; mover a una sola RPC si pasa seguido
+          if (type === 'empresa') { const a = (await db.list('accounts', { eq: { kind: 'personal' }, contains: { owners: [ch.id] } }))[0];
+            if (!a || Number(a.balance) < Number(data.capital)) throw new Error(`No tienes ese capital disponible. Tu saldo es ${money(a?.balance || 0)}.`); }
           if (t.cost) await db.rpc('pay_gov', { c: ch.id, amount: t.cost, concept: 'Pago de trámite · ' + t.name });
           const r = await db.insert('requests', { type, dept: extra.dept || t.dept, character_id: ch.id, data: { ...extra.data, ...data } });
           view(el, page(`<main class="gov-main"><div class="done"><div class="check">✓</div><h1>Solicitud recibida</h1>

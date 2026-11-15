@@ -204,13 +204,14 @@ export const ON_APPROVE = {
   async empresa(r, c) {
     const d = r.data, giro = d.giro;
     const acc = await db.insert('accounts', { kind: 'business', name: d.nombre, owners: [r.character_id] });
+    try { await db.rpc('fund_company', { req: r.id, dest: acc.id }); } catch (e) { await db.remove('accounts', acc.id); throw e; }
     const ein = `${rand(10, 99)}-${rand(1000000, 9999999)}`;
     const { GIROS, PERMISOS_BASE } = await import('./data.js');
     const extra = GIROS.find(g => g[0] === giro)?.[1];
     await db.insert('companies', { name: d.nombre, industry: giro, brand: d.marca || null, account_id: acc.id, owners: [r.character_id], ein,
       permits: [...PERMISOS_BASE, ...(extra && extra !== '—' ? [extra] : [])], description: d.descripcion, logo_url: d.logo || null });
     if (lvl() >= 3) await addRole(r.character_id, 'Empresario');
-    return `Empresa creada. EIN ${ein}. El dueño debe depositar su capital a la cuenta ${acc.number}.`;
+    return `Empresa creada. EIN ${ein}. Se pasaron ${money(Number(d.capital) || 0)} de capital de la cuenta del dueño a la cuenta de la empresa ${acc.number}.`;
   },
   async partido(r) {
     await db.insert('parties', { name: r.data.nombre, siglas: r.data.siglas || null, ideologia: r.data.ideologia, logo: r.data.logo || null, owner_char: r.character_id });
