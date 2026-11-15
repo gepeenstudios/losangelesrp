@@ -7,7 +7,9 @@ export const S = { me: null, chars: [], char: null, all: [], settings: {}, tags:
 export const cpi = () => Number(S.settings.cpi ?? 1);
 export const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 export const money = n => '$' + Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 2 });
-export const fdate = d => d ? new Date(d).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' }) : '';
+// fechas en la hora de la ciudad (1 día = 2 h reales); las fechas sin hora (nacimiento, vencimientos) se muestran tal cual
+export const fdate = d => !d ? '' : /^\d{4}-\d{2}-\d{2}$/.test(String(d)) ? new Date(d + 'T12:00:00Z').toLocaleDateString('es-MX', { dateStyle: 'medium', timeZone: 'UTC' })
+  : fgame(d, { dateStyle: 'medium', timeStyle: 'short' });
 export const lvl = () => LVL[S.me?.staff_role] || 0;
 export const has = (...r) => r.some(x => S.char?.roles?.includes(x));
 export const isPolice = () => has(...POLICE); // solo quien tiene el rol de policía (el staff también necesita que se lo asignen)
@@ -305,3 +307,10 @@ document.addEventListener('change', e => {
 });
 for (const [ev, on] of [['dragenter', 1], ['dragover', 1], ['dragleave', 0], ['drop', 0]])
   document.addEventListener(ev, e => { const b = e.target.closest?.('.drop'); if (b) b.classList.toggle('over', !!on); });
+
+// ===== Tiempo del juego: 1 día = 2 horas reales (×12). Día 1 (1 ene 2026 00:00) = 15 nov 2026 00:00 Monterrey. Igual que game_day()/game_start() del SQL.
+export const GAME_EPOCH = Date.parse('2026-11-15T06:00:00Z'), GAME_DAY_MS = 2 * 3600e3, GAME_SPEED = 12;
+export const gameDate = (t = Date.now()) => new Date(Date.UTC(2026, 0, 1) + (new Date(t).getTime() - GAME_EPOCH) * GAME_SPEED); // fecha/hora del juego (léela en UTC)
+export const gameDay = (t = Date.now()) => gameDate(t).toISOString().slice(0, 10);
+export const gameStart = d => GAME_EPOCH + (Date.parse(d + 'T00:00:00Z') - Date.UTC(2026, 0, 1)) / GAME_SPEED; // momento real en que empieza el día «d»
+export const fgame = (t = Date.now(), opt = { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }) => gameDate(t).toLocaleString('es-MX', { ...opt, timeZone: 'UTC' });

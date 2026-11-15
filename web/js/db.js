@@ -89,21 +89,24 @@ function move(f, t, amt, concept) {
   T('transactions').push({ id: crypto.randomUUID(), from_acc: f?.id || null, to_acc: t?.id || null, amount: amt, concept, created_at: now() });
 }
 export const creditCap = s => (s >= 800 ? 1e7 : s >= 760 ? 2e6 : s >= 700 ? 5e5 : s >= 650 ? 5e4 : 1e4) * cpi();
-function creditScore(c) { const E = T('credit_events').filter(e => e.character_id === c), n = k => E.filter(e => e.kind === k && (k === 'pago_a_tiempo' || new Date(e.created_at) > Date.now() - 60 * 864e5)).length;
+function creditScore(c) { const E = T('credit_events').filter(e => e.character_id === c), n = k => E.filter(e => e.kind === k && (k === 'pago_a_tiempo' || new Date(e.created_at) > Date.now() - 60 * 72e5)).length;
   const k = T('credit_cards').find(x => x.character_id === c && x.status !== 'closed'), age = E.length ? (Date.now() - Math.min(...E.map(e => new Date(e.created_at)))) / 864e5 : 0;
-  return Math.round(Math.max(300, Math.min(850, 620 + 12 * Math.min(n('pago_a_tiempo'), 15) - 45 * n('pago_tarde') - 160 * n('impago') - (k ? 80 * Math.max(k.owed / k.credit_limit - 0.3, 0) : 0) + Math.min(30, Math.floor(age))))); }
+  return Math.round(Math.max(300, Math.min(850, 620 + 12 * Math.min(n('pago_a_tiempo'), 15) - 45 * n('pago_tarde') - 160 * n('impago') - (k ? 80 * Math.max(k.owed / k.credit_limit - 0.3, 0) : 0) + Math.min(30, Math.floor(age * 12))))); }
+// días del juego (1 día = 2 h reales), igual que game_day()/game_start() del SQL
+const G0 = Date.parse('2026-11-15T06:00:00Z'), gDay = (t = Date.now()) => new Date(Date.UTC(2026, 0, 1) + Math.floor((t - G0) / 72e5) * 864e5).toISOString().slice(0, 10);
+const gAdd = (d, n) => new Date(Date.parse(d + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10), gStart = d => new Date(G0 + (Date.parse(d + 'T00:00:00Z') - Date.UTC(2026, 0, 1)) / 12).toISOString();
 function cardTick(c) {
   const k = T('credit_cards').find(x => x.character_id === c && x.status !== 'closed'); if (!k) return null;
-  const ev = (kind, amount, note, d) => T('credit_events').push({ id: crypto.randomUUID(), character_id: c, kind, amount, note, created_at: d.toISOString() });
-  let d = new Date(k.last_tick + 'T12:00:00'), i = 0; const today = new Date(new Date().toISOString().slice(0, 10) + 'T12:00:00');
-  while (d < today && i++ < 90) { d = new Date(d.getTime() + 864e5);
+  const ev = (kind, amount, note, d) => T('credit_events').push({ id: crypto.randomUUID(), character_id: c, kind, amount, note, created_at: gStart(d) });
+  let d = k.last_tick, i = 0; const today = gDay();
+  while (d < today && i++ < 90) { d = gAdd(d, 1);
     if (k.owed > 0) { const it = Math.round(k.owed * k.apr / 365 * 100) / 100; k.int_cycle = (k.int_cycle || 0) + it; k.owed = Math.round((k.owed + it) * 100) / 100; }
-    if (d >= new Date(k.stmt_due + 'T12:00:00')) { if (k.int_cycle > 0) { ev('intereses', Math.round(k.int_cycle * 100) / 100, `Intereses del periodo (${Math.round(k.apr * 100)}% anual)`, d); k.int_cycle = 0; }
+    if (d >= k.stmt_due) { if (k.int_cycle > 0) { ev('intereses', Math.round(k.int_cycle * 100) / 100, `Intereses del periodo (${Math.round(k.apr * 100)}% anual)`, d); k.int_cycle = 0; }
       if (k.stmt_min > 0 && k.stmt_paid >= k.stmt_min) { ev('pago_a_tiempo', k.stmt_paid, 'Pagaste tu mínimo a tiempo', d); k.missed = 0; { const sc = creditScore(c); if (sc >= 650 && k.owed <= k.credit_limit * 0.5) k.credit_limit = Math.round(Math.min(k.credit_limit * (sc >= 800 ? 2 : sc >= 760 ? 1.5 : sc >= 700 ? 1.25 : 1.1), creditCap(sc)) * 100) / 100; } }
       else if (k.stmt_min > 0) { k.missed++; k.owed += Math.round(25 * cpi() * 100) / 100; ev('pago_tarde', k.stmt_min, 'No cubriste tu pago mínimo · cargo por atraso', d); k.credit_limit = Math.round(Math.max(k.credit_limit * 0.8, 500) * 100) / 100;
         if (k.missed >= 3) { k.status = 'closed'; ev('impago', k.owed, '3 pagos vencidos: tarjeta cancelada, la deuda sigue', d); } else if (k.missed >= 2) k.status = 'frozen'; }
-      k.stmt_min = k.owed <= 0 ? 0 : Math.round(Math.max(Math.min(k.owed, 50 * cpi()), k.owed * 0.1) * 100) / 100; k.stmt_paid = 0; k.stmt_due = new Date(d.getTime() + 7 * 864e5).toISOString().slice(0, 10); } }
-  k.last_tick = d.toISOString().slice(0, 10); return k.status === 'closed' ? null : k;
+      k.stmt_min = k.owed <= 0 ? 0 : Math.round(Math.max(Math.min(k.owed, 50 * cpi()), k.owed * 0.1) * 100) / 100; k.stmt_paid = 0; k.stmt_due = gAdd(d, 7); } }
+  k.last_tick = d; return k.status === 'closed' ? null : k;
 }
 const bjVal = cs => { let t = 0, a = 0; for (const c of cs) { const r = c % 13; if (r === 12) { t += 11; a++; } else t += r >= 8 ? 10 : r + 2; } while (t > 21 && a) { t -= 10; a--; } return t; };
 function pokerMult(cs) {
@@ -330,7 +333,7 @@ const RPC = {
     if (debt > 0) { ev('rechazo', 'Solicitud rechazada: tienes una deuda pendiente'); return { ok: false, reason: `Tienes una deuda pendiente de ${debt.toFixed(2)} con RRVA. Págala primero.` }; }
     const sc = creditScore(c), lim = Math.round(10000 * cpi() * (sc >= 760 ? 2 : sc >= 700 ? 1.5 : sc >= 620 ? 1 : sc >= 560 ? 0.5 : 0) * 100) / 100;
     if (!lim) { ev('rechazo', `Solicitud rechazada por historial (score ${sc})`); return { ok: false, reason: `Tu historial crediticio no alcanza (score ${sc}). Necesitas al menos 560.`, score: sc }; }
-    const today = new Date().toISOString().slice(0, 10), due = new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10);
+    const today = gDay(), due = gAdd(today, 7);
     T('credit_cards').push({ id: crypto.randomUUID(), character_id: c, number: '4152' + String(Math.floor(Math.random() * 1e12)).padStart(12, '0'), credit_limit: lim, owed: 0, status: 'active', apr: 0.36,
       last_tick: today, stmt_due: due, stmt_min: 0, stmt_paid: 0, missed: 0, created_at: now() });
     ev('apertura', 'Tarjeta de crédito aprobada', lim); return { ok: true, limit: lim, score: sc };

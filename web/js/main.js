@@ -1,6 +1,6 @@
 // Arranque y "sistema operativo": macOS en PC, iOS en celular (lo decide el CSS por ancho de pantalla)
 import * as db from './db.js';
-import { S, esc, money, lvl, loadMe, toast, view, fieldsHTML, cname, myAccounts, modal, notify } from './core.js';
+import { fgame, S, esc, money, lvl, loadMe, toast, view, fieldsHTML, cname, myAccounts, modal, notify } from './core.js';
 import { APPS, seed, resolveSite, SVC911, canRespond } from './apps.js';
 import { WALLPAPERS, STAFF_NAME, TRAMITES } from './data.js';
 import { lifeWizard } from './vida.js';
@@ -14,16 +14,17 @@ const FAVS = ['banco', 'mensajes', 'x', 'gobierno', 'vida', 'news', 'insta', 'au
 const glyph = a => { const u = S.settings?.app_icons?.[a.id]; return u ? `<img class="gimg" src="${esc(u)}" alt="">` : ico(a.id, 'gi'); };
 const wallCss = w => esc(String(w || WALLPAPERS[0]).replace(/ center\/cover$/, ''));
 const bigClock = () => `<div class="lock-time"><b data-clock="t"></b><span data-clock="d"></span></div>`;
+// la ciudad vive en su propio tiempo: 1 día del juego = 2 horas reales
 function clocks() {
-  const n = new Date();
   root.querySelectorAll('[data-clock]').forEach(e => {
     const k = e.dataset.clock;
-    e.textContent = k === 't' ? n.toLocaleTimeString('es-MX', { hour: 'numeric', minute: '2-digit', hour12: false })
-      : k === 'd' ? n.toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' })
-      : n.toLocaleString('es-MX', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+    e.textContent = k === 't' ? fgame(Date.now(), { hour: 'numeric', minute: '2-digit', hour12: false })
+      : k === 'd' ? fgame(Date.now(), { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+      : '🕒 ' + fgame(Date.now(), { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+    e.title = 'Hora de la ciudad (1 día = 2 horas reales). Hora real: ' + new Date().toLocaleString('es-MX');
   });
 }
-setInterval(clocks, 10000);
+setInterval(clocks, 5000); // 5 s reales = 1 minuto del juego
 
 function login(mode = 'in') {
   const fields = mode === 'in'

@@ -231,8 +231,8 @@ export const TRAMITES = {
 };
 
 export const DEFAULT_SETTINGS = {
-  start_money: 5000, cpi: 1, fed_rate: 4.5, job_min_minutes: 60, prison_min_per_year: 60, trial_years: 10,
-  visa_days: 7,
+  start_money: 5000, cpi: 1, fed_rate: 4.5, job_min_minutes: 40, prison_min_per_year: 60, trial_years: 10,
+  visa_days: 84, // días del juego (= 1 semana real)
   elecciones: { registro_hasta: 20, votacion_desde: 21, votacion_hasta: 27 }, // días del mes; el ganador gobierna todo el mes siguiente
   influencer_like_pay: 15, spotify_play_pay: 2,
   staff_salary: { helper: 38000, mod: 52000, admin: 70000, coowner: 95000, owner: 120000 }, // USD al año, se paga ÷365 cada día con servicio

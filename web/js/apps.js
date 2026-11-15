@@ -1,7 +1,7 @@
 // Todas las apps del sistema. Cada una: { id, name, icon, bg, show(), render(el) }
 import * as db from './db.js';
 import { sharePrice, coOut, coPremium, creditCap } from './db.js';
-import { S, cpi, esc, money, fdate, lvl, has, isPolice, set, cname, charOpts, toast, modal, ask, view, form, fieldsHTML, readForm, downloadImage,
+import { GAME_DAY_MS, gameDay, gameStart, fgame, S, cpi, esc, money, fdate, lvl, has, isPolice, set, cname, charOpts, toast, modal, ask, view, form, fieldsHTML, readForm, downloadImage,
   myRequests, approvedOf, requestHTML, reviewQueue, tabs, needChar, myAccounts, accSelect, stars, addRole } from './core.js';
 import { openWizardOverlay } from './vida.js';
 import { openTramite } from './portal.js';
@@ -116,7 +116,7 @@ const banco = { id: 'banco', name: 'RRVA', icon: '🏦', bg: '#004481,#1464a5', 
       body = `<div class="tx">${gauge}${k ? `<div class="ccard ${k.status !== 'active' ? 'cr-off' : ''}"><div class="row"><b class="cc-bank">RRVA</b><small class="grow" style="text-align:right">Crédito${k.status === 'frozen' ? ' · CONGELADA' : ''}</small></div><div class="chip"></div>
           <div class="num">${k.number.replace(/(\d{4})(?=\d)/g, '$1 ')}</div><div class="row"><span>${esc(cname(S.char.id).toUpperCase())}</span><b class="grow" style="text-align:right">VISA</b></div></div>
         <div class="kpis"><div><small>Línea de crédito</small><b>${money(k.credit_limit)}</b></div><div><small>Debes</small><b class="${k.owed > 0 ? 'neg' : ''}">${money(k.owed)}</b></div><div><small>Disponible</small><b>${money(Math.max(0, k.credit_limit - k.owed))}</b></div>
-          <div><small>Intereses</small><b>${Math.round(k.apr * 100)}% anual</b><small> · este periodo ${money(k.int_cycle || 0)}</small></div><div><small>Con tu score tu línea puede llegar a</small><b>${money(creditCap(sc))}</b>${sc < 800 ? `<small> · con score ${sc < 650 ? 650 : sc < 700 ? 700 : sc < 760 ? 760 : 800}: ${money(creditCap(sc < 650 ? 650 : sc < 700 ? 700 : sc < 760 ? 760 : 800))}</small>` : ''}</div><div><small>Pago mínimo</small><b>${money(Math.max(0, k.stmt_min - k.stmt_paid))}</b><small> antes del ${esc(k.stmt_due)}</small></div></div>
+          <div><small>Intereses</small><b>${Math.round(k.apr * 100)}% anual</b><small> · este periodo ${money(k.int_cycle || 0)}</small></div><div><small>Con tu score tu línea puede llegar a</small><b>${money(creditCap(sc))}</b>${sc < 800 ? `<small> · con score ${sc < 650 ? 650 : sc < 700 ? 700 : sc < 760 ? 760 : 800}: ${money(creditCap(sc < 650 ? 650 : sc < 700 ? 700 : sc < 760 ? 760 : 800))}</small>` : ''}</div><div><small>Pago mínimo</small><b>${money(Math.max(0, k.stmt_min - k.stmt_paid))}</b><small> antes del ${fdate(k.stmt_due)} (en ${Math.max(0, Math.ceil((gameStart(k.stmt_due) - Date.now()) / 36e5))} h reales)</small></div></div>
         <div class="cr-grid"><form class="card form" data-form="ccpay"><h3>Pagar tarjeta</h3>${fieldsHTML([{ k: 'amount', label: 'Monto (sale de tu cuenta personal)', type: 'number', min: 0.01, step: 0.01, req: 1, def: Math.max(0, k.stmt_min - k.stmt_paid) || '' }])}<button class="btn big">Pagar</button></form>
           <form class="card form" data-form="cccharge"><h3>Usar tarjeta</h3>${fieldsHTML([{ k: 'dest', label: 'Cuenta RRVA a la que pagas', req: 1, ph: '10 dígitos', help: 'Pon tu propia cuenta para retirar efectivo (comisión 3%).' }, { k: 'amount', label: 'Monto', type: 'number', min: 1, step: 0.01, req: 1 }, { k: 'concept', label: 'Concepto', ph: 'Compra, renta…' }])}<button class="btn big">Pagar con tarjeta</button></form></div>`
         : r.debt > 0 ? `<div class="notice"><b>Tienes una deuda de ${money(r.debt)} con RRVA</b> de una tarjeta cancelada. Págala para volver a pedir crédito.</div><form class="card form" data-form="ccpay">${fieldsHTML([{ k: 'amount', label: 'Monto', type: 'number', min: 0.01, step: 0.01, req: 1, def: r.debt }])}<button class="btn big">Pagar deuda</button></form>`
@@ -185,7 +185,7 @@ const gobierno = { id: 'gobierno', name: 'LA City', icon: '🏛️', bg: '#1d3b6
   async render(el) {
     const reqs = await myRequests(), ch = S.char, pres = has('Presidente') || lvl() >= 4;
     const gov = (await db.list('accounts', { eq: { kind: 'gov' } }))[0];
-    const visaOk = approvedOf(reqs, 'visa').length, days = ch ? Math.ceil(set('visa_days') - (Date.now() - new Date(ch.created_at)) / 864e5) : 0;
+    const visaOk = approvedOf(reqs, 'visa').length, days = ch ? Math.ceil(set('visa_days') - (Date.now() - new Date(ch.created_at)) / GAME_DAY_MS) : 0;
     const cats = {};
     Object.entries(TRAMITES).forEach(([k, t]) => { if (t.hidden || k === 'apelacion_ck' || (t.foreignOnly && !ch?.extranjero)) return; (cats[t.cat] ??= []).push([k, t]); });
     const last = k => reqs.find(r => r.type === k), hist = set('cpi_history') || [];
@@ -231,7 +231,7 @@ const trabajo = { id: 'trabajo', name: 'Workday', icon: '💼', bg: '#f5a623,#e5
     const [emps, shifts] = await Promise.all([db.list('employments', { order: null, limit: 5000 }), db.list('work_shifts', { limit: 5000 })]);
     const mine = emps.filter(e => e.character_id === S.char.id && e.status !== 'fired');
     const mgrOf = [...new Set(S.tags.filter(t => t.startsWith('mgr:')).map(t => t.slice(4)))];
-    const minm = Number(set('job_min_minutes')), day0 = new Date(new Date().setHours(0, 0, 0, 0)), wk0 = new Date(Date.now() - 7 * 864e5);
+    const minm = Number(set('job_min_minutes')), day0 = new Date(gameStart(gameDay())), wk0 = new Date(Date.now() - 7 * GAME_DAY_MS); // «hoy» = el día del juego actual (2 h reales)
     const open = shifts.find(w => w.character_id === S.char.id && !w.ended_at);
     let body = '';
     if (tab === 'mio') body = mine.length ? mine.map(e => { const sh = shifts.filter(w => w.character_id === S.char.id && w.dept === e.dept), today = minsBetween(sh, day0), week = minsBetween(sh, wk0);
@@ -938,7 +938,7 @@ const empleos = { id: 'empleos', name: 'LinkedIn', icon: '💼', bg: '#0a66c2,#0
     const cos = (await db.list('companies')).filter(c => c.owners.includes(S.char.id));
     let body = '';
     const yr = j => (rankList(j.role_tag)[0]?.salary || 0) * cpi(), top = j => (rankList(j.role_tag).at(-1)?.salary || 0) * cpi();
-    if (tab === 'ofertas') body = `<div class="card info"><b>¿Cómo se paga?</b><p class="muted">El sueldo del gobierno es <b>anual</b> (como en la vida real) y se paga <b>un pedacito cada día real</b>: sueldo del año ÷ 365. Para cobrar ese día tienes que trabajar mínimo ${set('job_min_minutes')} min (fichar en Workday). Es decir, <b>1 año de sueldo = 365 días reales</b> trabajando.</p></div>`
+    if (tab === 'ofertas') body = `<div class="card info"><b>¿Cómo se paga?</b><p class="muted">El sueldo del gobierno es <b>anual</b> (como en la vida real) y se paga <b>un pedacito cada día del juego</b>: sueldo del año ÷ 365. En la ciudad <b>1 día dura 2 horas reales</b>; para cobrar ese día tienes que trabajar mínimo ${set('job_min_minutes')} min reales (un turno de ${Math.round(set('job_min_minutes') / 5)} horas del juego, fichando en Workday).</p></div>`
       + jobs.map(j => `<div class="card"><div class="row"><b>${esc(j.title)}</b>${j.role_tag ? '<span class="tag on">Gobierno</span>' : ''}</div>
       <div class="muted">${esc(j.employer)}</div>
       <div class="pay">${j.role_tag ? `<b>${money(yr(j) / 365)}</b> al día · <b>${money(yr(j) / 12)}</b> al mes · <b>${money(yr(j))}</b> al año <small class="muted">(rango inicial; el más alto gana ${money(top(j))} al año)</small>` : `<b>${money(j.salary)}</b> al día <small class="muted">(lo paga el empleador)</small>`}</div>
@@ -1682,7 +1682,7 @@ const staffApp = { id: 'staff', name: 'Panel Staff', icon: '🛡️', bg: '#8e2d
       const pendP = profiles.filter(p => !p.verified), pendC = S.all.filter(c => c.status === 'pending');
       const visas = L >= 3 ? await db.list('requests', { eq: { type: 'visa', status: 'approved' } }) : [];
       const migr = S.all.filter(c => c.status === 'active' && c.extranjero && !c.roles.includes('Migrante') && !visas.some(v => v.character_id === c.id)
-        && (Date.now() - new Date(c.created_at)) / 864e5 > set('visa_days'));
+        && (Date.now() - new Date(c.created_at)) / GAME_DAY_MS > set('visa_days'));
       body = `${L >= 3 ? `<h3>Cuentas por verificar (${pendP.length})</h3>${pendP.map(p => `<div class="card row">${av(p.avatar_url)}<div class="grow"><b>${esc(p.username)}</b>
           <div class="muted">Roblox: <b>${esc(p.roblox)}</b> · Discord: <b>${esc(p.discord)}</b> · ${fdate(p.created_at)}</div></div>
           <button class="btn sm ok" data-act="verif" data-id="${p.id}">Verificar</button><button class="btn sm bad" data-act="banP" data-id="${p.id}">Banear</button></div>`).join('') || '<p class="muted">Nada.</p>'}
@@ -1690,7 +1690,7 @@ const staffApp = { id: 'staff', name: 'Panel Staff', icon: '🛡️', bg: '#8e2d
           <div class="muted">Usuario: ${esc(profiles.find(p => p.id === c.user_id)?.username)} · Roblox ${esc(profiles.find(p => p.id === c.user_id)?.roblox)} · Discord ${esc(profiles.find(p => p.id === c.user_id)?.discord)}</div>
           <div>Nac. ${esc(c.dob)} · ${esc(c.sex)} · ${esc(c.city)} · ${esc(c.nationality)} ${c.extranjero ? '<span class="tag on">🧳 Extranjero</span>' : ''}</div><p>${esc(c.bio)}</p></div>
           <div class="col"><button class="btn sm ok" data-act="aprobC" data-id="${c.id}">Aprobar</button><button class="btn sm bad" data-act="rechC" data-id="${c.id}">Rechazar</button></div></div>`).join('') || '<p class="muted">Nada.</p>'}
-        ${migr.length ? `<h3>🚨 Extranjeros sin visa (plazo de ${set('visa_days')} días vencido)</h3>${migr.map(c => `<div class="card row"><b class="grow">${esc(c.first_name)} ${esc(c.last_name)}</b>
+        ${migr.length ? `<h3>🚨 Extranjeros sin visa (plazo de ${set('visa_days')} días del juego vencido)</h3>${migr.map(c => `<div class="card row"><b class="grow">${esc(c.first_name)} ${esc(c.last_name)}</b>
           <button class="btn sm bad" data-act="migr" data-id="${c.id}">Marcar migrante</button></div>`).join('')}` : ''}` : ''}<div class="q"></div>`;
       Object.assign(acts, {
         verif: async d => { await db.update('profiles', d.id, { verified: true }); toast('Cuenta verificada'); go('aprob'); },
@@ -1703,7 +1703,7 @@ const staffApp = { id: 'staff', name: 'Panel Staff', icon: '🛡️', bg: '#8e2d
               await db.update('characters', c.id, { status: 'active', roles });
               const acc = await db.insert('accounts', { kind: 'personal', name: c.first_name + ' ' + c.last_name, owners: [c.id] });
               if (m > 0) await db.rpc('staff_pay', { acc: acc.id, amount: Math.round(m * 100) / 100, concept: 'Dinero inicial (de la Tesorería)' });
-              close(); toast(`Aprobada. El bot le pone en Discord: ${roles.join(', ')}${c.extranjero ? ' · Recuérdale sacar su visa en ' + set('visa_days') + ' días' : ''}`); if (c.user_id === S.me.id) return window.refreshShell?.('staff'); // es mi vida: activarla al instante
+              close(); toast(`Aprobada. El bot le pone en Discord: ${roles.join(', ')}${c.extranjero ? ' · Recuérdale sacar su visa en ' + set('visa_days') + ' días del juego' : ''}`); if (c.user_id === S.me.id) return window.refreshShell?.('staff'); // es mi vida: activarla al instante
               S.all = await db.list('characters', { order: 'first_name', asc: true }); go('aprob');
             } }); },
         rechC: async d => { await db.update('characters', d.id, { status: 'rejected' }); S.all = await db.list('characters', { order: 'first_name', asc: true }); go('aprob'); },
@@ -1797,7 +1797,7 @@ const staffApp = { id: 'staff', name: 'Panel Staff', icon: '🛡️', bg: '#8e2d
       const govAcc = (await db.list('accounts', { eq: { kind: 'gov' } }))[0], robos = set('robos');
       const depts = [...new Set(S.ranks.map(r => r.dept))];
       body = `<div class="fin"><div><small>Tesorería de Los Ángeles</small><b>${money(govAcc?.balance)}</b></div><div><small>Índice de precios (CPI)</small><b>${cpi().toFixed(4)}</b></div>
-        <div><small>Tasa Reserva Federal</small><b>${set('fed_rate')}%</b></div><div><small>Turno mínimo diario</small><b>${set('job_min_minutes')} min</b></div></div>
+        <div><small>Tasa Reserva Federal</small><b>${set('fed_rate')}%</b></div><div><small>Turno mínimo por día del juego</small><b>${set('job_min_minutes')} min reales</b></div></div>
         <p class="muted">Los sueldos se pagan solos cada día desde la Tesorería (pago diario = sueldo anual ÷ 365 × inflación) a quien cumplió su turno mínimo el día anterior o está de vacaciones. Quien pasa 7 días sin cumplir es despedido.</p>
         <div class="row"><button class="btn" data-act="tick">Correr cierre del día ahora</button>${L >= 4 ? '<button class="btn bad" data-act="printm">Emitir dinero</button>' : ''}</div>
         <h3>Sueldos por rango (anuales, USD)</h3><form data-form="ranks" class="form">${depts.map(d => `<details><summary><b>${esc(d)}</b> · ${rankList(d).length} rangos</summary><table class="tbl"><tr><th>Rango</th><th>Sueldo anual</th><th>Mando</th></tr>
@@ -1818,7 +1818,7 @@ const staffApp = { id: 'staff', name: 'Panel Staff', icon: '🛡️', bg: '#8e2d
           <label class="fld"><span>Pago a influencers por cada like (USD, sube con sus seguidores hasta ×5)</span><input type="number" min="0" name="__like" value="${set('influencer_like_pay') ?? 15}"></label>
           <label class="fld"><span>Regalías de Spotify por cada reproducción (USD)</span><input type="number" min="0" step="0.5" name="__play" value="${set('spotify_play_pay') ?? 2}"></label>
           <button class="btn" type="submit">Guardar</button></form>
-        <h3>Otros</h3>${form('otros', [{ k: 'start_money', label: 'Dinero inicial de cada vida', type: 'number', min: 0, req: 1 }, { k: 'visa_days', label: 'Días para que un extranjero registre visa', type: 'number', min: 1, req: 1 },
+        <h3>Otros</h3>${form('otros', [{ k: 'start_money', label: 'Dinero inicial de cada vida', type: 'number', min: 0, req: 1 }, { k: 'visa_days', label: 'Días del juego (2 h reales c/u) para que un extranjero registre visa', type: 'number', min: 1, req: 1 },
           { k: 'job_min_minutes', label: 'Minutos mínimos de turno al día', type: 'number', min: 1, req: 1 }, { k: 'fed_rate', label: 'Tasa de la Reserva Federal (%)', type: 'number', min: 0, max: 25, req: 1 },
           { k: 'prison_min_per_year', label: 'Minutos reales por cada año de prisión', type: 'number', min: 1, req: 1 }, { k: 'trial_years', label: 'Más de cuántos años de prisión va a juicio', type: 'number', min: 1, req: 1 }],
           { start_money: set('start_money'), visa_days: set('visa_days'), job_min_minutes: set('job_min_minutes'), fed_rate: set('fed_rate'), prison_min_per_year: set('prison_min_per_year'), trial_years: set('trial_years') }, 'Guardar')}`;
