@@ -78,7 +78,7 @@ const vida = { id: 'vida', name: 'Mi Vida', icon: '🧬', bg: '#7b2ff7,#f107a3',
 
 // ============ RRVA (banco) ============
 const last4 = n => '****' + String(n).slice(-4);
-const accLabel = a => a.kind === 'personal' ? 'Cuenta personal' : a.kind === 'savings' ? 'Cuenta de ahorro' : 'Cuenta empresarial · ' + a.name;
+const accLabel = a => a.kind === 'personal' ? 'Cuenta personal' : a.kind === 'savings' ? 'Cuenta de ahorro' : a.kind === 'encrypted' ? 'Cuenta encriptada 🔐' : 'Cuenta empresarial · ' + a.name;
 const banco = { id: 'banco', name: 'RRVA', icon: '🏦', bg: '#004481,#1464a5', show: () => true,
   async render(el, st = { tab: 'mov' }) {
     if (!needChar(el)) return;
@@ -174,7 +174,7 @@ const banco = { id: 'banco', name: 'RRVA', icon: '🏦', bg: '#004481,#1464a5', 
       <small>Crédito disponible</small><h2>${money(Math.max(0, ccard.credit_limit - ccard.owed))}</h2><small>Debes ${money(ccard.owed)} de una línea de ${money(ccard.credit_limit)}</small>`
       : `<div class="row"><small class="grow">${esc(accLabel(cur))}</small><button class="link light" data-act="copyacc">Cuenta ${cur.number} ⧉</button></div>
       <small>Saldo disponible</small><h2>${money(cur.balance)}</h2>`}
-      ${accs.length > 1 || ccard ? `<div class="chips">${accs.map(a => `<button data-act="acc" data-id="${a.id}" class="${a.id === cur.id && !onCC ? 'on' : ''}">${a.kind === 'personal' ? 'Personal' : a.kind === 'savings' ? 'Ahorro' : esc(a.name)}</button>`).join('')}${ccard ? `<button data-act="tab" data-t="credito" class="${onCC ? 'on' : ''}">💳 Crédito</button>` : ''}</div>` : ''}</div>
+      ${accs.length > 1 || ccard ? `<div class="chips">${accs.map(a => `<button data-act="acc" data-id="${a.id}" class="${a.id === cur.id && !onCC ? 'on' : ''}">${a.kind === 'personal' ? 'Personal' : a.kind === 'savings' ? 'Ahorro' : a.kind === 'encrypted' ? '🔐 Encriptada' : esc(a.name)}</button>`).join('')}${ccard ? `<button data-act="tab" data-t="credito" class="${onCC ? 'on' : ''}">💳 Crédito</button>` : ''}</div>` : ''}</div>
       ${tabs([['mov', 'Movimientos'], ['send', 'Transferir'], ['ahorro', 'Ahorro e intereses'], ['multas', 'Multas'], ['imp', 'Impuestos'], ['tarjeta', 'Tarjeta'], ['credito', 'Crédito']], st.tab)}${body}`, {
       async ahorro() { await db.rpc('open_savings', { c: S.char.id }); toast('Cuenta de ahorro abierta'); go({}); },
       tab: d => banco.render(el, { tab: d.t, acc: cur.id }),
@@ -496,11 +496,12 @@ const bitso = { id: 'bitso', name: 'Bitso', icon: '🪙', bg: '#0b2b1f,#0f7a4f',
         ${tfBar(range)}${candles(rawHist.map(x => ({ t: +new Date(x.t), p: +x.price })), range, Number(c.price))}
         <div class="bx-grid"><div class="card"><h3>Tu ${esc(c.sym)}</h3><p><b>${q.toFixed(8).replace(/\.?0+$/, '') || 0}</b> ${esc(c.sym)} ≈ <b>${money(val(c))}</b></p>${q ? `<p>Ganancia/pérdida: <b class="${pl >= 0 ? 'pos' : 'neg'}">${pl >= 0 ? '+' : '−'}${money(Math.abs(pl))}</b></p>` : ''}</div>
           <form class="card form" data-form="buy"><h3>Comprar</h3><label class="fld"><span>Dólares a invertir (saldo ${money(bal)})</span><input name="usd" type="number" min="1" step="0.01" required></label><button class="btn bx-buy">Comprar ${esc(c.sym)}</button></form>
-          <form class="card form" data-form="sell"><h3>Vender</h3><label class="fld"><span>Cantidad de ${esc(c.sym)}</span><input name="qty" type="number" min="0" step="any" max="${q}" required></label><div class="row"><button type="button" class="btn ghost sm" data-act="all">Todo</button><span class="grow"></span><button class="btn bx-sell">Vender</button></div></form></div>
+          <form class="card form" data-form="sell"><h3>Vender</h3><label class="fld"><span>Cantidad de ${esc(c.sym)}</span><input name="qty" type="number" min="0" step="any" max="${q}" required></label><div class="row"><button type="button" class="btn ghost sm" data-act="all">Todo</button><span class="grow"></span><button class="btn bx-sell">Vender</button></div></form>
+          <form class="card form" data-form="send"><h3>Enviar ${esc(c.sym)}</h3>${fieldsHTML([{ k: 'to', label: 'A quién', type: 'select', options: charOpts(x => x.status === 'active' && x.id !== S.char.id), req: 1 }])}<label class="fld"><span>Cantidad de ${esc(c.sym)} (tienes ${q.toFixed(8).replace(/\.?0+$/, '') || 0})</span><input name="qty" type="number" min="0" step="any" max="${q}" required></label><button class="btn">Enviar</button><p class="muted">Llega al instante a su Bitso, sin comisión. No pasa por el banco.</p></form></div>
         <div class="kpis"><div><small>Monedas que existen</small><b>${Number(c.supply || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}</b></div><div><small>En manos de jugadores</small><b>${Number((c.supply || 0) - (c.pool_coin || 0)).toLocaleString('en-US', { maximumFractionDigits: 4 })}</b></div>
           <div><small>Capitalización</small><b>${money(Number(c.price) * Number(c.supply || 0))}</b></div><div><small>Dólares en la reserva</small><b>${money(c.pool_usd)}</b></div></div>
         <p class="muted">Como una cripto real: hay una cantidad fija de monedas y el precio lo mueven las compras y ventas de todos los jugadores. Comprar sube el precio, vender lo baja, y entre más grande la orden más lo mueve. Comisión 0.5%. El gobierno no participa.</p>
-        <h3>Tus movimientos</h3><ul class="list">${trades.map(t => `<li><span class="grow">${t.side === 'buy' ? '🟢 Compra' : '🔴 Venta'} ${Number(t.qty).toFixed(8).replace(/\.?0+$/, '')} ${esc(t.sym)} a ${cfmt(t.price)} <small class="muted">${fdate(t.created_at)}</small></span><b>${money(t.usd)}</b></li>`).join('') || '<p class="muted">Aún no operas esta moneda.</p>'}</ul>`;
+        <h3>Tus movimientos</h3><ul class="list">${trades.map(t => `<li><span class="grow">${{ buy: '🟢 Compra', sell: '🔴 Venta', send: '📤 Enviaste', receive: '📥 Recibiste' }[t.side] || esc(t.side)} ${Number(t.qty).toFixed(8).replace(/\.?0+$/, '')} ${esc(t.sym)} a ${cfmt(t.price)} <small class="muted">${fdate(t.created_at)}</small></span><b>${money(t.usd)}</b></li>`).join('') || '<p class="muted">Aún no operas esta moneda.</p>'}</ul>`;
     } else body = `<div class="bx-sum card"><div><small class="muted">Tu portafolio cripto</small><div class="bx-price">${money(total)}</div>${cost ? `<div class="${total - cost >= 0 ? 'pos' : 'neg'}">${total - cost >= 0 ? '+' : '−'}${money(Math.abs(total - cost))} desde que compraste</div>` : ''}</div><div><small class="muted">Saldo en tu cuenta</small><div><b>${money(bal)}</b></div></div></div>
       ${holds.some(h => h.qty > 0) ? `<h3>Mi portafolio</h3><table class="tbl"><thead><tr><th>Moneda</th><th>Tienes</th><th>Invertiste</th><th>Vale hoy</th><th>Ganancia</th><th>%</th></tr></thead><tbody>${coins.filter(c => H[c.sym]?.qty > 0).map(c => { const h = H[c.sym], v = val(c), g = v - Number(h.cost);
         return `<tr class="click" data-act="coin" data-s="${c.sym}"><td><b>${esc(c.sym)}</b></td><td>${Number(h.qty).toFixed(8).replace(/\.?0+$/, '')}</td><td>${money(h.cost)}</td><td>${money(v)}</td><td class="${g >= 0 ? 'pos' : 'neg'}">${g >= 0 ? '+' : '−'}${money(Math.abs(g))}</td><td>${sgn(pct(v, Number(h.cost)))}</td></tr>`; }).join('')}</tbody></table>` : ''}
@@ -510,6 +511,7 @@ const bitso = { id: 'bitso', name: 'Bitso', icon: '🪙', bg: '#0b2b1f,#0f7a4f',
       home: () => bitso.render(el), coin: d => bitso.render(el, d.s), tf: d => bitso.render(el, sel, +d.ms),
       all: (_, b) => { b.form.qty.value = Number(H[sel]?.qty || 0); },
       async buy(v) { const r = await db.rpc('crypto_trade', { c: S.char.id, s: sel, side: 'buy', amount: +v.usd }); toast(`Compraste ${Number(r.qty).toFixed(8).replace(/\.?0+$/, '')} ${sel} · nuevo precio ${cfmt(r.new_price)}`); bitso.render(el, sel, range); window.liveRefresh?.(); },
+      async send(v) { await db.rpc('crypto_send', { c: S.char.id, to_char: v.to, s: sel, amount: +v.qty }); toast(`Enviaste ${v.qty} ${sel} a ${cname(v.to)}`); bitso.render(el, sel, range); },
       async sell(v) { const r = await db.rpc('crypto_trade', { c: S.char.id, s: sel, side: 'sell', amount: +v.qty }); toast(`Vendiste por ${money(r.usd)}`); bitso.render(el, sel, range); window.liveRefresh?.(); },
     });
     // en vivo: vuelve a pintar cada 30 s mientras la ventana siga abierta y nadie esté escribiendo
@@ -1059,12 +1061,12 @@ const empleos = { id: 'empleos', name: 'LinkedIn', icon: '💼', bg: '#0a66c2,#0
     const mine = (await myRequests()).filter(r => r.type === 'job');
     const cos = (await db.list('companies')).filter(c => c.owners.includes(S.char.id));
     let body = '';
-    const jobNeeds = d => !d ? [] : [...(set('job_reqs')?.[d] || []), ...(set('military_required').includes(d) ? ['servicio_militar'] : [])], yr = j => (rankList(j.role_tag)[0]?.salary || 0) * cpi(), top = j => (rankList(j.role_tag).at(-1)?.salary || 0) * cpi();
+    const jobNeeds = d => !d ? [] : [...(set('job_reqs')?.[d] || []), ...(set('military_required').includes(d) ? ['servicio_militar'] : [])], clean = d => (set('clean_record') || []).includes(d), yr = j => (rankList(j.role_tag)[0]?.salary || 0) * cpi(), top = j => (rankList(j.role_tag).at(-1)?.salary || 0) * cpi();
     if (tab === 'ofertas') body = `<div class="card info"><b>¿Cómo se paga?</b><p class="muted">El sueldo del gobierno es <b>anual</b> (como en la vida real) y se paga <b>un pedacito cada día real</b>: sueldo del año ÷ 365. Para cobrar el día tienes que trabajar mínimo ${set('job_min_minutes')} minutos reales ese día, fichando en Workday. Workday va en hora real, no en la hora del juego.</p></div>`
       + jobs.map(j => `<div class="card"><div class="row"><b>${esc(j.title)}</b>${j.role_tag ? '<span class="tag on">Gobierno</span>' : ''}</div>
       <div class="muted">${esc(j.employer)}</div>
       <div class="pay">${j.role_tag ? `<b>${money(yr(j) / 365)}</b> al día · <b>${money(yr(j) / 12)}</b> al mes · <b>${money(yr(j))}</b> al año <small class="muted">(rango inicial; el más alto gana ${money(top(j))} al año)</small>` : `<b>${money(j.salary)}</b> al día <small class="muted">(lo paga el empleador)</small>`}</div>
-      <p>${esc(JOB_DESC[j.role_tag] || j.description || '')}</p>${jobNeeds(j.role_tag).length ? `<p class="reqs">Requisitos: ${jobNeeds(j.role_tag).map(t => `<span class="tag">${t === 'servicio_militar' ? '🪖 ' : '📄 '}${esc(TRAMITES[t]?.name || t)}</span>`).join(' ')}</p>` : ''}
+      <p>${esc(JOB_DESC[j.role_tag] || j.description || '')}</p>${jobNeeds(j.role_tag).length || clean(j.role_tag) ? `<p class="reqs">Requisitos: ${jobNeeds(j.role_tag).map(t => `<span class="tag">${t === 'servicio_militar' ? '🪖 ' : '📄 '}${esc(TRAMITES[t]?.name || t)}</span>`).join(' ')}${clean(j.role_tag) ? ' <span class="tag">🧾 Sin antecedentes penales</span>' : ''}</p>` : ''}
       ${mine.some(r => r.data.job_id === j.id && r.status === 'pending') ? badge('pending') : `<button class="btn sm" data-act="aplicar" data-id="${j.id}">Postularme</button>`}</div>`).join('') || '<p class="empty">No hay vacantes.</p>';
     if (tab === 'mias') body = `<ul class="list">${mine.map(r => `<li><div><b>${esc(r.data.job_title)}</b><div class="muted">${esc(r.data.employer)}${r.note ? ' · ' + esc(r.note) : ''}</div></div>${badge(r.status)}</li>`).join('') || '<p class="empty">Sin postulaciones.</p>'}</ul>`;
     if (tab === 'publicar') body = form('pub', [{ k: 'title', label: 'Puesto', req: 1 },
@@ -1076,6 +1078,7 @@ const empleos = { id: 'empleos', name: 'LinkedIn', icon: '💼', bg: '#0a66c2,#0
       aplicar: async d => { const j = jobs.find(x => x.id === d.id);
         const reqs = await myRequests(), miss = jobNeeds(j.role_tag).filter(t => !approvedOf(reqs, t).length);
         if (miss.length) throw new Error(`Para postularte a ${j.role_tag} te falta: ${miss.map(t => TRAMITES[t]?.name || t).join(', ')} (trámites en Gobierno).`);
+        if (clean(j.role_tag) && (await db.list('records', { eq: { character_id: S.char.id } })).some(r => r.kind === 'arresto' || (r.kind === 'orden' && !r.paid))) throw new Error(`Para ${j.role_tag} necesitas no tener antecedentes penales (arrestos, prisión u órdenes de arresto).`);
         modal('💼 ' + esc(j.title), form('send', [{ k: 'experiencia', label: 'Experiencia', type: 'textarea', req: 1 }, { k: 'disponibilidad', label: 'Disponibilidad', req: 1 },
           { k: 'entrevista', label: 'Fecha preferida para entrevista', type: 'date', min: new Date().toISOString().slice(0, 10) }, { k: 'hora', label: 'Hora preferida (opcional)', type: 'time' }]), {
           async send(f, _, close) {
@@ -1387,11 +1390,11 @@ const sebusca = { id: 'sebusca', name: 'Se Busca', icon: '🤠', bg: '#8b5a2b,#3
   async render(el) {
     const o = await db.list('records', { eq: { kind: 'orden', paid: false } }).catch(() => []), tot = o.reduce((n, r) => n + bountyOf(r), 0);
     view(el, `<div class="sb"><header class="sb-h"><b>🤠 SE BUSCA · Recompensas de la LAPD</b><span>${o.length} buscado(s) · ${money(tot)} en recompensas</span></header>
-      <p class="muted">Cada orden de arresto empieza en $0 y sube $1 por cada día del juego (2 horas reales) que la persona sigue libre; la policía también puede subirla, hasta un máximo de $1,000,000,000. Si ves a alguien, manda un aviso: le llega a la policía como llamada al 911. La recompensa la cobra quien lo captura.</p>
+      <p class="muted">Cada orden de arresto empieza en $0 y sube $1 por cada día del juego (2 horas reales) que la persona sigue libre; la policía también puede subirla, hasta un máximo de $1,000,000,000. Si ves a alguien, manda un aviso: le llega a la policía como llamada al 911. Si tu información lleva a su captura, <b>tú cobras la recompensa</b> (cuenta el último aviso antes de la captura; los policías no pueden cobrarla).</p>
       <div class="posters">${o.map(r => `<div>${posterHTML(r)}<button class="btn sm" data-act="aviso" data-id="${r.id}">📞 Dar un aviso</button></div>`).join('') || '<p class="empty">Nadie buscado por ahora. 🌴</p>'}</div></div>`, {
       aviso: d => { const r = o.find(x => x.id === d.id); if (!S.char) throw new Error('Necesitas una vida activa');
         modal('📞 Aviso sobre ' + esc(cname(r.character_id)), form('go', [{ k: 'location', label: '¿Dónde lo viste?', req: 1 }, { k: 'detalle', label: 'Detalles (ropa, auto, hacia dónde iba)', type: 'textarea', req: 1 }, { k: 'anonymous', label: 'Enviar como anónimo', type: 'checkbox' }], {}, 'Enviar aviso'), {
-          async go(v, _, close) { await db.insert('calls911', { caller_char: S.char.id, service: 'policia', location: v.location, description: `Aviso de recompensa · ${cname(r.character_id)}: ${v.detalle}`.slice(0, 500), anonymous: !!v.anonymous }); close(); toast('Aviso enviado a la policía 🚓'); } }); },
+          async go(v, _, close) { await db.insert('calls911', { caller_char: S.char.id, service: 'policia', location: v.location, description: `Aviso de recompensa · ${cname(r.character_id)}: ${v.detalle}`.slice(0, 500), anonymous: !!v.anonymous, wanted_char: r.character_id }); close(); toast('Aviso enviado a la policía 🚓'); } }); },
     });
   } };
 
@@ -1465,7 +1468,7 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
         ${jail ? `<div class="alert">EN PRISIÓN · ${jail.status === 'preventiva' ? 'preventiva (espera juicio), lleva ' + clockTxt(since(jail)) : 'le faltan ' + clockTxt(left(jail))}. Si está en la calle sin fuga aprobada, repórtalo al staff (warn administrativo).
           <button class="btn sm bad" data-act="reportar" data-id="${jail.id}">Reportar al staff</button></div>` : ''}
         ${(() => { const o = recs.filter(r => r.kind === 'orden' && !r.paid); return o.length && !jail ? `<div class="alert wanted-alert"><b>🚨 SE BUSCA · ORDEN DE ARRESTO ACTIVA</b><ul>${o.map(r => `<li>${esc(r.description)} · <b class="bounty">💰 Recompensa ${money(bountyOf(r))}</b> <button class="link" data-act="recompensa" data-id="${r.id}">Subir recompensa</button></li>`).join('')}</ul>
-          <button class="btn bad" data-act="capturar">🚔 Capturado: procesar arresto</button> <small class="muted">Carga los cargos de la orden; puedes agregar más antes de registrar. La recompensa la paga el presupuesto de la Policía al oficial que lo captura.</small></div>` : ''; })()}</div></div>
+          <button class="btn bad" data-act="capturar">🚔 Capturado: procesar arresto</button> <small class="muted">Carga los cargos de la orden; puedes agregar más antes de registrar. La recompensa la cobra el ciudadano cuyo aviso llevó a la captura (los policías no cuentan).</small></div>` : ''; })()}</div></div>
         <h3>Documentos</h3><ul class="list">${lic.map(r => `<li><span class="li-ico">${ico(r.type)}</span><span class="grow">${esc(TRAMITES[r.type].name)} ${esc(r.data.clase || r.data.tipo || r.data.arma || r.data.placa || '')}</span><button class="btn sm bad" data-act="cancelarDoc" data-id="${r.id}" data-n="${esc(TRAMITES[r.type].name)}">Cancelar</button></li>`).join('') || '<li class="muted">Sin documentos</li>'}</ul>
         <h3>Vehículos</h3><ul class="list">${vehs.map(v => { const m = models.find(x => x.id === v.model_id); const exp = new Date(v.registered_at || v.created_at); exp.setFullYear(exp.getFullYear() + 1); return `<li><div class="grow"><b>${esc(m?.brand)} ${esc(m?.model)}</b> · ${esc(v.plate || 'sin placa')}<div class="muted">VIN ${esc(v.vin || '—')} · Registro ${exp < new Date() ? '<b class="neg">VENCIDO</b>' : 'vigente hasta ' + fdate(exp.toISOString())}</div></div></li>`; }).join('') || '<li class="muted">Ninguno</li>'}</ul>
         <h3>Inventario</h3>${inv.some(i => SHOPI[i.item]?.gun) ? '<button class="btn sm bad" data-act="decomisarArmas">Decomisar todas las armas y munición</button>' : ''}<ul class="list">
@@ -1541,8 +1544,8 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
           return toast(`Son ${pena(years)}: requiere juicio. Se envió el caso a los jueces y quedó con orden de arresto (si ya lo tienes, usa Arresto).`), go({});
         }
         const ords = v.kind === 'arresto' ? await db.list('records', { eq: { character_id: st.id, kind: 'orden', paid: false } }) : [];
-        const reward = ords.length ? await db.rpc('capture_orders', { c: st.id, officer: S.char?.id || null }) : 0; // la orden se vuelve este arresto y paga la recompensa
-        if (reward > 0) toast(`💰 Recompensa cobrada: ${money(reward)}`);
+        const reward = ords.length ? await db.rpc('capture_orders', { c: st.id, officer: S.char?.id || null }) : null; // la orden se vuelve este arresto; la recompensa va a quien dio la información
+        if (reward?.paid > 0) toast(`💰 Recompensa de ${money(reward.paid)} para ${cname(reward.to)} por su información`);
         await db.insert('records', { kind: v.kind === 'advertencia' ? 'advertencia' : v.kind, character_id: st.id, officer_id: S.char?.id || null, amount: v.kind === 'multa' || (v.kind === 'arresto' && !juicio) ? Math.round(fine) : null, description: (juicio ? '[Pendiente de juicio: multa y sentencia las fija el juez] ' : '') + (ords.length ? 'Capturado por orden de arresto · ' : '') + desc, charges });
         if (v.kind === 'orden') await db.insert('posts', { app: 'news', section: 'Policía', anonimo: true, character_id: S.char?.id || null, media_url: skin(st.id) || null,
           title: `SE BUSCA: ${cname(st.id)}`, body: `La LAPD emitió una orden de arresto contra ${cname(st.id)}.\n\nCargos: ${desc}\n\nRecompensa: empieza en $0 y sube $1 por cada día que siga libre. Si lo ves, avisa al 911 o desde la app Se Busca. No intentes detenerlo tú mismo.` }).catch(() => {});

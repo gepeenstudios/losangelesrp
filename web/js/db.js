@@ -435,6 +435,13 @@ const RPC = {
     if (kind === 'property') { x.for_sale = price != null; x.sale_price = price; } else x.sale_price = price;
   },
   // casino con gente (igual que pvp_* en SQL)
+  crypto_send({ c, to_char, s, amount }) {
+    const h = T('crypto_hold').find(x => x.character_id === c && x.sym === s), q = +amount; guard(to_char && to_char !== c, 'Destinatario no válido'); guard(h && h.qty >= q && q > 0, 'No tienes tanto ' + s);
+    const part = h.cost * q / h.qty; h.qty -= q; h.cost -= part; const r = T('crypto_hold').find(x => x.character_id === to_char && x.sym === s);
+    r ? (r.qty += q, r.cost += part) : T('crypto_hold').push({ character_id: to_char, sym: s, qty: q, cost: part });
+    const p = T('crypto_coins').find(x => x.sym === s)?.price || 0; T('crypto_trades').push({ id: crypto.randomUUID(), character_id: c, sym: s, side: 'send', qty: q, price: p, usd: q * p, created_at: now() });
+    return { qty: q, usd: q * p };
+  },
   pvp_create({ c, game, amount, maxp }) {
     guard(amount >= 1, 'La apuesta mínima es $1'); guard(!T('casino_tables').some(t => t.host === c && t.status === 'open'), 'Ya tienes una mesa abierta');
     const t = { id: crypto.randomUUID(), game, buy_in: +amount, host: c, max_players: Math.min(10, Math.max(2, maxp || 8)), status: 'open', pot: +amount, created_at: now() };
@@ -471,7 +478,9 @@ const RPC = {
     const total = os.reduce((s, r) => s + Math.min(1e9, Math.max(0, day(Date.now()) - day(r.created_at)) + (r.bounty_extra || 0)), 0);
     mem.t.records = T('records').filter(x => !os.includes(x));
     const to = T('accounts').find(a => a.kind === 'personal' && a.owners[0] === officer), src = T('accounts').find(x => x.kind === 'dept' && x.dept === 'Policía') || gov();
-    if (total > 0 && to && src.balance >= total) { move(src, to, total, 'Recompensa por captura'); return total; } return 0;
+    const tip = T('calls911').filter(k => k.wanted_char === c && k.caller_char !== c && !(T('characters').find(x => x.id === k.caller_char)?.roles || []).some(r => ['Policía', 'SWAT', 'FBI', 'DEA', 'CIA'].includes(r))).at(-1)?.caller_char;
+    const tipAcc = tip && T('accounts').find(a => a.kind === 'personal' && a.owners[0] === tip);
+    if (total > 0 && tipAcc && src.balance >= total) { move(src, tipAcc, total, 'Recompensa: tu información llevó a la captura'); return { paid: total, to: tip }; } return { paid: 0, to: null };
   },
   pay_fine({ record, acc: id }) {
     const r = T('records').find(x => x.id === record);

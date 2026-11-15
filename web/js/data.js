@@ -235,6 +235,7 @@ export const DEFAULT_SETTINGS = {
   job_reqs: { 'Policía': ['dni', 'licencia_conducir', 'licencia_armas'], 'SWAT': ['dni', 'licencia_conducir', 'licencia_armas'], 'FBI': ['dni', 'licencia_conducir', 'licencia_armas', 'titulo'],
     'CIA': ['dni', 'pasaporte', 'titulo'], 'DEA': ['dni', 'licencia_conducir', 'licencia_armas'], 'Bomberos': ['dni', 'licencia_conducir'], 'Servicios Médicos': ['dni', 'titulo'], 'DOT': ['dni', 'licencia_conducir'],
     'Taxi': ['dni', 'licencia_conducir'], 'Juez de Distrito': ['dni', 'titulo', 'licencia_juez'], 'Abogado Público': ['dni', 'titulo', 'licencia_abogado'], 'Ejército': ['dni'], 'Seguridad Pública': ['dni', 'licencia_armas'] },
+  clean_record: ['Policía', 'SWAT', 'FBI', 'CIA', 'DEA', 'Servicio Secreto', 'Seguridad Pública', 'Custodio', 'Juez de Distrito', 'Corte Suprema', 'Tribunales Inferiores', 'Abogado Público', 'Ejército', 'US Seal', 'US Navy Seal'],
   start_money: 5000, military_required: ['Policía', 'SWAT', 'FBI'], cpi: 1, fed_rate: 4.5, savings_rate: 15, job_min_minutes: 40, prison_min_per_year: 60, trial_years: 10,
   visa_days: 84, // días del juego (= 1 semana real)
   elecciones: { registro_hasta: 20, votacion_desde: 21, votacion_hasta: 27 }, // días del mes; el ganador gobierna todo el mes siguiente
