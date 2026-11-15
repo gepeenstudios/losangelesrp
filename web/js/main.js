@@ -331,7 +331,7 @@ async function boot() {
   await loadMe();
   if (!S.me) { await db.signOut(); return login(); }
   if ((db.DEMO || lvl() >= 5) && !S.ranks.length) { loading('Preparando la ciudad por primera vez…<br><small>Cargando autos, casas, trabajos y leyes. Tarda unos segundos.</small>'); await seed(); await loadMe(); }
-  db.rpc('daily_tick', {}).catch(() => {}); // cierre del día (nómina, despidos, intereses); solo corre una vez al día
+  db.rpc('daily_tick', {}).catch(() => {}); clearInterval(window._tick); window._tick = setInterval(() => db.rpc('daily_tick', {}).catch(() => {}), 5 * 60e3); // cierre de cada día del juego (cada 2 h reales); el servidor evita repetirlo
   if (S.me.banned) return wait('🔨', 'Tu cuenta está baneada. Puedes apelar desde soporte.');
   if (!S.chars.length) return lifeWizard(root, { onDone: boot }); // lo primero: crear tu vida
   if (!S.me.verified) return wait('⏳', `Hola <b>${esc(S.me.username)}</b>. Tu vida ya quedó registrada. Un admin está verificando tu Roblox <b>${esc(S.me.roblox)}</b> y tu Discord <b>${esc(S.me.discord)}</b>.`);
