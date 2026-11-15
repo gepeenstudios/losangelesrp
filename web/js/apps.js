@@ -944,7 +944,7 @@ const empleos = { id: 'empleos', name: 'LinkedIn', icon: '💼', bg: '#0a66c2,#0
       + jobs.map(j => `<div class="card"><div class="row"><b>${esc(j.title)}</b>${j.role_tag ? '<span class="tag on">Gobierno</span>' : ''}</div>
       <div class="muted">${esc(j.employer)}</div>
       <div class="pay">${j.role_tag ? `<b>${money(yr(j) / 365)}</b> al día · <b>${money(yr(j) / 12)}</b> al mes · <b>${money(yr(j))}</b> al año <small class="muted">(rango inicial; el más alto gana ${money(top(j))} al año)</small>` : `<b>${money(j.salary)}</b> al día <small class="muted">(lo paga el empleador)</small>`}</div>
-      <p>${esc(JOB_DESC[j.role_tag] || j.description || '')}</p>
+      <p>${esc(JOB_DESC[j.role_tag] || j.description || '')}</p>${set('military_required').includes(j.role_tag) ? '<p><span class="tag">🪖 Requiere Servicio militar</span></p>' : ''}
       ${mine.some(r => r.data.job_id === j.id && r.status === 'pending') ? badge('pending') : `<button class="btn sm" data-act="aplicar" data-id="${j.id}">Postularme</button>`}</div>`).join('') || '<p class="empty">No hay vacantes.</p>';
     if (tab === 'mias') body = `<ul class="list">${mine.map(r => `<li><div><b>${esc(r.data.job_title)}</b><div class="muted">${esc(r.data.employer)}${r.note ? ' · ' + esc(r.note) : ''}</div></div>${badge(r.status)}</li>`).join('') || '<p class="empty">Sin postulaciones.</p>'}</ul>`;
     if (tab === 'publicar') body = form('pub', [{ k: 'title', label: 'Puesto', req: 1 },
@@ -953,7 +953,8 @@ const empleos = { id: 'empleos', name: 'LinkedIn', icon: '💼', bg: '#0a66c2,#0
       + `<h3>Mis vacantes</h3><ul class="list">${jobs.filter(j => j.posted_by === S.char.id).map(j => `<li>${esc(j.title)} <button class="btn sm bad" data-act="cerrar" data-id="${j.id}">Cerrar</button></li>`).join('') || '<li class="muted">Ninguna</li>'}</ul>`;
     view(el, `${tabs([['ofertas', 'Vacantes'], ['mias', 'Mis postulaciones'], ['publicar', 'Publicar'], ['recibidas', 'Recibidas']], tab)}<div class="tabbody">${body}</div>`, {
       tab: d => this.render(el, d.t),
-      aplicar: d => { const j = jobs.find(x => x.id === d.id);
+      aplicar: async d => { const j = jobs.find(x => x.id === d.id);
+        if (set('military_required').includes(j.role_tag) && !approvedOf(await myRequests(), 'servicio_militar').length) throw new Error('Para postularte a ' + j.role_tag + ' primero necesitas tu Servicio militar aprobado (trámite en Gobierno → Servicio militar).');
         modal('💼 ' + esc(j.title), form('send', [{ k: 'experiencia', label: 'Experiencia', type: 'textarea', req: 1 }, { k: 'disponibilidad', label: 'Disponibilidad', req: 1 },
           { k: 'entrevista', label: 'Fecha preferida para entrevista', type: 'date', min: new Date().toISOString().slice(0, 10) }, { k: 'hora', label: 'Hora preferida (opcional)', type: 'time' }]), {
           async send(f, _, close) {
@@ -1685,8 +1686,11 @@ const archivos = { id: 'archivos', name: 'Archivos', icon: '📁', bg: '#1e90ff,
 const ajustes = { id: 'ajustes', name: 'Ajustes', icon: '⚙️', bg: '#8e8e93,#636366', show: () => true,
   async render(el) {
     let saved = {}; try { saved = JSON.parse(localStorage.getItem('rp_login') || '{}'); if (saved.u !== S.me.username) saved = {}; } catch {}
+    const hist = await db.list('user_history', { eq: { user_id: S.me.id }, limit: 50 }).catch(() => []);
     view(el, `<div class="card row">${av(S.me.avatar_url)}<div><b>${esc(S.me.username)}</b><div class="muted">Roblox: ${esc(S.me.roblox)} · Discord: ${esc(S.me.discord)}</div>
       ${S.me.staff_role ? `<span class="tag on">${STAFF_NAME[S.me.staff_role]}</span>` : ''}</div></div>
+      ${hist.length ? `<h3>Tu historial</h3><ul class="list">${hist.map(h => `<li><span class="grow">${h.kind === 'vida' ? '🧍 Vida rechazada' : '📄 Trámite rechazado'}: <b>${esc(TRAMITES[h.title.split(' · ')[0]]?.name ? TRAMITES[h.title.split(' · ')[0]].name + (h.title.includes(' · ') ? ' · ' + h.title.split(' · ')[1] : '') : h.title)}</b>
+        <div class="muted">${h.note ? 'Motivo: ' + esc(h.note) + ' · ' : ''}${fdate(h.created_at)}</div></span></li>`).join('')}</ul>` : ''}
       <h3>Fondo de pantalla</h3><div class="walls">${WALLPAPERS.map(w => `<button class="wall" style="background:${esc(w)} center/cover" data-act="wall" data-w="${esc(w)}" aria-label="Fondo"></button>`).join('')}</div>
       <form data-form="foto" class="row"><input type="file" name="img" accept="image/*" required><button class="btn sm">Usar mi foto de fondo</button></form>
       <h3>Foto de perfil</h3><form data-form="avatar" class="row"><input type="file" name="img" accept="image/*" required><button class="btn sm">Cambiar</button></form>
@@ -1746,7 +1750,9 @@ const staffApp = { id: 'staff', name: 'Panel Staff', icon: '🛡️', bg: '#8e2d
               close(); toast(`Aprobada. El bot le pone en Discord: ${roles.join(', ')}${c.extranjero ? ' · Recuérdale sacar su visa en ' + set('visa_days') + ' días del juego' : ''}`); if (c.user_id === S.me.id) return window.refreshShell?.('staff'); // es mi vida: activarla al instante
               S.all = await db.list('characters', { order: 'first_name', asc: true }); go('aprob');
             } }); },
-        rechC: async d => { await db.update('characters', d.id, { status: 'rejected' }); S.all = await db.list('characters', { order: 'first_name', asc: true }); go('aprob'); },
+        rechC: d => modal('Rechazar vida', form('r', [{ k: 'note', label: 'Motivo (lo verá la persona en su historial)', type: 'textarea' }], {}, 'Rechazar y borrar'), {
+          async r(f, _, close) { await db.rpc('reject_character', { c: d.id, note: f.note }); close(); toast('Vida rechazada: se borró y quedó en el historial de la persona');
+            S.all = await db.list('characters', { order: 'first_name', asc: true }); go('aprob'); } }),
         migr: async d => { await addRole(d.id, 'Migrante'); toast('Marcado como Migrante. El bot le pone el rol en Discord.'); S.all = await db.list('characters', { order: 'first_name', asc: true }); go('aprob'); },
       });
     }

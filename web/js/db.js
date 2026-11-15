@@ -163,6 +163,7 @@ const iso = d => new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString
 const RPC = {
   hire({ c, d }) {
     guard(isMgr(d), `Solo los mandos de ${d} pueden contratar`);
+    guard(!(setting('military_required', ['Policía', 'SWAT', 'FBI']).includes(d)) || T('requests').some(r => r.character_id === c && r.type === 'servicio_militar' && r.status === 'approved'), `Para trabajar en ${d} se necesita el Servicio militar aprobado (trámite en Gobierno)`);
     const r = ranksOf(d)[0]; guard(r, 'Departamento sin rangos');
     const e = T('employments').find(x => x.character_id === c && x.dept === d), today = iso(new Date());
     e ? Object.assign(e, { rank: r.rank, status: 'active', last_qualified: today, vacation_until: null })
@@ -297,6 +298,13 @@ const RPC = {
     if (tax > 0) move(a, gov(), Math.round(tax * 100) / 100, kind === 'property' ? 'Impuesto de transferencia de inmueble' : 'Impuesto sobre ventas (Sales Tax LA)');
     return price + Math.round(tax * 100) / 100;
   },
+  // espejo demo de los rechazos: se borra y queda en el historial del usuario
+  reject_request({ id, note }) { const r = T('requests').find(x => x.id === id); if (!r) throw new Error('La solicitud ya no existe');
+    T('user_history').push({ id: crypto.randomUUID(), user_id: r.user_id, kind: 'tramite', title: (r.data?.job_title || r.type) + ' · ' + (T('characters').find(c => c.id === r.character_id)?.first_name || ''), note: note || null, by_user: myId, created_at: now() });
+    mem.t.requests = T('requests').filter(x => x.id !== id); },
+  reject_character({ c, note }) { const ch = T('characters').find(x => x.id === c); if (!ch) throw new Error('Esa vida ya no existe'); if (ch.status === 'active') throw new Error('Esa vida ya está aprobada');
+    T('user_history').push({ id: crypto.randomUUID(), user_id: ch.user_id, kind: 'vida', title: ch.first_name + ' ' + ch.last_name, note: note || null, by_user: myId, created_at: now() });
+    mem.t.characters = T('characters').filter(x => x.id !== c); mem.t.requests = T('requests').filter(x => x.character_id !== c); },
   // espejo demo del libro de órdenes (place_order / cancel_order / pay_dividend del SQL)
   place_order({ c, company: cid, side, qty, lim = null }) {
     if (!myChars().some(x => x.id === c)) throw new Error('No es tu personaje'); const a = personal(c); if (!a) throw new Error('Necesitas tu cuenta personal');

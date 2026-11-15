@@ -25,7 +25,9 @@ const STEPS = [
 
 export function lifeWizard(host, { onDone, onCancel } = {}) {
   const d = {};
-  let i = 0;
+  let i = 0, rejected = [];
+  // vidas rechazadas recientemente: se borraron, pero la persona ve el motivo aquí y en Ajustes → Tu historial
+  db.list('user_history', { eq: { user_id: S.me?.id, kind: 'vida' }, limit: 3 }).then(r => { rejected = r.filter(h => Date.now() - new Date(h.created_at) < 7 * 864e5); if (rejected.length && i === 0) draw(); }).catch(() => {});
   const page = body => `<div class="wiz"><div class="portal reg">
     <div class="gov-top">Registro Civil de Los Ángeles · Roleplay</div>
     <header class="gov-bar">${seal}<div><b>County of Los Angeles</b><span>Registro Civil · Solicitud de registro de nacimiento</span></div>
@@ -40,7 +42,8 @@ export function lifeWizard(host, { onDone, onCancel } = {}) {
       <label class="chk"><input type="checkbox" id="decl"> Declaro que la información es verídica dentro del roleplay.</label>
       <div class="gov-actions"><button class="btn ghost" data-act="back">Atrás</button><button class="btn big" data-act="enviar">Enviar solicitud</button></div>`), acts);
     const st = STEPS[i];
-    view(host, page(`<small class="step">Paso ${i + 1} de ${STEPS.length + 1}</small><h1>${st.t}</h1><p class="lead">${st.s}</p>
+    view(host, page(`${i === 0 && rejected.length ? `<div class="notice bad-n"><b>Tu solicitud anterior fue rechazada.</b>${rejected.map(h => `<div>🧍 ${esc(h.title)}${h.note ? ` — motivo: ${esc(h.note)}` : ''}</div>`).join('')}<small>Puedes registrar una vida nueva corrigiendo lo que te indicaron.</small></div>` : ''}
+      <small class="step">Paso ${i + 1} de ${STEPS.length + 1}</small><h1>${st.t}</h1><p class="lead">${st.s}</p>
       <form data-form="next" class="form">${st.html()}<div class="gov-actions">${i ? '<button type="button" class="btn ghost" data-act="back">Atrás</button>' : ''}
       <button class="btn big" type="submit">Continuar</button></div></form>`), acts);
     host.querySelector('.gov-main input:not([type=radio]), .gov-main textarea')?.focus();

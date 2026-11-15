@@ -273,7 +273,8 @@ export async function reviewQueue(el, { types, title = 'Pendientes por revisar',
     const r = rows.find(x => x.id === d.id), note = el.querySelector(`[data-note="${d.id}"]`).value;
     let msg = '';
     if (status === 'approved') msg = (await ON_APPROVE[r.type]?.(r)) || '';
-    await db.update('requests', r.id, { status, note, reviewer_id: S.me.id, reviewed_at: new Date().toISOString() });
+    if (status === 'rejected') await db.rpc('reject_request', { id: r.id, note }); // se borra y queda en el historial de la persona
+    else await db.update('requests', r.id, { status, note, reviewer_id: S.me.id, reviewed_at: new Date().toISOString() });
     const role = status === 'approved' && TRAMITES[r.type]?.discord?.(r.data);
     if (status === 'approved' && TRAMITES[r.type]?.role && lvl() >= 3) await addRole(r.character_id, TRAMITES[r.type].role);
     toast(`${status === 'approved' ? 'Aprobado' : 'Rechazado'}. ${msg}${role ? ` · Discord: ${role}` : ''}`);

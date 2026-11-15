@@ -232,7 +232,7 @@ export const TRAMITES = {
 };
 
 export const DEFAULT_SETTINGS = {
-  start_money: 5000, cpi: 1, fed_rate: 4.5, savings_rate: 15, job_min_minutes: 40, prison_min_per_year: 60, trial_years: 10,
+  start_money: 5000, military_required: ['Policía', 'SWAT', 'FBI'], cpi: 1, fed_rate: 4.5, savings_rate: 15, job_min_minutes: 40, prison_min_per_year: 60, trial_years: 10,
   visa_days: 84, // días del juego (= 1 semana real)
   elecciones: { registro_hasta: 20, votacion_desde: 21, votacion_hasta: 27 }, // días del mes; el ganador gobierna todo el mes siguiente
   influencer_like_pay: 15, spotify_play_pay: 2,
