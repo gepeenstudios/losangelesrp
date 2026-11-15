@@ -3166,3 +3166,6 @@ grant execute on function repeal_law(uuid, uuid) to authenticated;
 
 -- Fotos de ficha (frente, perfiles y espalda) obligatorias al encarcelar.
 alter table inmates add column if not exists mugshots jsonb;
+-- La policía manda a juicio a otro personaje: el request es del acusado, no del oficial.
+drop policy if exists r_ins on requests;
+create policy r_ins on requests for insert to authenticated with check (owns_char(character_id) or (type = 'juicio' and is_police()));
