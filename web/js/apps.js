@@ -9,7 +9,7 @@ import { ico } from './icons.js';
 import { birthCert, idCard, passport, visa, vehicleReg, diploma, docNumber, homeCountry, homePassport, ssnCard, deathCert, will } from './docs.js';
 import { incomeTax, CK_RULES, JOB_DESC, TRAMITES, ROLES, STAFF, STAFF_NAME, LVL, CITIES, NATIONS, SHOP, SHOP_STORES, GUN_CLASSES, WALLPAPERS, DEFAULT_SETTINGS, SEED_MODELS, SEED_PROPS, SEED_JOBS, CAR_PHOTOS, DEPTS, PENAL_CODE } from './data.js';
 
-const ST = { revoked: 'Cancelado por la policía', cumplida: 'Cumplida', liberado: 'Liberado', fugado: 'Fugado', en_prision: 'En prisión', pending: 'Pendiente', active: 'Activo', dead: 'CK', rejected: 'Rechazado', approved: 'Aprobado', abierto: 'Abierto', tomado: 'En atención', cerrado: 'Cerrado', vacation: 'Vacaciones' };
+const ST = { preventiva: 'Prisión preventiva', revoked: 'Cancelado por la policía', cumplida: 'Cumplida', liberado: 'Liberado', fugado: 'Fugado', en_prision: 'En prisión', pending: 'Pendiente', active: 'Activo', dead: 'CK', rejected: 'Rechazado', approved: 'Aprobado', abierto: 'Abierto', tomado: 'En atención', cerrado: 'Cerrado', vacation: 'Vacaciones' };
 const badge = s => `<span class="st st-${s}">${ST[s] || s}</span>`;
 const av = (url, cls = 'av') => `<img class="${cls}" src="${esc(url || 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22/%3E')}" alt="">`;
 const skin = id => S.all.find(c => c.id === id)?.skin_url;
@@ -438,7 +438,7 @@ const expedientes = { id: 'expedientes', name: 'Expedientes', icon: '🗂️', b
         ${sec('Cuentas de banco', cAccs.length, list(cAccs, a => `<li><span class="grow">${esc(a.name || a.kind)} · ${esc(a.number || '')}</span><b>${money(a.balance)}</b></li>`))}
         ${sec('Trámites', mine1(reqs).length, list(mine1(reqs), r => `<li><span class="grow">${esc(TRAMITES[r.type]?.name || r.type)} <small class="muted">${fdate(r.created_at)}</small><div class="muted">${esc(Object.entries(r.data || {}).filter(([, v]) => typeof v !== 'object' && !/^(data:|https?:)/.test(String(v))).map(([k, v]) => k + ': ' + v).join(' · ').slice(0, 300))}</div></span>${badge(r.status)}</li>`))}
         ${sec('Antecedentes', mine1(recs).length, list(mine1(recs), r => `<li><span class="grow"><b>${esc(r.kind)}</b> ${esc(r.description)} <small class="muted">${fdate(r.created_at)} · ${esc(cname(r.officer_id))}</small></span>${r.amount ? `<b>${money(r.amount)}</b>` : ''}</li>`))}
-        ${sec('Prisión', mine1(inm).length, list(mine1(inm), i => `<li><span class="grow">${esc(i.status)} · ${pena(i.years)} (${Math.round(i.minutes)} min) · sale ${fdate(i.ends_at)}</span></li>`))}
+        ${sec('Prisión', mine1(inm).length, list(mine1(inm), i => `<li><span class="grow">${esc(i.status)} · ${pena(i.years)} (${Math.round(i.minutes)} min) · ${i.ends_at ? 'sale ' + fdate(i.ends_at) : 'en espera de juicio'}</span></li>`))}
         ${sec('Empleos', mine1(emps).length, list(mine1(emps), e => `<li><span class="grow">${esc(e.dept)} · ${esc(e.rank)} <small class="muted">desde ${fdate(e.hired_at)}</small></span>${badge(e.status === 'fired' ? 'rejected' : e.status)}</li>`))}
         ${sec('Vehículos', cVeh.length, list(cVeh, v => `<li><span class="grow">${esc(M[v.model_id]?.brand || '')} ${esc(M[v.model_id]?.model || '')} · placa ${esc(v.plate || '—')} · VIN ${esc(v.vin || '—')}</span></li>`))}
         ${sec('Propiedades', cProps.length, list(cProps, x => `<li><span class="grow">${esc(x.name)}</span><b>${money(x.price)}</b></li>`))}
@@ -1302,9 +1302,9 @@ const KIND = { advertencia: 'Advertencias', infraccion: 'Infracciones (solo mult
 const pena = y => { const m = Math.round(Number(y) * 12); if (m >= 1188) return 'Perpetua'; if (!m) return ''; const a = Math.floor(m / 12), r = m % 12;
   return [a && `${a} año${a > 1 ? 's' : ''}`, r && `${r} mes${r > 1 ? 'es' : ''}`].filter(Boolean).join(' y '); };
 const isGuard = () => isPolice() || has('Custodio');
-const left = i => Math.max(0, new Date(i.ends_at) - Date.now());
+const left = i => Math.max(0, new Date(i.ends_at) - Date.now()), since = i => Date.now() - new Date(i.started_at);
 const clockTxt = ms => { const m = Math.ceil(ms / 6e4); return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`; };
-const inPrison = i => i.status === 'en_prision' && left(i) > 0;
+const inPrison = i => i.status === 'preventiva' || (i.status === 'en_prision' && left(i) > 0);
 async function searchPeople(q) {
   q = q.trim().toLowerCase(); if (!q) return [];
   const [vehs, reqs] = await Promise.all([db.list('vehicles', { limit: 5000 }), db.list('requests', { eq: { status: 'approved' }, limit: 5000 })]);
@@ -1352,7 +1352,7 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
         <div class="muted">Nac. ${esc(c.dob)} · ${esc(c.sex)} · ${esc(c.city)} · ${esc(c.nationality)}${c.extranjero ? ' · Extranjero' : ''}</div>
         <div class="muted">ID ${docNumber(c, 'I')} · Licencia ${docNumber(c, 'D')} · Folio ${c.id.slice(0, 8).toUpperCase()}</div>
         ${(() => { const m = inm.find(i => i.mugshots)?.mugshots; return m ? `<div class="mugs">${MUG.map(([k, l]) => m[k] ? `<figure><img src="${esc(m[k])}" alt="${l}" data-act="zoom" data-src="${esc(m[k])}"><figcaption>${l}</figcaption></figure>` : '').join('')}</div>` : ''; })()}
-        ${jail ? `<div class="alert">EN PRISIÓN · le faltan ${clockTxt(left(jail))}. Si está en la calle sin fuga aprobada, repórtalo al staff (warn administrativo).
+        ${jail ? `<div class="alert">EN PRISIÓN · ${jail.status === 'preventiva' ? 'preventiva (espera juicio), lleva ' + clockTxt(since(jail)) : 'le faltan ' + clockTxt(left(jail))}. Si está en la calle sin fuga aprobada, repórtalo al staff (warn administrativo).
           <button class="btn sm bad" data-act="reportar" data-id="${jail.id}">Reportar al staff</button></div>` : ''}
         ${recs.some(r => r.kind === 'orden' && !r.paid) ? '<div class="alert">ORDEN DE ARRESTO ACTIVA</div>' : ''}</div></div>
         <h3>Documentos</h3><ul class="list">${lic.map(r => `<li><span class="li-ico">${ico(r.type)}</span><span class="grow">${esc(TRAMITES[r.type].name)} ${esc(r.data.clase || r.data.tipo || r.data.arma || r.data.placa || '')}</span><button class="btn sm bad" data-act="cancelarDoc" data-id="${r.id}" data-n="${esc(TRAMITES[r.type].name)}">Cancelar</button></li>`).join('') || '<li class="muted">Sin documentos</li>'}</ul>
@@ -1425,12 +1425,13 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
         await db.insert('records', { kind: v.kind === 'advertencia' ? 'advertencia' : v.kind, character_id: st.id, officer_id: S.char?.id || null, amount: v.kind === 'multa' || v.kind === 'arresto' ? Math.round(fine) : null, description: desc, charges });
         if (v.kind === 'arresto' && years > 0) {
           const minutes = years * Number(set('prison_min_per_year'));
-          await db.insert('inmates', { character_id: st.id, officer_id: S.char?.id || null, charges, years, minutes, mugshots: Object.fromEntries(MUG.map(([k]) => [k, v['mug_' + k]])), started_at: new Date().toISOString(), ends_at: new Date(Date.now() + minutes * 6e4).toISOString(), status: 'en_prision' });
+          await db.insert('inmates', { character_id: st.id, officer_id: S.char?.id || null, charges, years, minutes, mugshots: Object.fromEntries(MUG.map(([k]) => [k, v['mug_' + k]])), started_at: new Date().toISOString(),
+            ends_at: juicio ? null : new Date(Date.now() + minutes * 6e4).toISOString(), status: juicio ? 'preventiva' : 'en_prision', note: juicio ? 'Prisión preventiva: en espera de juicio' : null });
           const who = cname(st.id), list = charges.map(x => `• ${x.code} ${x.title}`).join('\n');
           await db.insert('posts', { app: 'news', section: 'Policía', character_id: S.char?.id || null, anonimo: true, media_url: v.mug_frente || null,
-            title: `LAPD arresta a ${who}: ${pena(years)} de prisión`,
-            body: `LOS ÁNGELES — Agentes del Departamento de Policía de Los Ángeles detuvieron a ${who}, quien fue fichado y trasladado a prisión. Le leyeron sus derechos Miranda en el lugar.\n\nCargos:\n${list}\n\nSentencia: ${pena(years)} de prisión y multa de ${money(Math.round(fine))}.${v.description ? '\n\n' + v.description : ''}\n\nOficial a cargo: ${cname(S.char?.id) || 'LAPD'}.` }).catch(() => {});
-          toast(`Arrestado: ${pena(years)} = ${Math.round(minutes)} min reales. El contador ya empezó.${juicio ? ' El caso también se envió a los jueces.' : ''}`);
+            title: juicio ? `LAPD arresta a ${who}: queda en prisión preventiva en espera de juicio` : `LAPD arresta a ${who}: ${pena(years)} de prisión`,
+            body: `LOS ÁNGELES — Agentes del Departamento de Policía de Los Ángeles detuvieron a ${who}, quien fue fichado y trasladado a prisión. Le leyeron sus derechos Miranda en el lugar.\n\nCargos:\n${list}\n\n${juicio ? `La fiscalía pide ${pena(years)} de prisión; un juez decidirá. Multa: ${money(Math.round(fine))}.` : `Sentencia: ${pena(years)} de prisión y multa de ${money(Math.round(fine))}.`}${v.description ? '\n\n' + v.description : ''}\n\nOficial a cargo: ${cname(S.char?.id) || 'LAPD'}.` }).catch(() => {});
+          toast(juicio ? 'Arrestado en prisión preventiva: el contador corre hacia arriba hasta que el juez dicte sentencia.' : `Arrestado: ${pena(years)} = ${Math.round(minutes)} min reales. El contador ya empezó.`);
         } else toast('Registrado');
         go({});
       },
@@ -1454,11 +1455,11 @@ const prision = { id: 'prision', name: 'LA County Jail', icon: '🔒', bg: '#4a4
     const now = inm.filter(inPrison), past = inm.filter(i => !inPrison(i)).slice(0, 30);
     const mine = now.filter(i => S.chars.some(c => c.id === i.character_id));
     view(el, `<div class="jail-h"><b>Los Angeles County Jail</b><span>${now.length} reclusos</span></div>
-      ${mine.map(i => `<div class="alert">Tu vida <b>${esc(cname(i.character_id))}</b> está en prisión. Le faltan <b data-left="${i.ends_at}">${clockTxt(left(i))}</b>. Si entras al servidor, debes estar dentro de la prisión.</div>`).join('')}
+      ${mine.map(i => `<div class="alert">Tu vida <b>${esc(cname(i.character_id))}</b> está en prisión. ${i.status === 'preventiva' ? `En prisión preventiva (esperando juicio) desde hace <b data-since="${i.started_at}">${clockTxt(since(i))}</b>.` : `Le faltan <b data-left="${i.ends_at}">${clockTxt(left(i))}</b>.`} Si entras al servidor, debes estar dentro de la prisión.</div>`).join('')}
       <p class="muted">La condena corre desde el arresto, aunque el preso no esté conectado. 1 mes = ${Math.round(set('prison_min_per_year') / 12)} minutos reales (1 año = ${set('prison_min_per_year')} min). Más de ${set('trial_years')} años decide un juez.</p>
-      <table class="tbl"><thead><tr><th>Recluso</th><th>Cargos</th><th>Condena</th><th>Le falta</th>${can ? '<th></th>' : ''}</tr></thead><tbody>
-      ${now.map(i => `<tr><td>${av(skin(i.character_id), 'av sm')} ${esc(cname(i.character_id))}</td><td>${(i.charges || []).map(x => esc(x.code)).join(', ')}</td><td>${pena(i.years)}</td>
-        <td><b data-left="${i.ends_at}">${clockTxt(left(i))}</b></td>${can ? `<td class="nowrap"><button class="btn sm" data-act="libre" data-id="${i.id}">Liberar</button><button class="btn sm bad" data-act="fuga" data-id="${i.id}">Fuga aprobada</button></td>` : ''}</tr>`).join('') || `<tr><td colspan="5" class="muted">Nadie en prisión.</td></tr>`}</tbody></table>
+      <table class="tbl"><thead><tr><th>Recluso</th><th>Cargos</th><th>Condena</th><th>Tiempo</th>${can ? '<th></th>' : ''}</tr></thead><tbody>
+      ${now.map(i => `<tr><td>${av(skin(i.character_id), 'av sm')} ${esc(cname(i.character_id))}</td><td>${(i.charges || []).map(x => esc(x.code)).join(', ')}</td><td>${i.status === 'preventiva' ? 'Juicio pendiente (piden ' + pena(i.years) + ')' : pena(i.years)}</td>
+        <td>${i.status === 'preventiva' ? `<span class="tag">Preventiva</span> lleva <b data-since="${i.started_at}">${clockTxt(since(i))}</b>` : `faltan <b data-left="${i.ends_at}">${clockTxt(left(i))}</b>`}</td>${can ? `<td class="nowrap"><button class="btn sm" data-act="libre" data-id="${i.id}">Liberar</button><button class="btn sm bad" data-act="fuga" data-id="${i.id}">Fuga aprobada</button></td>` : ''}</tr>`).join('') || `<tr><td colspan="5" class="muted">Nadie en prisión.</td></tr>`}</tbody></table>
       <h3>Historial</h3><ul class="list">${past.map(i => `<li><span class="grow">${esc(cname(i.character_id))} · ${pena(i.years)}</span>${badge(i.status === 'en_prision' ? 'cumplida' : i.status)}</li>`).join('') || '<li class="muted">Sin historial</li>'}</ul>`, {
       async libre(d) { await db.update('inmates', d.id, { status: 'liberado', ends_at: new Date().toISOString(), note: 'Liberado por ' + (cname(S.char?.id) || S.me.username) }); prision.render(el); },
       async fuga(d) {
@@ -1469,7 +1470,7 @@ const prision = { id: 'prision', name: 'LA County Jail', icon: '🔒', bg: '#4a4
         prision.render(el);
       },
     });
-    clearInterval(el._t); el._t = setInterval(() => { if (!el.isConnected) return clearInterval(el._t); el.querySelectorAll('[data-left]').forEach(b => b.textContent = clockTxt(Math.max(0, new Date(b.dataset.left) - Date.now()))); }, 15000);
+    clearInterval(el._t); el._t = setInterval(() => { if (!el.isConnected) return clearInterval(el._t); el.querySelectorAll('[data-left]').forEach(b => b.textContent = clockTxt(Math.max(0, new Date(b.dataset.left) - Date.now()))); el.querySelectorAll('[data-since]').forEach(b => b.textContent = clockTxt(Date.now() - new Date(b.dataset.since))); }, 15000);
   } };
 
 // ============ TAXI ============

@@ -233,7 +233,10 @@ export const ON_APPROVE = {
   },
   async juicio(r) { // aprobar = culpable: entra a prisión con los años pedidos
     const minutes = Number(r.data.anos) * Number(set('prison_min_per_year'));
-    if (r.data.preso) return `Culpable: confirma la condena de ${Math.round(r.data.anos * 12)} meses que ya está cumpliendo desde su arresto.`;
+    const prev = r.data.preso && (await db.list('inmates', { eq: { character_id: r.character_id, status: 'preventiva' } }))[0];
+    if (prev) { const ends = new Date(new Date(prev.started_at).getTime() + minutes * 6e4); // la preventiva cuenta como tiempo cumplido
+      await db.update('inmates', prev.id, { status: 'en_prision', minutes, ends_at: ends.toISOString(), note: 'Sentencia judicial (con preventiva)' });
+      return `Culpable: ${Math.round(r.data.anos * 12)} meses; ya cumplió ${Math.round((Date.now() - new Date(prev.started_at)) / 6e4)} min en preventiva y le quedan ${Math.max(0, Math.round((ends - Date.now()) / 6e4))} min.`; }
     await db.insert('inmates', { character_id: r.character_id, charges: r.data.charges || [], years: Number(r.data.anos), minutes, started_at: new Date().toISOString(), ends_at: new Date(Date.now() + minutes * 6e4).toISOString(), status: 'en_prision', note: 'Sentencia judicial' });
     await db.insert('records', { kind: 'arresto', character_id: r.character_id, amount: r.data.multa || null, description: 'Sentencia: ' + r.data.cargos, charges: r.data.charges || [] });
     for (const o of await db.list('records', { eq: { character_id: r.character_id, kind: 'orden', paid: false } })) if (o.description.startsWith('En espera de juicio')) await db.update('records', o.id, { paid: true });
@@ -274,6 +277,8 @@ export async function reviewQueue(el, { types, title = 'Pendientes por revisar',
     const r = rows.find(x => x.id === d.id), note = el.querySelector(`[data-note="${d.id}"]`).value;
     let msg = '';
     if (status === 'approved') msg = (await ON_APPROVE[r.type]?.(r)) || '';
+    if (status === 'rejected' && r.type === 'juicio' && r.data?.preso) for (const i of await db.list('inmates', { eq: { character_id: r.character_id, status: 'preventiva' } })) // inocente: sale de la preventiva
+      await db.update('inmates', i.id, { status: 'liberado', ends_at: new Date().toISOString(), note: 'Inocente: liberado por el juez' });
     if (status === 'rejected') await db.rpc('reject_request', { id: r.id, note }); // se borra y queda en el historial de la persona
     else await db.update('requests', r.id, { status, note, reviewer_id: S.me.id, reviewed_at: new Date().toISOString() });
     const role = status === 'approved' && TRAMITES[r.type]?.discord?.(r.data);
