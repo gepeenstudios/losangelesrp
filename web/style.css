@@ -987,3 +987,11 @@ tr.click{cursor:pointer}tr.click:hover{background:#ffffff08}
 .cr-plan{grid-column:1/-1}.cr-terms td,.cr-terms th{padding:6px 8px}.cr-terms input{width:auto}
 
 .notice.frz{border-color:#d0021b;background:#3a0a0f;color:#ffd7dc}
+
+.bx-addr{display:block;word-break:break-all;background:#0b1410;border:1px solid #1d4d36;color:#7dffb2;padding:8px 10px;border-radius:8px;margin:6px 0;font-family:ui-monospace,Menlo,monospace;font-size:.85em}.bx-tx{font-size:.75em;opacity:.7}
+.deep{background:#050806 !important;color:#33ff88;font-family:ui-monospace,Menlo,Consolas,monospace}
+.deep .bank-h{background:#000 repeating-linear-gradient(0deg,rgba(51,255,136,.05) 0 1px,transparent 1px 3px) !important;border:1px solid #1d5c3a;color:#33ff88;box-shadow:0 0 18px rgba(51,255,136,.15) inset}
+.deep .bank-h h2{color:#33ff88;text-shadow:0 0 8px rgba(51,255,136,.6)}.deep .bank-h small,.deep .muted{color:#1fae5c !important}
+.deep .bank-h::before{content:'> TOR//RRVA-ONION · conexión cifrada AES-256 · rastreo: desactivado';display:block;font-size:.7em;opacity:.7;margin-bottom:4px}
+.deep .tabs button{color:#1fae5c}.deep .tabs button.on{color:#33ff88;border-color:#33ff88}.deep .list li,.deep .card,.deep .tx{background:#0a120d !important;border-color:#1d5c3a !important;color:#33ff88}
+.deep input,.deep select{background:#000 !important;color:#33ff88 !important;border-color:#1d5c3a !important}.deep .btn{background:#0f3d24;color:#33ff88;border:1px solid #33ff88}.deep .chips button{background:#0a120d;color:#33ff88;border-color:#1d5c3a}.deep .chips button.on{background:#33ff88;color:#000}

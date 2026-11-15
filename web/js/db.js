@@ -435,12 +435,14 @@ const RPC = {
     if (kind === 'property') { x.for_sale = price != null; x.sale_price = price; } else x.sale_price = price;
   },
   // casino con gente (igual que pvp_* en SQL)
-  crypto_send({ c, to_char, s, amount }) {
+  crypto_addr({ c, s }) { let h = 0; for (const ch of c + s) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return ({ BTC: 'bc1q', ETH: '0x', SOL: 'So1', XRP: 'r' }[s] || s.toLowerCase() + '1') + (h.toString(16) + c.replace(/-/g, '')).slice(0, 34); },
+  crypto_send({ c, addr, s, amount }) {
+    const to_char = T('characters').find(x => x.status === 'active' && RPC.crypto_addr({ c: x.id, s }) === addr)?.id; guard(to_char, `Esa dirección de ${s} no existe`);
     const h = T('crypto_hold').find(x => x.character_id === c && x.sym === s), q = +amount; guard(to_char && to_char !== c, 'Destinatario no válido'); guard(h && h.qty >= q && q > 0, 'No tienes tanto ' + s);
     const part = h.cost * q / h.qty; h.qty -= q; h.cost -= part; const r = T('crypto_hold').find(x => x.character_id === to_char && x.sym === s);
     r ? (r.qty += q, r.cost += part) : T('crypto_hold').push({ character_id: to_char, sym: s, qty: q, cost: part });
     const p = T('crypto_coins').find(x => x.sym === s)?.price || 0; T('crypto_trades').push({ id: crypto.randomUUID(), character_id: c, sym: s, side: 'send', qty: q, price: p, usd: q * p, created_at: now() });
-    return { qty: q, usd: q * p };
+    return { qty: q, fee: 0, usd: q * p, txid: crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '') };
   },
   pvp_create({ c, game, amount, maxp }) {
     guard(amount >= 1, 'La apuesta mínima es $1'); guard(!T('casino_tables').some(t => t.host === c && t.status === 'open'), 'Ya tienes una mesa abierta');
