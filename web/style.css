@@ -985,3 +985,5 @@ tr.click{cursor:pointer}tr.click:hover{background:#ffffff08}
 .poster-f{font-size:.65em;opacity:.8}
 .sb-h{display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;padding:10px 12px;border-radius:10px;background:linear-gradient(90deg,#8b5a2b,#3e2410);color:#fff;margin-bottom:8px}
 .cr-plan{grid-column:1/-1}.cr-terms td,.cr-terms th{padding:6px 8px}.cr-terms input{width:auto}
+
+.notice.frz{border-color:#d0021b;background:#3a0a0f;color:#ffd7dc}

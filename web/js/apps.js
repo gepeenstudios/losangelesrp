@@ -82,7 +82,11 @@ const accLabel = a => a.kind === 'personal' ? 'Cuenta personal' : a.kind === 'sa
 const banco = { id: 'banco', name: 'RRVA', icon: '🏦', bg: '#004481,#1464a5', show: () => true,
   async render(el, st = { tab: 'mov' }) {
     if (!needChar(el)) return;
-    const accs = await myAccounts(), cur = accs.find(a => a.id === st.acc) || accs[0];
+    const [accs, ords, jail] = await Promise.all([myAccounts(), db.list('records', { eq: { character_id: S.char.id, kind: 'orden', paid: false } }).catch(() => []),
+      db.list('inmates', { eq: { character_id: S.char.id } }).catch(() => [])]);
+    const wanted = ords.length > 0, jailed = jail.some(i => i.status === 'preventiva' || (i.status === 'en_prision' && new Date(i.ends_at) > Date.now()));
+    const frozen = a => jailed || (wanted && ['personal', 'savings'].includes(a.kind)); // igual que acc_guard en el servidor
+    const cur = accs.find(a => a.id === st.acc) || (wanted && accs.find(a => a.kind === 'encrypted')) || accs[0];
     if (!cur) { el.innerHTML = '<p class="empty">Tu cuenta RRVA se abre cuando un admin aprueba tu vida.</p>'; return; }
     const go = p => banco.render(el, { ...st, acc: cur.id, ...p });
     const FK = 'rrva_favs_' + S.char.id, favs = JSON.parse(localStorage.getItem(FK) || '[]');
@@ -92,6 +96,8 @@ const banco = { id: 'banco', name: 'RRVA', icon: '🏦', bg: '#004481,#1464a5', 
         .sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 80);
       body = tx.length ? `<ul class="list mov">${tx.map(t => { const out = t.from_acc === cur.id; return `<li><span class="mv-ico ${out ? 'out' : 'in'}">${out ? '↗' : '↙'}</span><div class="grow"><b>${esc(t.concept)}</b><div class="muted">${fdate(t.created_at)}</div></div>
         <b class="${out ? 'neg' : 'pos'}">${out ? '−' : '+'}${money(t.amount)}</b></li>`; }).join('')}</ul>` : '<p class="empty">Sin movimientos todavía.</p>';
+    } else if (st.tab === 'send' && frozen(cur)) {
+      body = `<div class="notice frz"><b>🔒 Esta cuenta está congelada.</b> ${jailed ? 'Estás en prisión: no puedes mover tu dinero hasta que salgas.' : 'Tienes una orden de arresto activa. Usa tu <b>Cuenta encriptada 🔐</b> para transferir.'}</div>`;
     } else if (st.tab === 'send') {
       const tx = st.tx || {}, step = st.step || 'dest';
       if (step === 'dest') body = `<div class="tx"><h3>Nueva transferencia</h3><p class="muted">Desde ${esc(accLabel(cur))} ${last4(cur.number)}</p>
@@ -173,8 +179,8 @@ const banco = { id: 'banco', name: 'RRVA', icon: '🏦', bg: '#004481,#1464a5', 
     view(el, `<div class="bank-h">${onCC ? `<div class="row"><small class="grow">Tarjeta de crédito RRVA ${last4(ccard.number)}</small><small>${Math.round(ccard.apr * 100)}% anual</small></div>
       <small>Crédito disponible</small><h2>${money(Math.max(0, ccard.credit_limit - ccard.owed))}</h2><small>Debes ${money(ccard.owed)} de una línea de ${money(ccard.credit_limit)}</small>`
       : `<div class="row"><small class="grow">${esc(accLabel(cur))}</small><button class="link light" data-act="copyacc">Cuenta ${cur.number} ⧉</button></div>
-      <small>Saldo disponible</small><h2>${money(cur.balance)}</h2>`}
-      ${accs.length > 1 || ccard ? `<div class="chips">${accs.map(a => `<button data-act="acc" data-id="${a.id}" class="${a.id === cur.id && !onCC ? 'on' : ''}">${a.kind === 'personal' ? 'Personal' : a.kind === 'savings' ? 'Ahorro' : a.kind === 'encrypted' ? '🔐 Encriptada' : esc(a.name)}</button>`).join('')}${ccard ? `<button data-act="tab" data-t="credito" class="${onCC ? 'on' : ''}">💳 Crédito</button>` : ''}</div>` : ''}</div>
+      <small>${frozen(cur) ? '🔒 CONGELADA · saldo' : 'Saldo disponible'}</small><h2>${money(cur.balance)}</h2>${frozen(cur) ? `<small>${jailed ? 'Estás en prisión: no puedes usar tu dinero.' : 'Orden de arresto activa: usa tu Cuenta encriptada 🔐.'}</small>` : ''}`}
+      ${accs.length > 1 || ccard ? `<div class="chips">${accs.map(a => `<button data-act="acc" data-id="${a.id}" class="${a.id === cur.id && !onCC ? 'on' : ''}">${frozen(a) ? '🔒 ' : ''}${a.kind === 'personal' ? 'Personal' : a.kind === 'savings' ? 'Ahorro' : a.kind === 'encrypted' ? '🔐 Encriptada' : esc(a.name)}</button>`).join('')}${ccard ? `<button data-act="tab" data-t="credito" class="${onCC ? 'on' : ''}">💳 Crédito</button>` : ''}</div>` : ''}</div>
       ${tabs([['mov', 'Movimientos'], ['send', 'Transferir'], ['ahorro', 'Ahorro e intereses'], ['multas', 'Multas'], ['imp', 'Impuestos'], ['tarjeta', 'Tarjeta'], ['credito', 'Crédito']], st.tab)}${body}`, {
       async ahorro() { await db.rpc('open_savings', { c: S.char.id }); toast('Cuenta de ahorro abierta'); go({}); },
       tab: d => banco.render(el, { tab: d.t, acc: cur.id }),
