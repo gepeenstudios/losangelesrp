@@ -967,12 +967,13 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
           ${r.kind === 'orden' && !r.paid ? `<button class="btn sm" data-act="cumplir" data-id="${r.id}">Cumplida</button>` : ''}</li>`).join('') || '<li class="muted">Limpio</li>'}</ul>
         <h3>Procesar</h3><form data-form="procesar" class="form">${fieldsHTML([{ k: 'kind', label: 'Acción', type: 'select', req: 1, def: 'multa',
           options: [['advertencia', 'Advertencia'], ['multa', 'Multa'], ['arresto', 'Arresto (multa + prisión)'], ['orden', 'Orden de arresto']] }])}
-          <div class="charges">${Object.entries(KIND).map(([k, l]) => `<details ${k === 'infraccion' ? 'open' : ''}><summary>${l}</summary>${code.filter(x => x.kind === k).map(x => `<label class="chk charge" title="${esc(x.notes || '')}"><input type="checkbox" name="cargo" value="${esc(x.code)}" data-fine="${x.fine}" data-years="${x.years}" data-lic="${x.lic ? 1 : ''}">
+          <p class="muted" data-adv hidden>Advertencia: no lleva multa ni prisión, solo queda en su historial. Escribe abajo el motivo.</p>
+          <div data-pen><div class="charges">${Object.entries(KIND).filter(([k]) => code.some(x => x.kind === k)).map(([k, l]) => `<details ${k === 'infraccion' ? 'open' : ''}><summary>${l}</summary>${code.filter(x => x.kind === k).map(x => `<label class="chk charge" title="${esc(x.notes || '')}"><input type="checkbox" name="cargo" value="${esc(x.code)}" data-fine="${x.fine}" data-years="${x.years}" data-lic="${x.lic ? 1 : ''}">
             <b>${esc(x.code)}</b> ${esc(x.title)}${x.lic ? ' <span class="tag">licencia</span>' : ''}${x.notes ? ` <small class="muted">· ${esc(x.notes)}</small>` : ''}<span class="grow"></span><small>${[x.fine ? money(x.fine * cpi()) : '', pena(x.years)].filter(Boolean).join(' · ')}</small></label>`).join('')}</details>`).join('')}</div>
           <div class="row gap wrap"><label class="chk"><input type="checkbox" name="atenuante"> Atenuante (Art. 4): coopera, confiesa o repara el daño · −30 % de multa</label>
           <label class="chk"><input type="checkbox" name="agravante"> Agravante (Art. 5): reincidente, insulta a la autoridad o discrimina · +11 meses de prisión (o +$2,500 si no hay prisión)</label>
           <label class="chk" data-licbox hidden><input type="checkbox" name="quitarLic" checked> Retirar su licencia de conducir (los cargos marcados con «licencia» lo permiten)</label></div>
-          <div class="totals" data-totals>Selecciona cargos</div>${fieldsHTML([{ k: 'description', label: 'Narrativa / detalles', type: 'textarea', req: 1 }])}
+          <div class="totals" data-totals>Selecciona cargos</div></div>${fieldsHTML([{ k: 'description', label: 'Narrativa / detalles', type: 'textarea', req: 1 }])}
           <button class="btn" type="submit">Registrar</button></form>`;
     } else if (st.tab === 'buscados') {
       const o = await db.list('records', { eq: { kind: 'orden', paid: false } });
@@ -994,6 +995,10 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
         toast('Reporte enviado al staff');
       },
       async procesar(v, form) {
+        if (v.kind === 'advertencia') { // solo historial: sin cargos, multa, prisión ni licencia
+          await db.insert('records', { kind: 'advertencia', character_id: st.id, officer_id: S.char?.id || null, amount: null, description: v.description, charges: [] });
+          return toast('Advertencia registrada en su historial'), go({});
+        }
         const picked = [...form.querySelectorAll('[name=cargo]:checked')].map(i => code.find(x => x.code === i.value));
         if (!picked.length && v.kind !== 'orden') throw new Error('Selecciona al menos un cargo');
         let fine = picked.reduce((s, x) => s + Number(x.fine), 0) * cpi(), years = picked.reduce((s, x) => s + Number(x.years), 0);
@@ -1003,7 +1008,7 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
         if (v.quitarLic && picked.some(x => x.lic)) { const lic = (await db.list('requests', { eq: { character_id: st.id, type: 'licencia_conducir', status: 'approved' } }))[0];
           if (lic) { await db.rpc('revoke_doc', { r: lic.id, motivo: picked.filter(x => x.lic).map(x => x.code + ' ' + x.title).join(', '), officer: S.char?.id || null }); toast('Licencia de conducir retirada'); } }
         const charges = picked.map(x => ({ code: x.code, title: x.title })), desc = `${charges.map(x => x.code + ' ' + x.title).join(', ')}${v.description ? ' — ' + v.description : ''}`;
-        if (v.kind !== 'orden' && years > Number(set('trial_years'))) { // más de N años: juicio sí o sí, aunque hayan elegido multa o advertencia
+        if (v.kind !== 'orden' && years > Number(set('trial_years'))) { // más de N años: juicio sí o sí, aunque hayan elegido multa
           await db.insert('requests', { type: 'juicio', dept: TRAMITES.juicio.dept, character_id: st.id, data: { acusado: cname(st.id), cargos: desc, anos: years, multa: Math.round(fine), oficial: cname(S.char?.id), charges } });
           await db.insert('records', { kind: 'orden', character_id: st.id, officer_id: S.char?.id || null, description: 'En espera de juicio: ' + desc, charges });
           return toast(`Son ${pena(years)}: requiere juicio. Se envió el caso a los jueces y quedó con orden de arresto.`), go({});
@@ -1019,7 +1024,8 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
     });
     const box = el.querySelector('[data-totals]');
     el.querySelector('form[data-form=procesar]')?.addEventListener('change', () => {
-      const fm = el.querySelector('form[data-form=procesar]'), p = [...el.querySelectorAll('[name=cargo]:checked')];
+      const fm = el.querySelector('form[data-form=procesar]'), p = [...el.querySelectorAll('[name=cargo]:checked')], adv = fm.kind.value === 'advertencia';
+      el.querySelector('[data-pen]').hidden = adv; el.querySelector('[data-adv]').hidden = !adv;
       let f = p.reduce((s, i) => s + Number(i.dataset.fine), 0) * cpi(), y = p.reduce((s, i) => s + Number(i.dataset.years), 0);
       if (fm.atenuante.checked) f *= 0.7; if (fm.agravante.checked) y > 0 ? y += 11 / 12 : f += 2500 * cpi();
       el.querySelector('[data-licbox]').hidden = !p.some(i => i.dataset.lic);
