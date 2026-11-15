@@ -331,7 +331,7 @@ async function boot() {
   await loadMe();
   if (!S.me) { await db.signOut(); return login(); }
   if ((db.DEMO || lvl() >= 5) && !S.ranks.length) { loading('Preparando la ciudad por primera vez…<br><small>Cargando autos, casas, trabajos y leyes. Tarda unos segundos.</small>'); await seed(); await loadMe(); }
-  db.rpc('daily_tick', {}).catch(() => {}); clearInterval(window._tick); window._tick = setInterval(() => db.rpc('daily_tick', {}).catch(() => {}), 5 * 60e3); // cierre de cada día del juego (cada 2 h reales); el servidor evita repetirlo
+  db.rpc('daily_tick', {}).catch(() => {}); clearInterval(window._tick); window._tick = setInterval(() => { db.rpc('daily_tick', {}).catch(() => {}); db.rpc('estate_expire', {}).catch(() => {}); }, 5 * 60e3); // cierre de cada día del juego (cada 2 h reales); el servidor evita repetirlo
   if (S.me.banned) return wait('🔨', 'Tu cuenta está baneada. Puedes apelar desde soporte.');
   if (!S.chars.length) return lifeWizard(root, { onDone: boot }); // lo primero: crear tu vida
   if (!S.me.verified) return wait('⏳', `Hola <b>${esc(S.me.username)}</b>. Tu vida ya quedó registrada. Un admin está verificando tu Roblox <b>${esc(S.me.roblox)}</b> y tu Discord <b>${esc(S.me.discord)}</b>.`);
@@ -345,9 +345,13 @@ async function checkMessages(first) {
   const ids = S.chars.filter(c => c.status === 'active').map(c => c.id); if (!ids.length) return;
   const key = 'rp_lastmsg_' + S.me.id, last = localStorage.getItem(key) || '';
   const inbox = (await Promise.all(ids.map(id => db.list('messages', { eq: { to_char: id }, limit: 20 })))).flat().filter(m => m.created_at > last).sort((a, b) => a.created_at.localeCompare(b.created_at));
+  // mensajes de grupos (WhatsApp) que no son míos
+  const gids = (await Promise.all(ids.map(id => db.list('chat_group_members', { eq: { character_id: id }, order: null }).catch(() => [])))).flat().map(m => m.group_id);
+  const ginbox = (await Promise.all([...new Set(gids)].map(g => db.list('group_messages', { eq: { group_id: g }, limit: 10 }).catch(() => [])))).flat().filter(m => m.created_at > last && !ids.includes(m.from_char));
+  inbox.push(...ginbox.map(m => ({ ...m, via: 'grupo' }))); inbox.sort((a, b) => a.created_at.localeCompare(b.created_at));
   if (inbox.length) localStorage.setItem(key, inbox.at(-1).created_at);
   if (first && !last) return; // la primera vez solo marca dónde vamos
-  inbox.slice(-3).forEach(m => notify({ icon: `<img class="av sm" src="${esc(S.all.find(c => c.id === m.from_char)?.skin_url || '')}" alt="">`, title: (m.via === 'insta' ? 'Instagram · ' : 'Mensajes · ') + cname(m.from_char), body: m.body,
+  inbox.slice(-3).forEach(m => notify({ icon: `<img class="av sm" src="${esc(S.all.find(c => c.id === m.from_char)?.skin_url || '')}" alt="">`, title: (m.via === 'grupo' ? '👥 ' : m.via === 'insta' ? 'Instagram · ' : 'Mensajes · ') + cname(m.from_char), body: m.body,
     onclick: () => openApp(m.via === 'insta' ? 'insta' : 'mensajes') }));
 }
 // 911: alerta a las unidades cuando entra una llamada y a quien llamó cuando le contestan

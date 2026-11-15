@@ -26,16 +26,42 @@ const vida = { id: 'vida', name: 'Mi Vida', icon: '🧬', bg: '#7b2ff7,#f107a3',
     const card = c => `<div class="card char ${S.char?.id === c.id ? 'sel' : ''}">${av(c.skin_url)}<div class="grow">
         <b>${esc(c.first_name)} ${esc(c.last_name)}</b><div class="muted">${esc(c.city || '')} · ${esc(c.nationality || '')} · nac. ${esc(c.dob || '')}</div>
         <div>${badge(c.status)} ${(c.roles || []).map(r => `<span class="tag">${esc(r)}</span>`).join('')}</div></div>`;
+    // familia, heredero y herencias de la vida en uso
+    const me = S.char?.status === 'active' ? S.char : null;
+    const [fams, fmem, inh] = me ? await Promise.all([db.list('families', { order: null }).catch(() => []), db.list('family_members', { order: null, limit: 5000 }).catch(() => []), db.list('inheritances', { limit: 20 }).catch(() => [])]) : [[], [], []];
+    const myF = fmem.find(m => m.character_id === me?.id && m.status === 'active'), fam = myF && fams.find(f => f.id === myF.family_id), invites = fmem.filter(m => m.character_id === me?.id && m.status === 'pending');
+    const others = charOpts(c => c.status === 'active' && c.id !== me?.id);
+    const ROUTE = { heredero: 'a su heredero', familia: 'a su familia', siguiente_vida: 'esperando tu siguiente vida', tesoreria: 'a la Tesorería' };
+    const famHTML = !me ? '' : `<h3>👨‍👩‍👧 Familia</h3>
+      ${invites.map(i => `<div class="card row"><span class="grow">📩 Te invitaron a la familia <b>${esc(fams.find(f => f.id === i.family_id)?.name || '')}</b> como <b>${esc(i.relation)}</b> (de ${esc(cname(i.invited_by))})</span>
+        <button class="btn sm ok" data-act="famsi" data-f="${i.family_id}">Aceptar</button><button class="btn sm ghost" data-act="famno" data-f="${i.family_id}">Rechazar</button></div>`).join('')}
+      ${fam ? `<div class="card"><div class="row"><b class="grow">Familia ${esc(fam.name)}</b><button class="btn sm ghost" data-act="famsalir">Salir</button></div>
+          <ul class="list">${fmem.filter(m => m.family_id === fam.id).map(m => `<li>${av(skin(m.character_id), 'av sm')} <span class="grow">${esc(cname(m.character_id))}</span><span class="tag">${esc(m.relation)}</span>${m.status === 'pending' ? badge('pending') : ''}</li>`).join('')}</ul>
+          <form class="row form" data-form="faminv"><select name="who" required><option value="">Invitar a…</option>${others.map(([i, n]) => `<option value="${i}">${esc(n)}</option>`).join('')}</select>
+            <select name="relation">${['Esposo/a', 'Pareja', 'Hijo/a', 'Padre', 'Madre', 'Hermano/a', 'Abuelo/a', 'Nieto/a', 'Tío/a', 'Primo/a', 'Familiar'].map(r => `<option>${r}</option>`).join('')}</select><button class="btn sm">Invitar</button></form>
+          <p class="muted">La familia tiene su propio grupo en Mensajes. Si mueres sin heredero, tu familia se reparte tu dinero y tus bienes.</p></div>`
+        : `<form class="card row form" data-form="famnueva"><input name="name" placeholder="Apellido o nombre de tu familia" required><button class="btn">Crear familia</button></form>`}
+      <h3>📜 Heredero</h3><form class="card row form" data-form="heredero"><span class="grow muted">Si tu personaje muere, todo lo tuyo pasa a:</span>
+        <select name="h"><option value="">— Nadie (va a mi familia) —</option>${others.map(([i, n]) => `<option value="${i}" ${me.heir === i ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select><button class="btn sm">Guardar</button></form>
+      ${inh.length ? `<h3>Herencias</h3><ul class="list">${inh.map(i => `<li><span class="grow">⚱️ Herencia de <b>${esc(cname(i.from_char))}</b> ${ROUTE[i.route] || i.route}${i.recipients?.length ? ': ' + i.recipients.map(r => esc(cname(r))).join(', ') : ''}
+        <small class="muted">${fdate(i.created_at)}${i.debt_paid > 0 ? ' · deudas pagadas ' + money(i.debt_paid) : ''}</small></span><b>${money(i.money)}</b></li>`).join('')}</ul>` : ''}`;
     view(el, `<div class="row"><h3 class="grow">Mis vidas</h3><button class="btn" data-act="nuevo">+ Nueva vida</button></div>
       <p class="muted">Cada vida (second role) es una persona distinta en la ciudad, aunque uses el mismo Roblox. Un admin debe aprobarla.</p>
       ${alive.map(c => card(c) + (c.status === 'active' && S.char?.id !== c.id ? `<button class="btn sm" data-act="usar" data-id="${c.id}">Usar esta vida</button>` : S.char?.id === c.id ? '<span class="tag on">En uso</span>' : '')
         + (c.status === 'active' ? `<button class="btn sm ghost" data-act="autock" data-id="${c.id}">Auto-CK</button>` : '') + '</div>').join('')
         || '<p class="empty">No tienes vidas activas. Crea una nueva.</p>'}
-      ${dead.length ? `<h3>Vidas perdidas (CK)</h3><p class="muted">Esta vida ya no se puede usar. Sus datos, dinero y bienes quedan guardados por si ganas una apelación.</p>
+      ${famHTML}
+      ${dead.length ? `<h3>Vidas perdidas (CK)</h3><p class="muted">Esta vida ya no se puede usar. Al morir se pagaron sus deudas y su dinero y bienes pasaron a su heredero, a su familia o a tu siguiente vida (si la registras en 7 días); si no, a la Tesorería.</p>
         ${dead.map(c => card(c) + (autos.some(r => r.character_id === c.id && r.type === 'autock') ? '<span class="tag">Auto-CK</span>' : appeals.some(r => r.character_id === c.id && r.status === 'pending') ? badge('pending') : `<button class="btn sm" data-act="apelar" data-id="${c.id}">Apelar CK</button>`) + (lvl() >= 3 ? `<button class="btn sm bad" data-act="borrar" data-id="${c.id}">Borrar</button>` : '') + '</div>').join('')}` : ''}`, {
       borrar: async d => { if (!await ask('¿Borrar esta vida para siempre? Ya no se podrá apelar.')) return;
         try { await db.rpc('delete_char', { c: d.id }); } catch (e) { return toast(e.message); } toast('Vida borrada'); await window.liveRefresh?.(); vida.render(el); },
       nuevo: openWizardOverlay,
+      famnueva: async f => { await db.rpc('family_create', { c: me.id, name: f.name }); toast('Familia creada 👨‍👩‍👧 (y su grupo en Mensajes)'); vida.render(el); },
+      faminv: async f => { await db.rpc('family_invite', { c: me.id, who: f.who, relation: f.relation }); toast('Invitación enviada'); vida.render(el); },
+      famsi: async d => { await db.rpc('family_respond', { c: me.id, f: d.f, accept: true }); toast('¡Ya eres parte de la familia!'); vida.render(el); },
+      famno: async d => { await db.rpc('family_respond', { c: me.id, f: d.f, accept: false }); vida.render(el); },
+      famsalir: async () => { if (!await ask('¿Salir de tu familia?')) return; await db.rpc('family_leave', { c: me.id }); vida.render(el); },
+      heredero: async f => { await db.rpc('set_heir', { c: me.id, h: f.h || null }); toast(f.h ? 'Heredero guardado' : 'Sin heredero: todo irá a tu familia'); await window.liveRefresh?.(); vida.render(el); },
       usar: d => { localStorage.setItem('rp_char', d.id); window.refreshShell?.('vida'); },
       apelar: d => openTramite('apelacion_ck', { charId: d.id }, () => this.render(el)),
       autock: d => { const c = S.chars.find(x => x.id === d.id);
@@ -619,16 +645,34 @@ const licencias = docApp('licencias', 'Licencias', '#0f9d58,#0a7a43', 'lic', () 
 const mensajes = { id: 'mensajes', name: 'Mensajes', icon: '💬', bg: '#34c759,#30b350', show: () => true,
   async render(el, other) {
     if (!needChar(el)) return;
-    const me = S.char.id;
+    const me = S.char.id, isG = typeof other === 'string' && other.startsWith('g:'), gid = isG ? other.slice(2) : null;
     const all = [...await db.list('messages', { eq: { from_char: me } }), ...await db.list('messages', { eq: { to_char: me } })].filter(m => !m.via).sort((a, b) => a.created_at.localeCompare(b.created_at));
     const convs = [...new Set(all.map(m => m.from_char === me ? m.to_char : m.from_char))];
-    const thread = other ? all.filter(m => [m.from_char, m.to_char].includes(other)) : [];
+    // grupos donde estoy (WhatsApp)
+    const gm = await db.list('chat_group_members', { order: null, limit: 5000 }).catch(() => []), myG = gm.filter(m => m.character_id === me).map(m => m.group_id);
+    const groups = (await db.list('chat_groups', { order: null }).catch(() => [])).filter(g => myG.includes(g.id));
+    const gmsgs = gid ? (await db.list('group_messages', { eq: { group_id: gid }, order: 'created_at', limit: 300 })).reverse() : [];
+    const group = gid && groups.find(g => g.id === gid), members = gid ? gm.filter(m => m.group_id === gid) : [], amAdmin = members.some(m => m.character_id === me && m.admin);
+    const thread = other && !isG ? all.filter(m => [m.from_char, m.to_char].includes(other)) : [];
+    const bubbles = isG ? gmsgs.map(m => `<div class="msg ${m.from_char === me ? 'me' : ''}">${m.from_char !== me ? `<b class="g-from">${esc(cname(m.from_char))}</b>` : ''}${esc(m.body)}<small>${fdate(m.created_at)}</small></div>`).join('')
+      : thread.map(m => `<div class="msg ${m.from_char === me ? 'me' : ''}">${esc(m.body)}<small>${fdate(m.created_at)}</small></div>`).join('');
     view(el, `<div class="split wa ${other ? 'has-chat' : ''}"><aside><form data-form="nuevo" class="row"><select name="to" required><option value="">Nuevo chat…</option>${charOpts(c => c.status === 'active' && c.id !== me).map(([i, n]) => `<option value="${i}">${esc(n)}</option>`).join('')}</select><button class="btn sm">Abrir</button></form>
-      ${convs.map(id => `<button class="conv ${id === other ? 'on' : ''}" data-act="abrir" data-id="${id}">${av(skin(id), 'av sm')} ${esc(cname(id))}</button>`).join('') || '<p class="empty">Sin chats</p>'}</aside>
-      <section>${other ? `<header class="wa-h"><button class="wa-back" data-act="atras" aria-label="Volver a los chats">‹</button>${av(skin(other), 'av sm')}<b>${esc(cname(other))}</b></header><div class="thread">${thread.map(m => `<div class="msg ${m.from_char === me ? 'me' : ''}">${esc(m.body)}<small>${fdate(m.created_at)}</small></div>`).join('')}</div>
+      <button class="btn sm ghost wa-newg" data-act="nuevoGrupo">👥 Nuevo grupo</button>
+      ${groups.map(g => `<button class="conv ${'g:' + g.id === other ? 'on' : ''}" data-act="abrir" data-id="g:${g.id}"><span class="av sm g-av">👥</span> ${esc(g.name)}</button>`).join('')}
+      ${convs.map(id => `<button class="conv ${id === other ? 'on' : ''}" data-act="abrir" data-id="${id}">${av(skin(id), 'av sm')} ${esc(cname(id))}</button>`).join('') || (groups.length ? '' : '<p class="empty">Sin chats</p>')}</aside>
+      <section>${other ? `<header class="wa-h"><button class="wa-back" data-act="atras" aria-label="Volver a los chats">‹</button>${isG ? '<span class="av sm g-av">👥</span>' : av(skin(other), 'av sm')}<b class="grow">${esc(isG ? group?.name || 'Grupo' : cname(other))}</b>
+          ${isG ? `<small class="muted">${members.length} integrantes</small>${amAdmin ? '<button class="btn sm ghost" data-act="gAdd">+ Agregar</button>' : ''}<button class="btn sm ghost" data-act="gSalir">Salir</button>` : ''}</header>
+        ${isG ? `<div class="g-members muted">${members.map(m => esc(cname(m.character_id)) + (m.admin ? ' (admin)' : '')).join(' · ')}</div>` : ''}
+        <div class="thread">${bubbles}</div>
       <form data-form="send" class="row"><input name="body" required placeholder="Escribe un mensaje…" autocomplete="off"><button class="btn">Enviar</button></form>` : '<p class="empty">Elige un chat</p>'}</section></div>`, {
       nuevo: d => mensajes.render(el, d.to), abrir: d => mensajes.render(el, d.id), atras: () => mensajes.render(el),
-      async send(d) { await db.insert('messages', { from_char: me, to_char: other, body: d.body }); mensajes.render(el, other); },
+      async send(d) { if (isG) await db.insert('group_messages', { group_id: gid, from_char: me, body: d.body }); else await db.insert('messages', { from_char: me, to_char: other, body: d.body }); mensajes.render(el, other); },
+      nuevoGrupo: () => modal('Nuevo grupo', `<form data-form="crear" class="form">${fieldsHTML([{ k: 'name', label: 'Nombre del grupo', req: 1 }])}<div class="fld"><span>Integrantes</span><div class="g-pick">${charOpts(c => c.status === 'active' && c.id !== me).map(([i, n]) => `<label class="chk"><input type="checkbox" name="m" value="${i}"> ${esc(n)}</label>`).join('')}</div></div><button class="btn">Crear grupo</button></form>`, {
+        async crear(f, form, close) { const ids = [...(form.querySelectorAll ? form : document).querySelectorAll('.modal .g-pick input:checked')].map(x => x.value);
+          const g = await db.rpc('group_create', { c: me, name: f.name, members: ids }); close(); toast('Grupo creado 👥'); mensajes.render(el, 'g:' + g); } }),
+      gAdd: () => modal('Agregar al grupo', form('add', [{ k: 'who', label: 'Persona', type: 'select', options: charOpts(c => c.status === 'active' && !members.some(m => m.character_id === c.id)), req: 1 }]), {
+        async add(f, _, close) { await db.rpc('group_add', { c: me, g: gid, who: f.who }); close(); mensajes.render(el, other); } }),
+      async gSalir() { if (!await ask('¿Salir del grupo?')) return; await db.rpc('group_leave', { c: me, g: gid }); mensajes.render(el); },
     });
     el.querySelector('.thread')?.scrollTo(0, 1e6);
   } };

@@ -297,6 +297,28 @@ const RPC = {
     if (tax > 0) move(a, gov(), Math.round(tax * 100) / 100, kind === 'property' ? 'Impuesto de transferencia de inmueble' : 'Impuesto sobre ventas (Sales Tax LA)');
     return price + Math.round(tax * 100) / 100;
   },
+  // espejo demo de familias, heredero y grupos (la herencia al morir solo corre en el servidor)
+  group_create({ c, name, members = [] }) { if (!myChars().some(x => x.id === c)) throw new Error('No es tu personaje'); if (!String(name || '').trim()) throw new Error('Ponle nombre al grupo');
+    const g = { id: crypto.randomUUID(), name: name.trim(), created_by: c, created_at: now() }; T('chat_groups').push(g); T('chat_group_members').push({ group_id: g.id, character_id: c, admin: true, created_at: now() });
+    for (const m of members) if (m !== c) T('chat_group_members').push({ group_id: g.id, character_id: m, admin: false, created_at: now() }); return g.id; },
+  group_add({ c, g, who }) { if (!T('chat_group_members').some(m => m.group_id === g && m.character_id === c && m.admin)) throw new Error('Solo los admins del grupo agregan gente');
+    if (!T('chat_group_members').some(m => m.group_id === g && m.character_id === who)) T('chat_group_members').push({ group_id: g, character_id: who, admin: false, created_at: now() }); },
+  group_leave({ c, g }) { mem.t.chat_group_members = T('chat_group_members').filter(m => !(m.group_id === g && m.character_id === c));
+    if (!T('chat_group_members').some(m => m.group_id === g)) mem.t.chat_groups = T('chat_groups').filter(x => x.id !== g); else if (!T('chat_group_members').some(m => m.group_id === g && m.admin)) T('chat_group_members').find(m => m.group_id === g).admin = true; },
+  family_create({ c, name }) { if (T('family_members').some(m => m.character_id === c && m.status === 'active')) throw new Error('Ya perteneces a una familia'); if (!String(name || '').trim()) throw new Error('Ponle nombre a tu familia');
+    const g = RPC.group_create({ c, name: 'Familia ' + name.trim() }), f = { id: crypto.randomUUID(), name: name.trim(), created_by: c, group_id: g, created_at: now() }; T('families').push(f);
+    T('family_members').push({ family_id: f.id, character_id: c, relation: 'Jefe de familia', status: 'active', invited_by: c, created_at: now() }); return f.id; },
+  family_invite({ c, who, relation }) { const f = T('family_members').find(m => m.character_id === c && m.status === 'active'); if (!f) throw new Error('Primero crea o únete a una familia');
+    if (T('family_members').some(m => m.character_id === who && m.status === 'active')) throw new Error('Esa persona ya tiene familia');
+    mem.t.family_members = T('family_members').filter(m => !(m.family_id === f.family_id && m.character_id === who)); T('family_members').push({ family_id: f.family_id, character_id: who, relation: relation || 'Familiar', status: 'pending', invited_by: c, created_at: now() }); },
+  family_respond({ c, f, accept }) { const m = T('family_members').find(x => x.family_id === f && x.character_id === c && x.status === 'pending'); if (!m) throw new Error('No tienes esa invitación');
+    if (!accept) { mem.t.family_members = T('family_members').filter(x => x !== m); return; } m.status = 'active';
+    const fam = T('families').find(x => x.id === f); if (fam?.group_id && !T('chat_group_members').some(x => x.group_id === fam.group_id && x.character_id === c)) T('chat_group_members').push({ group_id: fam.group_id, character_id: c, admin: false, created_at: now() }); },
+  family_leave({ c }) { const m = T('family_members').find(x => x.character_id === c && x.status === 'active'); if (!m) throw new Error('No perteneces a una familia');
+    const fam = T('families').find(x => x.id === m.family_id); mem.t.family_members = T('family_members').filter(x => x !== m); if (fam?.group_id) RPC.group_leave({ c, g: fam.group_id });
+    if (!T('family_members').some(x => x.family_id === m.family_id && x.status === 'active')) mem.t.families = T('families').filter(x => x.id !== m.family_id); },
+  set_heir({ c, h }) { if (h && h === c) throw new Error('El heredero debe ser otra persona con vida activa'); T('characters').find(x => x.id === c).heir = h || null; },
+  estate_expire() { return 0; }, // shortcut: en demo no hay herencias (se prueban en el SQL)
   // espejo demo de los rechazos: se borra y queda en el historial del usuario
   reject_request({ id, note }) { const r = T('requests').find(x => x.id === id); if (!r) throw new Error('La solicitud ya no existe');
     T('user_history').push({ id: crypto.randomUUID(), user_id: r.user_id, kind: 'tramite', title: (r.data?.job_title || r.type) + ' · ' + (T('characters').find(c => c.id === r.character_id)?.first_name || ''), note: note || null, by_user: myId, created_at: now() });
