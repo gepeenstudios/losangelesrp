@@ -3163,3 +3163,6 @@ begin
     'El ' || lower(office) || ' derogó la Ley ' || l.number || '. Deja de tener efecto a partir de hoy.');
 end $$;
 grant execute on function repeal_law(uuid, uuid) to authenticated;
+
+-- Fotos de ficha (frente, perfiles y espalda) obligatorias al encarcelar.
+alter table inmates add column if not exists mugshots jsonb;

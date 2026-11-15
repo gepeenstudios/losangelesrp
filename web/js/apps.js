@@ -1325,6 +1325,7 @@ async function searchPeople(q) {
   (await db.list('items', { limit: 5000 })).filter(i => i.serial?.toLowerCase() === q).forEach(i => add(i.owner_char, `Arma serie ${i.serial} (${SHOPI[i.item]?.name || i.item})`));
   return [...hit].map(([id, why]) => ({ c: S.all.find(x => x.id === id), why })).filter(x => x.c);
 }
+const MUG = [['frente', 'De frente'], ['izq', 'Perfil izquierdo'], ['der', 'Perfil derecho'], ['espalda', 'De espalda']];
 const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#243b55', show: isPolice,
   async render(el, st = { tab: 'buscar' }) {
     if (!sessionStorage.getItem('mdt')) return view(el, `<div class="login-mini"><img class="mdt-badge" src="img/favicon.png" alt=""><h2>LAPD · Mobile Data Terminal</h2>
@@ -1346,6 +1347,7 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
       body = `<button class="link" data-act="tab" data-t="buscar">‹ Volver</button><div class="card row">${av(c.skin_url, 'big-av')}<div class="grow"><h3>${esc(c.first_name)} ${esc(c.last_name)}</h3>
         <div class="muted">Nac. ${esc(c.dob)} · ${esc(c.sex)} · ${esc(c.city)} · ${esc(c.nationality)}${c.extranjero ? ' · Extranjero' : ''}</div>
         <div class="muted">ID ${docNumber(c, 'I')} · Licencia ${docNumber(c, 'D')} · Folio ${c.id.slice(0, 8).toUpperCase()}</div>
+        ${(() => { const m = inm.find(i => i.mugshots)?.mugshots; return m ? `<div class="mugs">${MUG.map(([k, l]) => m[k] ? `<figure><img src="${esc(m[k])}" alt="${l}" data-act="zoom" data-src="${esc(m[k])}"><figcaption>${l}</figcaption></figure>` : '').join('')}</div>` : ''; })()}
         ${jail ? `<div class="alert">EN PRISIÓN · le faltan ${clockTxt(left(jail))}. Si está en la calle sin fuga aprobada, repórtalo al staff (warn administrativo).
           <button class="btn sm bad" data-act="reportar" data-id="${jail.id}">Reportar al staff</button></div>` : ''}
         ${recs.some(r => r.kind === 'orden' && !r.paid) ? '<div class="alert">ORDEN DE ARRESTO ACTIVA</div>' : ''}</div></div>
@@ -1365,7 +1367,9 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
           <div class="row gap wrap"><label class="chk"><input type="checkbox" name="atenuante"> Atenuante (Art. 4): coopera, confiesa o repara el daño · −30 % de multa</label>
           <label class="chk"><input type="checkbox" name="agravante"> Agravante (Art. 5): reincidente, insulta a la autoridad o discrimina · +11 meses de prisión (o +$2,500 si no hay prisión)</label>
           <label class="chk" data-licbox hidden><input type="checkbox" name="quitarLic" checked> Retirar su licencia de conducir (los cargos marcados con «licencia» lo permiten)</label></div>
-          <div class="totals" data-totals>Selecciona cargos</div></div>${fieldsHTML([{ k: 'description', label: 'Narrativa / detalles', type: 'textarea', req: 1 }])}
+          <div class="totals" data-totals>Selecciona cargos</div></div>
+          <div data-mug hidden><h4>📸 Fotos de ficha (obligatorias para encarcelar)</h4><p class="muted">Toma una foto del personaje por cada lado.</p><div class="mug-grid">${fieldsHTML(MUG.map(([k, l]) => ({ k: 'mug_' + k, label: l, type: 'file', accept: 'image/*' })))}</div></div>
+          ${fieldsHTML([{ k: 'description', label: 'Narrativa / detalles', type: 'textarea', req: 1 }])}
           <button class="btn" type="submit">Registrar</button></form>`;
     } else if (st.tab === 'buscados') {
       const o = await db.list('records', { eq: { kind: 'orden', paid: false } });
@@ -1386,6 +1390,7 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
         await db.insert('requests', { type: 'warn_prision', dept: ['staff:mod'], character_id: S.char?.id || st.id, data: { preso_id: st.id, preso: cname(st.id), lugar: prompt('¿Dónde lo viste?') || '—', detalle: `Preso visto fuera de prisión (registro ${d.id.slice(0, 8)})` } });
         toast('Reporte enviado al staff');
       },
+      zoom,
       async procesar(v, form) {
         if (v.kind === 'advertencia') { // solo historial: sin cargos, multa, prisión ni licencia
           await db.insert('records', { kind: 'advertencia', character_id: st.id, officer_id: S.char?.id || null, amount: null, description: v.description, charges: [] });
@@ -1397,6 +1402,8 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
         if (v.atenuante) fine *= 0.7;
         if (v.agravante) years > 0 ? years += 11 / 12 : fine += 2500 * cpi();
         if (v.kind === 'arresto' && !years) throw new Error('Ningún cargo marcado tiene prisión: usa Multa');
+        const miss = v.kind === 'arresto' ? MUG.filter(([k]) => !v['mug_' + k]).map(([, l]) => l) : [];
+        if (miss.length && years <= Number(set('trial_years'))) throw new Error('Para encarcelar faltan las fotos de ficha: ' + miss.join(', '));
         if (v.quitarLic && picked.some(x => x.lic)) { const lic = (await db.list('requests', { eq: { character_id: st.id, type: 'licencia_conducir', status: 'approved' } }))[0];
           if (lic) { await db.rpc('revoke_doc', { r: lic.id, motivo: picked.filter(x => x.lic).map(x => x.code + ' ' + x.title).join(', '), officer: S.char?.id || null }); toast('Licencia de conducir retirada'); } }
         const charges = picked.map(x => ({ code: x.code, title: x.title })), desc = `${charges.map(x => x.code + ' ' + x.title).join(', ')}${v.description ? ' — ' + v.description : ''}`;
@@ -1408,7 +1415,7 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
         await db.insert('records', { kind: v.kind === 'advertencia' ? 'advertencia' : v.kind, character_id: st.id, officer_id: S.char?.id || null, amount: v.kind === 'multa' || v.kind === 'arresto' ? Math.round(fine) : null, description: desc, charges });
         if (v.kind === 'arresto' && years > 0) {
           const minutes = years * Number(set('prison_min_per_year'));
-          await db.insert('inmates', { character_id: st.id, officer_id: S.char?.id || null, charges, years, minutes, started_at: new Date().toISOString(), ends_at: new Date(Date.now() + minutes * 6e4).toISOString(), status: 'en_prision' });
+          await db.insert('inmates', { character_id: st.id, officer_id: S.char?.id || null, charges, years, minutes, mugshots: Object.fromEntries(MUG.map(([k]) => [k, v['mug_' + k]])), started_at: new Date().toISOString(), ends_at: new Date(Date.now() + minutes * 6e4).toISOString(), status: 'en_prision' });
           toast(`Arrestado: ${pena(years)} = ${Math.round(minutes)} min reales. El contador ya empezó.`);
         } else toast('Registrado');
         go({});
@@ -1417,7 +1424,7 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
     const box = el.querySelector('[data-totals]');
     el.querySelector('form[data-form=procesar]')?.addEventListener('change', () => {
       const fm = el.querySelector('form[data-form=procesar]'), p = [...el.querySelectorAll('[name=cargo]:checked')], adv = fm.kind.value === 'advertencia';
-      el.querySelector('[data-pen]').hidden = adv; el.querySelector('[data-adv]').hidden = !adv;
+      el.querySelector('[data-pen]').hidden = adv; el.querySelector('[data-adv]').hidden = !adv; el.querySelector('[data-mug]').hidden = fm.kind.value !== 'arresto';
       let f = p.reduce((s, i) => s + Number(i.dataset.fine), 0) * cpi(), y = p.reduce((s, i) => s + Number(i.dataset.years), 0);
       if (fm.atenuante.checked) f *= 0.7; if (fm.agravante.checked) y > 0 ? y += 11 / 12 : f += 2500 * cpi();
       el.querySelector('[data-licbox]').hidden = !p.some(i => i.dataset.lic);
