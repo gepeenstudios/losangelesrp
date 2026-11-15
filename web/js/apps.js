@@ -498,7 +498,9 @@ const casino = { id: 'casino', name: 'Casino', icon: '🎰', bg: '#0f212e,#1a2c3
       wheel: `<p class="muted">10 casillas: ×0, ×1.2, ×1.5, ×2 y ×4.</p>`,
       blackjack: `<p class="muted">El blackjack paga 3 a 2. El crupier se planta en 17. Puedes doblar con tus dos primeras cartas.</p>`,
       poker: `<p class="muted">Jacks or Better: recibes 5 cartas, eliges cuáles quedarte y cambias las demás.</p><table class="cas-pay">${Object.entries(POKER_HANDS).reverse().map(([m, n]) => `<tr><td>${n}</td><td>×${m}</td></tr>`).join('')}</table>`,
-      mines: `<label class="fld"><span>Número de minas (1–24)</span><input name="mines" type="number" min="1" max="24" value="3" required></label><p class="muted">Destapa casillas con diamante y retírate cuando quieras. Si sale una mina, pierdes.</p>`,
+      mines: `<label class="fld"><span>Número de minas (1–24)</span><input name="mines" type="number" min="1" max="24" value="3" required></label><p class="muted">Destapa casillas con diamante y retírate cuando quieras. Si sale una mina, pierdes. <b>Entre más minas, más paga cada diamante</b>; con pocas minas casi no ganas.</p>
+        <table class="cas-pay"><tr><td>Minas</td><td>1er diamante</td><td>3 diamantes</td></tr>${[1, 3, 5, 10, 15, 20, 24].map(n => { const m = k => { let x = 0.92 + 0.003 * n; for (let i = 0; i < k; i++) x *= (25 - i) / (25 - n - i); return x; };
+          return `<tr><td>${n}</td><td>×${fx(m(1))}</td><td>${n <= 22 ? '×' + fx(m(3)) : '—'}</td></tr>`; }).join('')}</table>`,
     };
     const acts = {
       tab: d => casino.render(el, d.t, el.querySelector('[name=bet]')?.value || bet),
