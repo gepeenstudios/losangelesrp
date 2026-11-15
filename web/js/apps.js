@@ -1,6 +1,6 @@
 // Todas las apps del sistema. Cada una: { id, name, icon, bg, show(), render(el) }
 import * as db from './db.js';
-import { sharePrice, coOut, creditCap } from './db.js';
+import { sharePrice, coOut, coPremium, creditCap } from './db.js';
 import { S, cpi, esc, money, fdate, lvl, has, isPolice, set, cname, charOpts, toast, modal, ask, view, form, fieldsHTML, readForm, downloadImage,
   myRequests, approvedOf, requestHTML, reviewQueue, tabs, needChar, myAccounts, accSelect, stars, addRole } from './core.js';
 import { openWizardOverlay } from './vida.js';
@@ -1002,6 +1002,7 @@ const bolsa = { id: 'bolsa', name: 'GBM+', icon: '📈', bg: '#0b1f3a,#1c4f8f', 
         ${h ? `<p class="muted">Costo promedio ${money(h.cost / h.shares)} · Rendimiento ${sgn(pct(h.shares * c.price, h.cost))} (${money(h.shares * c.price - h.cost)})</p>` : ''}
         <div class="order"><div class="seg"><button data-act="side" data-s="buy" class="${st.side !== 'sell' ? 'on buy' : ''}">Comprar</button><button data-act="side" data-s="sell" class="${st.side === 'sell' ? 'on sell' : ''}">Vender</button></div>
           <form data-form="orden" class="form">${fieldsHTML([{ k: 'qty', label: 'Títulos', type: 'number', min: 1, max: st.side === 'sell' ? h?.shares || 0 : undefined, req: 1, def: 1 }])}
+          <div class="qty-btns">${[[0.25, '25%'], [0.5, '50%'], [1, st.side === 'sell' ? 'Todo' : 'Todo mi dinero']].map(([f, l]) => `<button type="button" class="btn ghost sm" data-act="frac" data-f="${f}">${l}</button>`).join('')}</div>
           <p class="muted" data-est>Precio de mercado ${money(c.price)} · Poder de compra ${money(acc?.balance)}</p><p class="muted">Comprar emite acciones nuevas (tu dinero entra a la empresa) y empuja el precio hacia arriba; vender hace que la empresa te recompre con su efectivo y empuja el precio hacia abajo. Pedidos grandes mueven más el precio.</p>
           <button class="btn big ${st.side === 'sell' ? 'bad' : 'ok'}" type="submit">${st.side === 'sell' ? 'Vender a mercado' : 'Comprar a mercado'}</button></form></div>`;
     } else if (st.tab === 'port') body = mine.length ? `<table class="tbl"><thead><tr><th>Emisora</th><th>Títulos</th><th>Costo prom.</th><th>Precio</th><th>Valor</th><th>Rendimiento</th></tr></thead><tbody>
@@ -1024,7 +1025,19 @@ const bolsa = { id: 'bolsa', name: 'GBM+', icon: '📈', bg: '#0b1f3a,#1c4f8f', 
       },
     });
     const q = el.querySelector('[name=qty]'), est = el.querySelector('[data-est]'), c = st.id && cos.find(x => x.id === st.id);
-    q?.addEventListener('input', () => { est.textContent = `Total estimado ${money(c.price * (+q.value || 0))} · Poder de compra ${money(acc?.balance)}`; });
+    if (!q || !c) return;
+    // mismo cálculo que buy_shares/sell_shares del servidor: el precio se mueve mientras compras o vendes
+    const prem0 = coPremium(c), bookPs = c.price / prem0, outQ = Math.max(c.out || 0, 1), cashBal = Number(acc?.balance || 0), myShares = Number(H(c.id)?.shares || 0), isSell = st.side === 'sell';
+    const tradeCost = n => isSell ? bookPs * (prem0 + Math.max(prem0 * Math.exp(-n / outQ), 0.2)) / 2 * n : bookPs * (prem0 + Math.min(prem0 * Math.exp(n / outQ), 5)) / 2 * n;
+    const maxBuyQty = budget => { let lo = 0, hi = 1; while (tradeCost(hi) <= budget && hi < 1e12) hi *= 2; while (hi - lo > 1) { const m = Math.floor((lo + hi) / 2); tradeCost(m) <= budget ? lo = m : hi = m; } return lo; };
+    const maxSellQty = () => { let n = myShares; while (n > 0 && tradeCost(n) > c.cash) n = Math.floor(n * 0.9); return n; };
+    const fitQty = isSell ? maxSellQty() : maxBuyQty(cashBal);
+    const updEst = () => { const n = Math.max(0, Math.floor(+q.value || 0)), t = tradeCost(n);
+      est.innerHTML = isSell ? `Recibirías ≈ <b>${money(t)}</b>${n ? ` (promedio ${money(t / n)} por título)` : ''} · Tienes ${myShares.toLocaleString()} títulos · La empresa puede recomprarte hasta <b>${fitQty.toLocaleString()}</b>`
+        : `Total estimado <b>${money(t)}</b>${n ? ` (promedio ${money(t / n)} por título)` : ''} · Tu saldo ${money(cashBal)} · <b>Te alcanza para ${fitQty.toLocaleString()} títulos</b>`; };
+    el.querySelectorAll('[data-act=frac]').forEach(b => b.onclick = e => { e.stopPropagation(); const f = +b.dataset.f;
+      q.value = isSell ? Math.min(Math.floor(myShares * f), fitQty) : maxBuyQty(cashBal * f); updEst(); });
+    q.addEventListener('input', updEst); updEst();
   } };
 
 // ============ BIENES RAÍCES ============
