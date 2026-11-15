@@ -132,7 +132,13 @@ export function openWindow({ key, title, iconHTML, bg, url, render }, from) {
     const tmp = body.cloneNode(false); Object.assign(tmp, Object.fromEntries(Object.keys(body).map(k => [k, body[k]]))); // conserva el estado guardado en el elemento (pestaña actual, etc.)
     try { await paint(tmp); } catch { return; }
     if (tmp.innerHTML === body.innerHTML || !body.isConnected || w.dataset.dirty || w.contains(document.activeElement)) return;
-    const y = body.scrollTop; body.replaceWith(tmp); body = tmp; body.scrollTop = y;
+    // sin parpadeo: espera a que las imágenes nuevas estén listas y conserva el scroll y lo desplegado de cada parte
+    await Promise.all([...tmp.querySelectorAll('img')].map(i => (i.loading = 'eager', i.decode().catch(() => {}))));
+    if (!body.isConnected || w.dataset.dirty || w.contains(document.activeElement)) return;
+    const old = [...body.querySelectorAll('*')], neu = [...tmp.querySelectorAll('*')], y = body.scrollTop;
+    old.forEach((o, i) => { const n = neu[i]; if (!n || n.tagName !== o.tagName) return; if (o.scrollTop) n.dataset.keepY = o.scrollTop; if (o.tagName === 'DETAILS') n.open = o.open; });
+    body.replaceWith(tmp); body = tmp; body.scrollTop = y;
+    tmp.querySelectorAll('[data-keep-y]').forEach(n => { n.scrollTop = +n.dataset.keepY; delete n.dataset.keepY; });
   };
   w.addEventListener('input', () => { w.dataset.dirty = 1; });
   w.querySelector('.re').onclick = w._run;

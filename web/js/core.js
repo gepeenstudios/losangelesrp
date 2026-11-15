@@ -8,6 +8,7 @@ export const cpi = () => Number(S.settings.cpi ?? 1);
 export const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 export const money = n => '$' + Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 2 });
 // fechas en la hora de la ciudad (1 día = 2 h reales); las fechas sin hora (nacimiento, vencimientos) se muestran tal cual
+export const freal = d => !d ? '' : new Date(d).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' }); // hora real (Workday)
 export const fdate = d => !d ? '' : /^\d{4}-\d{2}-\d{2}$/.test(String(d)) ? new Date(d + 'T12:00:00Z').toLocaleDateString('es-MX', { dateStyle: 'medium', timeZone: 'UTC' })
   : fgame(d, { dateStyle: 'medium', timeStyle: 'short' });
 export const lvl = () => LVL[S.me?.staff_role] || 0;
@@ -180,7 +181,7 @@ export function requestHTML(r) {
     : isImg(v) ? `<img class="thumb" src="${esc(v)}" alt="${esc(lab[k] || k)}" data-act="zoom" data-src="${esc(v)}">`
     : typeof v === 'boolean' ? (v ? 'Sí' : 'No')
     : /^https?:\/\//.test(v) ? `<a href="${esc(v)}" target="_blank" rel="noopener">${esc(v)}</a>` : esc(v);
-  return `<dl class="dl">${Object.entries(r.data || {}).filter(([k, v]) => v !== '' && v != null && !k.startsWith('job_id'))
+  return `<dl class="dl">${Object.entries(r.data || {}).filter(([k, v]) => v !== '' && v != null && !k.startsWith('job_id') && typeof v !== 'object' && k !== 'preso')
     .map(([k, v]) => `<dt>${esc(lab[k] || k)}</dt><dd>${val(k, v)}</dd>`).join('')}</dl>`;
 }
 
@@ -265,12 +266,12 @@ export async function addRole(charId, role) {
 
 // cola de revisión: muestra solicitudes pendientes que este usuario puede aprobar
 // nota del LA Times con el veredicto de un juicio penal
-const courtNews = (r, guilty) => db.insert('posts', { app: 'news', section: 'Policía', anonimo: true, character_id: S.char?.id || null,
-  title: guilty ? `Culpable: ${r.data.acusado} recibe ${Math.round(r.data.anos * 12)} meses de prisión` : `${r.data.acusado} es declarado inocente y sale libre`,
-  body: `TRIBUNAL SUPERIOR DE LOS ÁNGELES — ${guilty ? `El juez declaró culpable a ${r.data.acusado}. La condena es de ${Math.round(r.data.anos * 12)} meses de prisión${r.data.multa ? ' y una multa de $' + Number(r.data.multa).toLocaleString('en-US') : ''}; el tiempo en prisión preventiva cuenta como cumplido.` : `El juez declaró inocente a ${r.data.acusado} de todos los cargos y ordenó su liberación inmediata.`}\n\nCargos: ${r.data.cargos}\n\nCaso presentado por: ${r.data.oficial || 'LAPD'}. Juez: ${cname(S.char?.id) || 'Tribunal'}.` }).catch(() => {});
+export const courtNews = (r, guilty) => db.insert('posts', { app: 'news', section: 'Policía', anonimo: true, character_id: S.char?.id || null,
+  title: guilty ? `Culpable: ${r.data.acusado} ${r.data.anos > 0 ? `recibe ${Math.round(r.data.anos * 12)} meses de prisión` : 'recibe una multa'}` : `${r.data.acusado} es declarado inocente y sale libre`,
+  body: `TRIBUNAL SUPERIOR DE LOS ÁNGELES — ${guilty ? `El juez declaró culpable a ${r.data.acusado}. La condena es de ${Math.round(r.data.anos * 12)} meses de prisión${r.data.multa ? ' y una multa de $' + Number(r.data.multa).toLocaleString('en-US') : ''}; el tiempo en prisión preventiva cuenta como cumplido.` : `El juez declaró inocente a ${r.data.acusado} de todos los cargos y ordenó su liberación inmediata.`}\n\nCargos: ${r.data.cargos}\n\nCaso presentado por: ${r.data.oficial || 'LAPD'}. Juez: ${cname(S.char?.id) || 'Tribunal'}.${r.note ? '\n\nFundamentos: ' + r.note : ''}` }).catch(() => {});
 export async function reviewQueue(el, { types, title = 'Pendientes por revisar', extra } = {}) {
   let rows = (await db.list('requests', { eq: { status: 'pending' }, overlaps: { dept: S.tags } }))
-    .filter(r => (!types || types.includes(r.type)) && (r.user_id !== S.me.id || lvl() >= 3));
+    .filter(r => (types ? types.includes(r.type) : r.type !== 'juicio') && (r.user_id !== S.me.id || lvl() >= 3)); // los juicios solo se ven en el Juzgado
   const html = rows.length ? rows.map(r => `<div class="card">
       <div class="row"><b class="ttl">${ico(r.type)} ${esc(TRAMITES[r.type]?.name || r.data.job_title || r.type)}</b><span class="muted">${fdate(r.created_at)}</span></div>
       <div class="muted">Solicitante: <b>${esc(cname(r.character_id))}</b> ${extra ? extra(r) : ''}</div>
@@ -290,7 +291,7 @@ export async function reviewQueue(el, { types, title = 'Pendientes por revisar',
     const role = status === 'approved' && TRAMITES[r.type]?.discord?.(r.data);
     if (status === 'approved' && TRAMITES[r.type]?.role && lvl() >= 3) await addRole(r.character_id, TRAMITES[r.type].role);
     toast(`${status === 'approved' ? 'Aprobado' : 'Rechazado'}. ${msg}${role ? ` · Discord: ${role}` : ''}`);
-    if (r.user_id === S.me.id || S.chars.some(c => c.id === r.data?.victima)) return window.refreshShell?.(); // me afecta a mí: refrescar todo
+    if (r.user_id === S.me.id || S.chars.some(c => c.id === r.data?.victima)) { await loadMe(); window.liveRefresh?.(); } // me afecta a mí: recarga datos sin cerrar ventanas
     reviewQueue(el, { types, title, extra });
   };
   view(el, `<h3>${title}</h3>${html}`, { ok: decide('approved'), no: decide('rejected'), zoom: d => modal('Imagen', `<img class="full" src="${esc(d.src)}" alt="">`) });

@@ -202,7 +202,7 @@ export const TRAMITES = {
       {k:'bienes',label:'¿Qué bienes reclamas? (descríbelos)',type:'textarea',req:1,show:'reclamo=bienes|ambos'},
       {k:'hechos',label:'Hechos',type:'textarea',req:1},
       {k:'pruebas',label:'Pruebas (link)',type:'url'},{k:'abogado',label:'Tu abogado'}]},
-  servicio_militar: { cat:'Gobierno', name:'Servicio militar', icon:'🪖', dept:['Ejército','US Seal','US Navy Seal','staff:admin'], needs:['dni'], discord:()=>'Servicio Militar', role:'Ejército',
+  servicio_militar: { cat:'Gobierno', name:'Servicio militar', icon:'🪖', dept:['Ejército','US Seal','US Navy Seal','staff:admin'], needs:['dni','licencia_conducir'], discord:()=>'Servicio Militar', role:'Servicio Militar',
     fields:[{k:'rama',label:'Rama',type:'select',options:['Ejército (Army)','Marina (Navy)','Navy SEAL','Fuerza Aérea','Guardia Nacional'],req:1},
       {k:'experiencia',label:'Experiencia en rol militar',type:'textarea',req:1},{k:'disponibilidad',label:'Disponibilidad (días/horas)',req:1}]},
   verificacion_ig: { cat:'Negocios', name:'Verificación de cuenta (Instagram y X)', icon:'✔️', dept:['staff:admin'], cost:5, hidden:true,
@@ -232,6 +232,9 @@ export const TRAMITES = {
 };
 
 export const DEFAULT_SETTINGS = {
+  job_reqs: { 'Policía': ['dni', 'licencia_conducir', 'licencia_armas'], 'SWAT': ['dni', 'licencia_conducir', 'licencia_armas'], 'FBI': ['dni', 'licencia_conducir', 'licencia_armas', 'titulo'],
+    'CIA': ['dni', 'pasaporte', 'titulo'], 'DEA': ['dni', 'licencia_conducir', 'licencia_armas'], 'Bomberos': ['dni', 'licencia_conducir'], 'Servicios Médicos': ['dni', 'titulo'], 'DOT': ['dni', 'licencia_conducir'],
+    'Taxi': ['dni', 'licencia_conducir'], 'Juez de Distrito': ['dni', 'titulo', 'licencia_juez'], 'Abogado Público': ['dni', 'titulo', 'licencia_abogado'], 'Ejército': ['dni'], 'Seguridad Pública': ['dni', 'licencia_armas'] },
   start_money: 5000, military_required: ['Policía', 'SWAT', 'FBI'], cpi: 1, fed_rate: 4.5, savings_rate: 15, job_min_minutes: 40, prison_min_per_year: 60, trial_years: 10,
   visa_days: 84, // días del juego (= 1 semana real)
   elecciones: { registro_hasta: 20, votacion_desde: 21, votacion_hasta: 27 }, // días del mes; el ganador gobierna todo el mes siguiente
@@ -398,6 +401,7 @@ export const JOB_DESC = {
   'Basurero': 'Recoges la basura de las calles y contenedores con el camión y la llevas al relleno sanitario.',
   'Prensa': 'Investigas, entrevistas y publicas noticias en LA Times sobre lo que pasa en la ciudad: crímenes, política y eventos.',
   'Seguridad Pública': 'Vigilas edificios del gobierno, eventos y lugares importantes; controlas accesos y apoyas a la policía.',
+  'Juez de Distrito': 'Presides juicios penales y demandas: revisas los cargos, escuchas a las partes y dictas sentencia (culpable o inocente) en el Juzgado de LA Courts.',
   'DMV': 'Haces exámenes de manejo, entregas licencias de conducir y registras placas de autos en las oficinas del gobierno.',
 };
 export const SEED_JOBS = [
@@ -406,7 +410,7 @@ export const SEED_JOBS = [
   ['Soldado','Ejército de EE.UU.','Ejército'],['Abogado público','Defensoría Pública de LA','Abogado Público'],
   ['Taxista','LA Taxi','Taxi'],['Cartero','USPS','Cartero'],['Recolector de basura','LA Sanitation','Basurero'],
   ['Periodista','Prensa de Los Ángeles','Prensa'],
-['Guardia de seguridad','Seguridad Pública de LA','Seguridad Pública'],['Técnico DMV','California DMV','DMV'],
+['Guardia de seguridad','Seguridad Pública de LA','Seguridad Pública'],['Juez','Tribunal Superior de Los Ángeles','Juez de Distrito'],['Técnico DMV','California DMV','DMV'],
 ];
 // fotos de Unsplash (licencia libre)
 export const WALLPAPERS = [

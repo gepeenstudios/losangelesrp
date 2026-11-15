@@ -162,7 +162,8 @@ const iso = d => new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString
 const RPC = {
   hire({ c, d }) {
     guard(isMgr(d), `Solo los mandos de ${d} pueden contratar`);
-    guard(!(setting('military_required', ['Policía', 'SWAT', 'FBI']).includes(d)) || T('requests').some(r => r.character_id === c && r.type === 'servicio_militar' && r.status === 'approved'), `Para trabajar en ${d} se necesita el Servicio militar aprobado (trámite en Gobierno)`);
+    if (lvlLocal() < 3) { const need = [...(setting('job_reqs', {})[d] || []), ...(setting('military_required', ['Policía', 'SWAT', 'FBI']).includes(d) ? ['servicio_militar'] : [])],
+      miss = need.filter(t => !T('requests').some(r => r.character_id === c && r.type === t && r.status === 'approved')); guard(!miss.length, `Para trabajar en ${d} te falta: ${miss.join(', ')}`); }
     const r = ranksOf(d)[0]; guard(r, 'Departamento sin rangos');
     const e = T('employments').find(x => x.character_id === c && x.dept === d), today = iso(new Date());
     e ? Object.assign(e, { rank: r.rank, status: 'active', last_qualified: today, vacation_until: null })

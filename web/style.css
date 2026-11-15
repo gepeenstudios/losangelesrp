@@ -966,3 +966,7 @@ tr.click{cursor:pointer}tr.click:hover{background:#ffffff08}
 .miranda details{background:#fff;border-color:#c5d3ea}.miranda details,.miranda summary,.miranda p,.miranda label{color:#14223d}
 
 .wanted-alert{border:2px solid #d0021b;background:#3a0a0f;color:#ffd7dc}.wanted-alert ul{margin:6px 0 8px 18px}
+
+.trial{border-left:4px solid #8c6239}.trial-h{display:flex;flex-direction:column;gap:2px;margin-bottom:6px}.trial-h small{letter-spacing:.08em;color:#b08a5a;font-weight:700}.trial-h b{font-size:1.15em;font-family:Georgia,serif}
+.trial .charges{max-height:300px;overflow:auto;margin:6px 0}.trial-sum{padding:8px 10px;border-radius:8px;background:rgba(140,98,57,.15);margin:6px 0}.trial textarea{width:100%;margin:6px 0}
+.reqs .tag{margin:2px 4px 2px 0;display:inline-block}
