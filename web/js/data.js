@@ -554,6 +554,9 @@ export const PENAL_CODE = [
   ['Art. 86', 'Tráfico de influencias', 'menor', 500000, 1.0, false, 'Inhabilitación del cargo (no aplica a civiles)'],
   ['Art. 87', 'Malversación', 'grave', 1000000, 6.0, false, ''],
   ['Art. 88', 'Fraude en contratación pública', 'infraccion', 500000, 0.0, false, 'Inhabilitación del cargo'],
+  ['Art. 89', 'Intento de evasión de prisión', 'grave', 50000, 2.0, false, 'Se suma a la condena que ya cumple'],
+  ['Art. 90', 'Evasión de prisión (fuga consumada)', 'grave', 120000, 5.0, false, 'Se suma a la condena que ya cumple'],
+  ['Art. 91', 'Ayudar a un preso a escapar', 'grave', 100000, 4.0, false, null],
 ];
 
 // Impuesto anual de un sueldo (igual que income_tax() en SQL): federal 2026 + California + FICA 7.65%, soltero con deducción estándar

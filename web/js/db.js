@@ -425,8 +425,9 @@ const RPC = {
   },
   pay_fine({ record, acc: id }) {
     const r = T('records').find(x => x.id === record);
-    if (!r || r.paid || r.kind !== 'multa') throw new Error('Multa no válida');
-    move(acc(id), gov(), r.amount, 'Multa'); r.paid = true;
+    if (!r || r.paid || !['multa', 'arresto'].includes(r.kind)) throw new Error('Multa no válida');
+    const take = Math.min(acc(id).balance, r.amount - (r.collected || 0)); if (take <= 0) throw new Error('No tienes saldo en esa cuenta');
+    move(acc(id), gov(), take, 'Multa'); r.collected = (r.collected || 0) + take; r.paid = r.collected >= r.amount; // shortcut: el demo no cobra solo al recibir dinero (Supabase sí)
   },
   like_post({ id }) {
     if (T('post_likes').some(l => l.post_id === id && l.user_id === myId)) return; // un like por cuenta

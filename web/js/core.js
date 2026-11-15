@@ -233,6 +233,7 @@ export const ON_APPROVE = {
   },
   async juicio(r) { // aprobar = culpable: entra a prisión con los años pedidos
     const minutes = Number(r.data.anos) * Number(set('prison_min_per_year'));
+    if (r.data.preso) return `Culpable: confirma la condena de ${Math.round(r.data.anos * 12)} meses que ya está cumpliendo desde su arresto.`;
     await db.insert('inmates', { character_id: r.character_id, charges: r.data.charges || [], years: Number(r.data.anos), minutes, started_at: new Date().toISOString(), ends_at: new Date(Date.now() + minutes * 6e4).toISOString(), status: 'en_prision', note: 'Sentencia judicial' });
     await db.insert('records', { kind: 'arresto', character_id: r.character_id, amount: r.data.multa || null, description: 'Sentencia: ' + r.data.cargos, charges: r.data.charges || [] });
     for (const o of await db.list('records', { eq: { character_id: r.character_id, kind: 'orden', paid: false } })) if (o.description.startsWith('En espera de juicio')) await db.update('records', o.id, { paid: true });
@@ -292,7 +293,10 @@ export const needChar = el => {
 };
 export async function myAccounts() {
   if (!S.char) return [];
-  return db.list('accounts', { overlaps: { owners: [S.char.id] }, order: 'kind', asc: false });
+  const [accs, recs] = await Promise.all([db.list('accounts', { overlaps: { owners: [S.char.id] }, order: 'kind', asc: false }), db.list('records', { eq: { character_id: S.char.id, paid: false } }).catch(() => [])]);
+  const debt = recs.filter(r => r.kind === 'multa' || r.kind === 'arresto').reduce((s, r) => s + Number(r.amount || 0) - Number(r.collected || 0), 0);
+  const p = accs.find(a => a.kind === 'personal'); if (p && debt > 0) { p.debt = debt; p.balance = Number(p.balance) - debt; } // multas sin pagar: saldo negativo a la vista
+  return accs;
 }
 export const accSelect = (accs, name = 'acc') => `<label class="fld"><span>Pagar con</span><select name="${name}" required>${accs.map(a =>
   `<option value="${a.id}">${a.kind === 'personal' ? 'Personal' : '🏢 ' + esc(a.name)} · ${money(a.balance)}</option>`).join('')}</select></label>`;

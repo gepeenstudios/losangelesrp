@@ -123,9 +123,9 @@ const banco = { id: 'banco', name: 'RRVA', icon: '🏦', bg: '#004481,#1464a5', 
           <p class="muted">Para ahorrar, transfiere desde tu cuenta personal al número ${sav.number}. Para retirar, elige "Ahorro" arriba y transfiere a tu cuenta personal.</p>`
         : `<button class="btn big" data-act="ahorro">Abrir cuenta de ahorro</button>`}</div>`;
     } else if (st.tab === 'multas') {
-      const f = await db.list('records', { eq: { character_id: S.char.id, kind: 'multa' } });
-      body = f.length ? `<ul class="list">${f.map(r => `<li><div><b>${esc(r.description)}</b><div class="muted">${fdate(r.created_at)}</div></div>
-        <span>${money(r.amount)} ${r.paid ? '<span class="tag">Pagada</span>' : `<button class="btn sm" data-act="pagar" data-id="${r.id}">Pagar</button>`}</span></li>`).join('')}</ul>` : '<p class="empty">No tienes multas.</p>';
+      const f = (await db.list('records', { eq: { character_id: S.char.id } })).filter(r => (r.kind === 'multa' || r.kind === 'arresto') && Number(r.amount) > 0);
+      body = (f.some(r => !r.paid) ? '<p class="muted">Las multas se cobran solas de tu cuenta personal en cuanto te entra dinero. Lo que falta se ve como saldo negativo y la Tesorería solo recibe lo que pagas.</p>' : '') + (f.length ? `<ul class="list">${f.map(r => `<li><div><b>${r.kind === 'arresto' ? '🚔 ' : ''}${esc(r.description)}</b><div class="muted">${fdate(r.created_at)}${!r.paid && r.collected > 0 ? ` · pagado ${money(r.collected)} de ${money(r.amount)}` : ''}</div></div>
+        <span>${money(r.amount - (r.paid ? 0 : Number(r.collected || 0)))} ${r.paid ? '<span class="tag">Pagada</span>' : `<span class="neg">debes</span> <button class="btn sm" data-act="pagar" data-id="${r.id}">Pagar</button>`}</span></li>`).join('')}</ul>` : '<p class="empty">No tienes multas.</p>');
     } else if (st.tab === 'imp') {
       const txs = (await db.list('transactions', { eq: { from_acc: cur.id }, limit: 500 })).filter(t => /^Impuesto/.test(t.concept));
       const nom = (await db.list('transactions', { eq: { to_acc: cur.id }, limit: 500 })).filter(t => /^Nómina neta/.test(t.concept));
@@ -1412,14 +1412,15 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
         if (v.kind === 'arresto' && !years) throw new Error('Ningún cargo marcado tiene prisión: usa Multa');
         if (v.kind === 'arresto' && !v.miranda) throw new Error('Primero léele sus derechos Miranda y marca la casilla');
         const miss = v.kind === 'arresto' ? MUG.filter(([k]) => !v['mug_' + k]).map(([, l]) => l) : [];
-        if (miss.length && years <= Number(set('trial_years'))) throw new Error('Para encarcelar faltan las fotos de ficha: ' + miss.join(', '));
+        if (miss.length) throw new Error('Para encarcelar faltan las fotos de ficha: ' + miss.join(', '));
         if (v.quitarLic && picked.some(x => x.lic)) { const lic = (await db.list('requests', { eq: { character_id: st.id, type: 'licencia_conducir', status: 'approved' } }))[0];
           if (lic) { await db.rpc('revoke_doc', { r: lic.id, motivo: picked.filter(x => x.lic).map(x => x.code + ' ' + x.title).join(', '), officer: S.char?.id || null }); toast('Licencia de conducir retirada'); } }
         const charges = picked.map(x => ({ code: x.code, title: x.title })), desc = `${charges.map(x => x.code + ' ' + x.title).join(', ')}${v.description ? ' — ' + v.description : ''}`;
-        if (v.kind !== 'orden' && years > Number(set('trial_years'))) { // más de N años: juicio sí o sí, aunque hayan elegido multa
-          await db.insert('requests', { type: 'juicio', dept: TRAMITES.juicio.dept, character_id: st.id, data: { acusado: cname(st.id), cargos: desc, anos: years, multa: Math.round(fine), oficial: cname(S.char?.id), charges } });
+        const juicio = v.kind !== 'orden' && years > Number(set('trial_years')); // más de N años: también va a juicio, pero si lo arrestaste ya entra a prisión
+        if (juicio) await db.insert('requests', { type: 'juicio', dept: TRAMITES.juicio.dept, character_id: st.id, data: { acusado: cname(st.id), cargos: desc, anos: years, multa: Math.round(fine), oficial: cname(S.char?.id), charges, preso: v.kind === 'arresto' } });
+        if (juicio && v.kind !== 'arresto') {
           await db.insert('records', { kind: 'orden', character_id: st.id, officer_id: S.char?.id || null, description: 'En espera de juicio: ' + desc, charges });
-          return toast(`Son ${pena(years)}: requiere juicio. Se envió el caso a los jueces y quedó con orden de arresto.`), go({});
+          return toast(`Son ${pena(years)}: requiere juicio. Se envió el caso a los jueces y quedó con orden de arresto (si ya lo tienes, usa Arresto).`), go({});
         }
         await db.insert('records', { kind: v.kind === 'advertencia' ? 'advertencia' : v.kind, character_id: st.id, officer_id: S.char?.id || null, amount: v.kind === 'multa' || v.kind === 'arresto' ? Math.round(fine) : null, description: desc, charges });
         if (v.kind === 'arresto' && years > 0) {
@@ -1429,7 +1430,7 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
           await db.insert('posts', { app: 'news', section: 'Policía', character_id: S.char?.id || null, anonimo: true, media_url: v.mug_frente || null,
             title: `LAPD arresta a ${who}: ${pena(years)} de prisión`,
             body: `LOS ÁNGELES — Agentes del Departamento de Policía de Los Ángeles detuvieron a ${who}, quien fue fichado y trasladado a prisión. Le leyeron sus derechos Miranda en el lugar.\n\nCargos:\n${list}\n\nSentencia: ${pena(years)} de prisión y multa de ${money(Math.round(fine))}.${v.description ? '\n\n' + v.description : ''}\n\nOficial a cargo: ${cname(S.char?.id) || 'LAPD'}.` }).catch(() => {});
-          toast(`Arrestado: ${pena(years)} = ${Math.round(minutes)} min reales. El contador ya empezó.`);
+          toast(`Arrestado: ${pena(years)} = ${Math.round(minutes)} min reales. El contador ya empezó.${juicio ? ' El caso también se envió a los jueces.' : ''}`);
         } else toast('Registrado');
         go({});
       },
@@ -1441,7 +1442,7 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
       let f = p.reduce((s, i) => s + Number(i.dataset.fine), 0) * cpi(), y = p.reduce((s, i) => s + Number(i.dataset.years), 0);
       if (fm.atenuante.checked) f *= 0.7; if (fm.agravante.checked) y > 0 ? y += 11 / 12 : f += 2500 * cpi();
       el.querySelector('[data-licbox]').hidden = !p.some(i => i.dataset.lic);
-      box.innerHTML = p.length ? `Multa total <b>${money(f)}</b>${y ? ` · Prisión <b>${pena(y)}</b> (${Math.round(y * Number(set('prison_min_per_year')))} min reales)` : ' · Sin prisión'}${y > Number(set('trial_years')) ? ' · <b class="neg">más de ' + set('trial_years') + ' años: va a juicio sí o sí</b>' : ''}` : 'Selecciona cargos';
+      box.innerHTML = p.length ? `Multa total <b>${money(f)}</b>${y ? ` · Prisión <b>${pena(y)}</b> (${Math.round(y * Number(set('prison_min_per_year')))} min reales)` : ' · Sin prisión'}${y > Number(set('trial_years')) ? ' · <b class="neg">más de ' + set('trial_years') + ' años: entra a prisión y el caso va a juicio</b>' : ''}` : 'Selecciona cargos';
     });
     if (st.tab === 'pend') reviewQueue(el.querySelector('.tabbody'), { types: ['dni', 'licencia_conducir', 'licencia_armas', 'placa'], title: 'Trámites en comisaría',
       extra: r => `<button class="link" data-act="ver" data-id="${r.character_id}">ver antecedentes</button>` });
