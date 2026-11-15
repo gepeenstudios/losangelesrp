@@ -112,7 +112,7 @@ function pokerMult(cs) {
   if (st && fl && r[0] === 8) return 800; if (st && fl) return 50; if (cnt[0] === 4) return 25; if (cnt[0] === 3 && cnt[1] === 2) return 9; if (fl) return 6; if (st) return 4;
   if (cnt[0] === 3) return 3; if (cnt[0] === 2 && cnt[1] === 2) return 2; if (cnt[0] === 2 && r.find((x, i) => r[i + 1] === x) >= 9) return 1; return 0;
 }
-const minesMult = (n, k) => { let m = 0.92 + 0.003 * n; // igual que mines_mult() del SQL for (let i = 0; i < k; i++) m *= (25 - i) / (25 - n - i); return Math.round(m * 1e4) / 1e4; };
+const minesMult = (n, k) => { let m = 0.92 + 0.003 * n; /* igual que mines_mult() del SQL */ for (let i = 0; i < k; i++) m *= (25 - i) / (25 - n - i); return Math.round(m * 1e4) / 1e4; };
 function cView(h) { const s = h.state, o = h.status === 'open', v = { id: h.id, game: h.game, bet: h.bet, status: h.status, mult: s.mult, payout: s.payout };
   if (h.game === 'blackjack') return { ...v, p: [...s.p], pv: bjVal(s.p), doubled: !!s.doubled, d: o ? [s.d[0], -1] : [...s.d], dv: o ? bjVal([s.d[0]]) : bjVal(s.d) };
   if (h.game === 'poker') return { ...v, h: [...s.h], drawn: !!s.drawn };
