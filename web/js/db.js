@@ -88,6 +88,7 @@ function move(f, t, amt, concept) {
   if (t) t.balance += amt;
   T('transactions').push({ id: crypto.randomUUID(), from_acc: f?.id || null, to_acc: t?.id || null, amount: amt, concept, created_at: now() });
 }
+export const creditCap = s => (s >= 800 ? 1e7 : s >= 760 ? 2e6 : s >= 700 ? 5e5 : s >= 650 ? 5e4 : 1e4) * cpi();
 function creditScore(c) { const E = T('credit_events').filter(e => e.character_id === c), n = k => E.filter(e => e.kind === k && (k === 'pago_a_tiempo' || new Date(e.created_at) > Date.now() - 60 * 864e5)).length;
   const k = T('credit_cards').find(x => x.character_id === c && x.status !== 'closed'), age = E.length ? (Date.now() - Math.min(...E.map(e => new Date(e.created_at)))) / 864e5 : 0;
   return Math.round(Math.max(300, Math.min(850, 620 + 12 * Math.min(n('pago_a_tiempo'), 15) - 45 * n('pago_tarde') - 160 * n('impago') - (k ? 80 * Math.max(k.owed / k.credit_limit - 0.3, 0) : 0) + Math.min(30, Math.floor(age))))); }
@@ -98,7 +99,7 @@ function cardTick(c) {
   while (d < today && i++ < 90) { d = new Date(d.getTime() + 864e5);
     if (k.owed > 0) k.owed = Math.round(k.owed * (1 + k.apr / 365) * 100) / 100;
     if (d >= new Date(k.stmt_due + 'T12:00:00')) {
-      if (k.stmt_min > 0 && k.stmt_paid >= k.stmt_min) { ev('pago_a_tiempo', k.stmt_paid, 'Pagaste tu mínimo a tiempo', d); k.missed = 0; if (creditScore(c) >= 680 && k.owed <= k.credit_limit * 0.5) k.credit_limit = Math.round(Math.min(k.credit_limit * 1.15, 250000 * cpi()) * 100) / 100; }
+      if (k.stmt_min > 0 && k.stmt_paid >= k.stmt_min) { ev('pago_a_tiempo', k.stmt_paid, 'Pagaste tu mínimo a tiempo', d); k.missed = 0; { const sc = creditScore(c); if (sc >= 650 && k.owed <= k.credit_limit * 0.5) k.credit_limit = Math.round(Math.min(k.credit_limit * (sc >= 800 ? 2 : sc >= 760 ? 1.5 : sc >= 700 ? 1.25 : 1.1), creditCap(sc)) * 100) / 100; } }
       else if (k.stmt_min > 0) { k.missed++; k.owed += Math.round(25 * cpi() * 100) / 100; ev('pago_tarde', k.stmt_min, 'No cubriste tu pago mínimo · cargo por atraso', d); k.credit_limit = Math.round(Math.max(k.credit_limit * 0.8, 500) * 100) / 100;
         if (k.missed >= 3) { k.status = 'closed'; ev('impago', k.owed, '3 pagos vencidos: tarjeta cancelada, la deuda sigue', d); } else if (k.missed >= 2) k.status = 'frozen'; }
       k.stmt_min = k.owed <= 0 ? 0 : Math.round(Math.max(Math.min(k.owed, 50 * cpi()), k.owed * 0.1) * 100) / 100; k.stmt_paid = 0; k.stmt_due = new Date(d.getTime() + 7 * 864e5).toISOString().slice(0, 10); } }
