@@ -88,6 +88,20 @@ function move(f, t, amt, concept) {
   if (t) t.balance += amt;
   T('transactions').push({ id: crypto.randomUUID(), from_acc: f?.id || null, to_acc: t?.id || null, amount: amt, concept, created_at: now() });
 }
+const bjVal = cs => { let t = 0, a = 0; for (const c of cs) { const r = c % 13; if (r === 12) { t += 11; a++; } else t += r >= 8 ? 10 : r + 2; } while (t > 21 && a) { t -= 10; a--; } return t; };
+function pokerMult(cs) {
+  const r = cs.map(c => c % 13).sort((a, b) => a - b), cnt = Object.values(r.reduce((m, x) => (m[x] = (m[x] || 0) + 1, m), {})).sort((a, b) => b - a);
+  const fl = new Set(cs.map(c => Math.floor(c / 13))).size === 1, st = cnt.length === 5 && (r[4] - r[0] === 4 || r.join() === '0,1,2,3,12');
+  if (st && fl && r[0] === 8) return 800; if (st && fl) return 50; if (cnt[0] === 4) return 25; if (cnt[0] === 3 && cnt[1] === 2) return 9; if (fl) return 6; if (st) return 4;
+  if (cnt[0] === 3) return 3; if (cnt[0] === 2 && cnt[1] === 2) return 2; if (cnt[0] === 2 && r.find((x, i) => r[i + 1] === x) >= 9) return 1; return 0;
+}
+const minesMult = (n, k) => { let m = 0.99; for (let i = 0; i < k; i++) m *= (25 - i) / (25 - n - i); return Math.round(m * 1e4) / 1e4; };
+function cView(h) { const s = h.state, o = h.status === 'open', v = { id: h.id, game: h.game, bet: h.bet, status: h.status, mult: s.mult, payout: s.payout };
+  if (h.game === 'blackjack') return { ...v, p: [...s.p], pv: bjVal(s.p), doubled: !!s.doubled, d: o ? [s.d[0], -1] : [...s.d], dv: o ? bjVal([s.d[0]]) : bjVal(s.d) };
+  if (h.game === 'poker') return { ...v, h: [...s.h], drawn: !!s.drawn };
+  return { ...v, n: s.n, open: [...s.open], now: minesMult(s.n, s.open.length), next: minesMult(s.n, s.open.length + 1), mines: o ? null : [...s.mines] }; }
+function cSettle(h, m) { const pay = Math.round(h.bet * m * 100) / 100; if (pay > 0) move(gov(), personal(h.character_id), pay, `Casino · premio ${h.game} ×${Math.round(m * 100) / 100}`);
+  h.status = 'done'; h.state.mult = m; h.state.payout = pay; T('casino_bets').push({ id: crypto.randomUUID(), character_id: h.character_id, game: h.game, bet: h.bet, mult: m, payout: pay, result: cView(h), created_at: now() }); }
 const newVin = () => Array.from({ length: 17 }, () => '0123456789ABCDEFGHJKLMNPRSTUVWXYZ'[Math.random() * 33 | 0]).join('');
 export function sharePrice(co, accounts = T('accounts'), props = T('properties'), vehicles = T('vehicles'), models = T('vehicle_models'), companies = T('companies')) {
   if (co.industry === 'ETF') { const o = companies.filter(x => x.industry !== 'ETF'); return o.length ? Math.round(o.reduce((s, x) => s + sharePrice(x, accounts, props, vehicles, models, companies), 0) / o.length * 1000) / 100 : 10; }
@@ -278,6 +292,39 @@ const RPC = {
   fund_company({ req, dest }) { const r = T('requests').find(x => x.id === req && x.type === 'empresa'), d = acc(dest), cap = Number(r?.data?.capital) || 0;
     if (!r) throw new Error('Solicitud no encontrada'); if (T('transactions').some(t => t.to_acc === dest)) throw new Error('El capital ya se depositó');
     if (cap > 0) { const p = personal(r.character_id); if (!p || p.balance < cap) throw new Error(`El dueño ya no tiene el capital disponible (${cap})`); move(p, d, cap, 'Capital inicial · ' + (r.data.nombre || 'empresa')); } },
+  // espejo demo de casino_start / casino_act / casino_open (la versión real está en el servidor)
+  casino_open({ c, game }) { const h = T('casino_hands').find(x => x.character_id === c && x.game === game && x.status === 'open'); return h ? cView(h) : null; },
+  casino_start({ c, game, bet, opts = {} }) {
+    if (!myChars().some(x => x.id === c)) throw new Error('No es tu personaje');
+    if (myChars().find(x => x.id === c).status !== 'active') throw new Error('Tu vida debe estar activa');
+    const open = T('casino_hands').find(x => x.character_id === c && x.game === game && x.status === 'open'); if (open) return cView(open);
+    bet = Math.round(Number(bet) * 100) / 100; if (!(bet >= 1)) throw new Error('La apuesta mínima es $1'); if (bet > 50000) throw new Error('La apuesta máxima es $50000');
+    const n = +opts.mines; if (game === 'mines' && !(n >= 1 && n <= 24)) throw new Error('Minas entre 1 y 24');
+    move(personal(c), gov(), bet, 'Casino · apuesta ' + game);
+    const deck = Array.from({ length: 52 }, (_, i) => i).sort(() => Math.random() - 0.5), h = { id: crypto.randomUUID(), character_id: c, game, bet, status: 'open', created_at: now() };
+    if (game === 'blackjack') { h.state = { p: [deck[0], deck[2]], d: [deck[1], deck[3]], deck: deck.slice(4) }; T('casino_hands').push(h);
+      const pv = bjVal(h.state.p), dv = bjVal(h.state.d); if (pv === 21 || dv === 21) cSettle(h, pv === 21 && dv === 21 ? 1 : pv === 21 ? 2.5 : 0); }
+    else if (game === 'poker') { h.state = { h: deck.slice(0, 5), deck: deck.slice(5) }; T('casino_hands').push(h); }
+    else { h.state = { n, open: [], mines: Array.from({ length: 25 }, (_, i) => i).sort(() => Math.random() - 0.5).slice(0, n) }; T('casino_hands').push(h); }
+    return cView(h);
+  },
+  casino_act({ hand, action, arg }) {
+    const h = T('casino_hands').find(x => x.id === hand && x.status === 'open'); if (!h) throw new Error('Esa mano ya terminó');
+    if (!myChars().some(x => x.id === h.character_id)) throw new Error('No es tu mano'); const s = h.state;
+    if (h.game === 'blackjack') {
+      if (action === 'double') { if (s.p.length !== 2) throw new Error('Solo puedes doblar con tus dos primeras cartas'); move(personal(h.character_id), gov(), h.bet, 'Casino · doblar blackjack'); h.bet *= 2; s.doubled = true; }
+      if (action === 'hit' || action === 'double') s.p.push(s.deck.shift()); else if (action !== 'stand') throw new Error('Acción inválida');
+      const pv = bjVal(s.p);
+      if (pv > 21) cSettle(h, 0);
+      else if (action !== 'hit' || pv === 21) { while (bjVal(s.d) < 17) s.d.push(s.deck.shift()); const dv = bjVal(s.d); cSettle(h, dv > 21 || pv > dv ? 2 : pv === dv ? 1 : 0); }
+    } else if (h.game === 'poker') { if (action !== 'draw') throw new Error('Acción inválida'); s.h = s.h.map((c, i) => arg?.[i] ? c : s.deck.shift()); s.drawn = true; cSettle(h, pokerMult(s.h)); }
+    else { const k = s.open.length;
+      if (action === 'cash') { if (!k) throw new Error('Destapa al menos una casilla'); cSettle(h, minesMult(s.n, k)); }
+      else if (action === 'pick') { const i = +arg; if (!(i >= 0 && i <= 24) || s.open.includes(i)) throw new Error('Casilla inválida'); s.open.push(i);
+        if (s.mines.includes(i)) cSettle(h, 0); else if (k + 1 === 25 - s.n) cSettle(h, minesMult(s.n, k + 1)); }
+      else throw new Error('Acción inválida'); }
+    return cView(h);
+  },
   // espejo demo de casino_play (la versión real decide en el servidor)
   casino_play({ c, game, bet, opts = {} }) {
     if (!myChars().some(x => x.id === c)) throw new Error('No es tu personaje');

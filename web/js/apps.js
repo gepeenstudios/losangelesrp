@@ -361,55 +361,135 @@ const expedientes = { id: 'expedientes', name: 'Expedientes', icon: '🗂️', b
   } };
 
 
-// ============ CASINO (el servidor decide el resultado; apuestas → Tesorería, premios ← Tesorería) ============
-const CAS = { dice: ['🎲', 'Dados'], limbo: ['🚀', 'Limbo'], coin: ['🪙', 'Volado'], roulette: ['🎡', 'Ruleta'], slots: ['🎰', 'Tragamonedas'], plinko: ['🔻', 'Plinko'], wheel: ['🛞', 'Rueda'], hist: ['🧾', 'Mis apuestas'] };
+// ============ CASINO (el servidor decide todo; apuestas → Tesorería, premios ← Tesorería) ============
+const CAS = { dice: ['🎲', 'Dados'], limbo: ['🚀', 'Limbo'], coin: ['🪙', 'Volado'], roulette: ['🎡', 'Ruleta'], slots: ['🎰', 'Tragamonedas'], plinko: ['🔻', 'Plinko'], wheel: ['🛞', 'Rueda'],
+  blackjack: ['🃏', 'Blackjack'], poker: ['♠️', 'Video póker'], mines: ['💣', 'Minas'], hist: ['🧾', 'Mis apuestas'] };
+const CAS_TABLE = ['blackjack', 'poker', 'mines'];
 const PLINKO = [13, 3, 1.3, 0.7, 0.4, 0.7, 1.3, 3, 13], WHEEL = [0, 1.2, 0, 1.5, 0, 1.2, 0, 2, 0, 4], REDS = [1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36];
+const SLOT_SYM = ['🍒', '🍋', '🔔', '⭐', '💎', '7️⃣'], WHEEL_COL = { 0: '#2f4553', 1.2: '#4cc3ff', 1.5: '#00e701', 2: '#ffd200', 4: '#ff4d6d' };
+const POKER_HANDS = { 800: 'Flor imperial', 50: 'Escalera de color', 25: 'Póker', 9: 'Full house', 6: 'Color', 4: 'Escalera', 3: 'Tercia', 2: 'Dos pares', 1: 'Par de J o mejor' };
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const rcol = n => n === 0 ? 'verde' : REDS.includes(n) ? 'rojo' : 'negro';
+const cardHTML = (n, cls = '') => n < 0 ? `<div class="cas-card back ${cls}"></div>` : (() => { const r = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'][n % 13], su = ['♠','♥','♦','♣'][Math.floor(n / 13)];
+  return `<div class="cas-card ${su === '♥' || su === '♦' ? 'red' : ''} ${cls}"><b>${r}</b><span>${su}</span><b class="br">${r}</b></div>`; })();
+const fx = n => (Math.round(n * 100) / 100).toLocaleString('en-US');
+
+// animaciones de los juegos instantáneos: pintan en el escenario y terminan cuando el resultado ya está a la vista
+const CAS_ANIM = {
+  async dice(st, r, v) { const t = +v.tg, over = v.over === '1';
+    st.innerHTML = `<div class="cas-big" data-n>0.00</div><div class="cas-track"><i style="${over ? `left:${t}%;right:0` : `left:0;right:${100 - t}%`}"></i><b data-m style="left:0%">${''}</b></div>`;
+    const n = st.querySelector('[data-n]'), m = st.querySelector('[data-m]'); requestAnimationFrame(() => m.style.left = r.roll + '%');
+    for (let k = 0; k < 14; k++) { n.textContent = (Math.random() * 100).toFixed(2); await sleep(40); } n.textContent = r.roll.toFixed(2); await sleep(350); },
+  async limbo(st, r) { st.innerHTML = '<div class="cas-big" data-n>1.00×</div>'; const n = st.querySelector('[data-n]'), end = Math.min(r.result, 1e6), T = Math.min(1600, 400 + Math.log(end) * 300), t0 = performance.now();
+    await new Promise(ok => { const f = now => { const p = Math.min(1, (now - t0) / T); n.textContent = fx(Math.exp(Math.log(end) * p)) + '×'; p < 1 ? requestAnimationFrame(f) : ok(); }; requestAnimationFrame(f); });
+    n.classList.add(r.mult > 0 ? 'cas-g' : 'cas-r'); },
+  async coin(st, r) { st.innerHTML = `<div class="cas-coin"><div class="cas-coin-in ${r.side}"><span class="f">CARA</span><span class="b">CRUZ</span></div></div>`; await sleep(1700); },
+  async roulette(st, r) { const cells = Array.from({ length: 60 }, (_, i) => i === 52 ? r.n : Math.floor(Math.random() * 37));
+    st.innerHTML = `<div class="cas-strip"><div class="cas-strip-in">${cells.map(n => `<span class="cas-${rcol(n)}">${n}</span>`).join('')}</div><i></i></div>`;
+    const inner = st.querySelector('.cas-strip-in'), w = st.querySelector('.cas-strip').clientWidth;
+    requestAnimationFrame(() => requestAnimationFrame(() => inner.style.transform = `translateX(${w / 2 - (52 * 56 + 28) + (Math.random() * 30 - 15)}px)`)); await sleep(3100); },
+  async slots(st, r) { st.innerHTML = `<div class="cas-reels">${r.reels.map((s, i) => `<div class="cas-reel"><div class="cas-reel-in" style="transition-duration:${1 + i * 0.45}s">${[...Array.from({ length: 24 }, () => SLOT_SYM[Math.random() * 6 | 0]), s].map(x => `<span>${x}</span>`).join('')}</div></div>`).join('')}</div>`;
+    requestAnimationFrame(() => requestAnimationFrame(() => st.querySelectorAll('.cas-reel-in').forEach(x => x.style.transform = `translateY(-${24 * 72}px)`))); await sleep(2100); },
+  async plinko(st, r) { const W = 300, gap = W / 9, H = 26; // 9 cubetas: la bola cae al centro de la suya
+    st.innerHTML = `<div class="cas-plinko" style="width:${W}px;height:${H * 9 + 40}px">${Array.from({ length: 8 }, (_, row) => Array.from({ length: row + 3 }, (_, k) => `<i style="left:${W / 2 + (k - (row + 2) / 2) * gap}px;top:${(row + 1) * H}px"></i>`).join('')).join('')}
+      <b class="cas-ball" style="left:${W / 2}px;top:0"></b><div class="cas-row cas-pk-slots" style="top:${H * 9 + 6}px">${PLINKO.map(m => `<span>×${m}</span>`).join('')}</div></div>`;
+    const ball = st.querySelector('.cas-ball'); let x = W / 2;
+    for (let k = 0; k < 8; k++) { x += (r.path[k] ? 1 : -1) * gap / 2; await sleep(150); ball.style.left = x + 'px'; ball.style.top = (k + 1) * H + H * 0.6 + 'px'; }
+    await sleep(200); st.querySelectorAll('.cas-pk-slots span')[r.slot].classList.add('cas-hit'); await sleep(300); },
+  async wheel(st, r) { const grad = WHEEL.map((m, i) => `${WHEEL_COL[m]} ${i * 36}deg ${(i + 1) * 36}deg`).join(',');
+    st.innerHTML = `<div class="cas-wheel"><div class="cas-wheel-in" style="background:conic-gradient(${grad})">${WHEEL.map((m, i) => `<span style="transform:rotate(${i * 36 + 18}deg) translateY(-92px)">×${m}</span>`).join('')}</div><i></i></div>`;
+    const w = st.querySelector('.cas-wheel-in'); requestAnimationFrame(() => requestAnimationFrame(() => w.style.transform = `rotate(${360 * 5 + 360 - (r.seg * 36 + 18) + (Math.random() * 20 - 10)}deg)`)); await sleep(3300); },
+};
+
 const casino = { id: 'casino', name: 'Casino', icon: '🎰', bg: '#0f212e,#1a2c38', show: () => true,
-  async render(el, game = 'dice', last = null, bet = 10) {
+  async render(el, game = 'dice', bet = 10) {
     if (typeof game !== 'string') game = 'dice';
     if (!needChar(el)) return;
-    const win = el.closest('.win'); if (win) win.dataset.dirty = '1'; // el refresco automático borraría el resultado de la jugada
+    const win = el.closest('.win'); if (win) win.dataset.dirty = '1'; // el refresco automático borraría la jugada en curso
     const accs = await myAccounts(), bal = Number(accs.find(a => a.kind === 'personal')?.balance || 0);
-    const fx = n => (Math.round(n * 100) / 100).toLocaleString('en-US');
-    const out = last ? `<div class="cas-out ${last.payout > 0 ? 'cas-win' : 'cas-lose'}">${last.view}<b>${last.payout > 0 ? `Ganaste ${money(last.payout)} (×${fx(last.mult)})` : `Perdiste ${money(last.bet)}`}</b></div>` : '';
+    const hand = CAS_TABLE.includes(game) ? await db.rpc('casino_open', { c: S.char.id, game }) : null;
     const betBox = `<label class="fld"><span>Apuesta (USD)</span><div class="cas-bet"><input name="bet" type="number" min="1" step="0.01" value="${bet}" required><button type="button" data-act="half">½</button><button type="button" data-act="dbl">2×</button><button type="button" data-act="max">Máx</button></div></label>`;
     const ctl = {
-      dice: `<label class="fld"><span>Número objetivo (2–98)</span><input name="tg" type="range" min="2" max="98" value="50" oninput="this.form.querySelector('.cas-dinfo').textContent=(this.form.over.value==='1'?'Gana si sale MÁS de ':'Gana si sale MENOS de ')+this.value+' · paga ×'+(99/(this.form.over.value==='1'?100-this.value:this.value)).toFixed(4)"></label>
-        <label class="fld"><span>Dirección</span><select name="over" onchange="this.form.tg.oninput()"><option value="1">Más que (over)</option><option value="0">Menos que (under)</option></select></label><p class="cas-dinfo muted">Gana si sale MÁS de 50 · paga ×1.9800</p>`,
-      limbo: `<label class="fld"><span>Multiplicador objetivo (1.01–1000)</span><input name="tg" type="number" min="1.01" max="1000" step="0.01" value="2" required></label><p class="muted">Sale un multiplicador al azar. Si es igual o mayor a tu objetivo, ganas tu apuesta × objetivo. Probabilidad ≈ 99% ÷ objetivo.</p>`,
+      dice: `<label class="fld"><span>Número objetivo (2–98)</span><input name="tg" type="range" min="2" max="98" value="50"></label>
+        <label class="fld"><span>Dirección</span><select name="over"><option value="1">Más que (over)</option><option value="0">Menos que (under)</option></select></label><p class="cas-dinfo muted"></p>`,
+      limbo: `<label class="fld"><span>Multiplicador objetivo (1.01–1000)</span><input name="tg" type="number" min="1.01" max="1000" step="0.01" value="2" required></label><p class="muted">Sale un multiplicador al azar. Si es igual o mayor a tu objetivo, ganas apuesta × objetivo. Probabilidad ≈ 99% ÷ objetivo.</p>`,
       coin: `<label class="fld"><span>Elige</span><select name="side"><option value="cara">Cara</option><option value="cruz">Cruz</option></select></label><p class="muted">Paga ×1.98.</p>`,
       roulette: `<label class="fld"><span>Apuesta a</span><select name="pick"><option value="rojo">🔴 Rojo (×2)</option><option value="negro">⚫ Negro (×2)</option><option value="par">Par (×2)</option><option value="impar">Impar (×2)</option>
         <option value="bajo">1–18 (×2)</option><option value="alto">19–36 (×2)</option><option value="d1">1ª docena 1–12 (×3)</option><option value="d2">2ª docena 13–24 (×3)</option><option value="d3">3ª docena 25–36 (×3)</option>
         ${Array.from({ length: 37 }, (_, n) => `<option value="n${n}">Número ${n} (×36)</option>`).join('')}</select></label><p class="muted">Ruleta europea (0–36).</p>`,
       slots: `<p class="muted">Tres iguales: 🍒×5 · 🍋×10 · 🔔×20 · ⭐×50 · 💎×100 · 7️⃣×250. Dos iguales: ×0.7.</p>`,
-      plinko: `<div class="cas-row">${PLINKO.map(m => `<span>×${m}</span>`).join('')}</div><p class="muted">La bola cae por 8 filas de clavos.</p>`,
-      wheel: `<div class="cas-row">${WHEEL.map(m => `<span class="${m ? '' : 'cas-z'}">×${m}</span>`).join('')}</div><p class="muted">10 casillas; la rueda decide.</p>`,
+      plinko: `<p class="muted">La bola cae por 8 filas de clavos. Orillas ×13, centro ×0.4.</p>`,
+      wheel: `<p class="muted">10 casillas: ×0, ×1.2, ×1.5, ×2 y ×4.</p>`,
+      blackjack: `<p class="muted">El blackjack paga 3 a 2. El crupier se planta en 17. Puedes doblar con tus dos primeras cartas.</p>`,
+      poker: `<p class="muted">Jacks or Better: recibes 5 cartas, eliges cuáles quedarte y cambias las demás.</p><table class="cas-pay">${Object.entries(POKER_HANDS).reverse().map(([m, n]) => `<tr><td>${n}</td><td>×${m}</td></tr>`).join('')}</table>`,
+      mines: `<label class="fld"><span>Número de minas (1–24)</span><input name="mines" type="number" min="1" max="24" value="3" required></label><p class="muted">Destapa casillas con diamante y retírate cuando quieras. Si sale una mina, pierdes.</p>`,
     };
+    const acts = {
+      tab: d => casino.render(el, d.t, el.querySelector('[name=bet]')?.value || bet),
+      half: (_, b) => { const i = b.form.bet; i.value = Math.max(1, Math.round(i.value / 2 * 100) / 100); },
+      dbl: (_, b) => { const i = b.form.bet; i.value = Math.min(50000, bal, i.value * 2); },
+      max: (_, b) => { b.form.bet.value = Math.min(50000, Math.floor(bal * 100) / 100); },
+    };
+    const idle = () => `<div class="cas-out idle">${CAS[game][0]}<b>${CAS[game][1]}</b></div>`;
     let body;
     if (game === 'hist') {
       const rows = await db.list('casino_bets', { eq: { character_id: S.char.id }, limit: 100 });
       const tb = rows.reduce((n, r) => n + Number(r.bet), 0), tp = rows.reduce((n, r) => n + Number(r.payout), 0);
       body = `<p>Últimas ${rows.length} apuestas · apostado ${money(tb)} · ganado ${money(tp)} · <b class="${tp - tb >= 0 ? 'pos' : 'neg'}">neto ${tp - tb >= 0 ? '+' : '−'}${money(Math.abs(tp - tb))}</b></p>
         <table class="tbl"><thead><tr><th>Juego</th><th>Apuesta</th><th>×</th><th>Pago</th><th>Fecha</th></tr></thead><tbody>${rows.map(r => `<tr><td>${CAS[r.game]?.join(' ') || esc(r.game)}</td><td>${money(r.bet)}</td><td>${fx(r.mult)}</td><td class="${r.payout > 0 ? 'pos' : 'neg'}">${money(r.payout)}</td><td>${fdate(r.created_at)}</td></tr>`).join('')}</tbody></table>`;
-    } else body = `<div class="cas-game"><form class="cas-side form" data-form="play">${betBox}${ctl[game]}<button class="btn big cas-go" type="submit">Apostar</button></form><div class="cas-stage">${out || `<div class="cas-out idle">${CAS[game][0]}<b>${CAS[game][1]}</b></div>`}</div></div>`;
-    view(el, `<div class="cas"><header class="cas-h"><b>🎰 Casino Los Ángeles</b><span class="grow"></span><span>Saldo <b>${money(bal)}</b></span></header>
-      ${tabs(Object.entries(CAS).map(([k, [i, n]]) => [k, i + ' ' + n]), game)}<div class="tabbody">${body}<p class="muted cas-legal">Juego responsable. Lo que pierdes va a la Tesorería del gobierno y los premios los paga la Tesorería. Apuesta máxima ${money(50000)}.</p></div></div>`, {
-      tab: d => casino.render(el, d.t, null, bet),
-      half: (_, b) => { const i = b.form.bet; i.value = Math.max(1, Math.round(i.value / 2 * 100) / 100); },
-      dbl: (_, b) => { const i = b.form.bet; i.value = Math.min(50000, bal, i.value * 2); },
-      max: (_, b) => { b.form.bet.value = Math.min(50000, Math.floor(bal * 100) / 100); },
+    } else body = `<div class="cas-game"><form class="cas-side form" data-form="play">${betBox}${ctl[game]}<div class="cas-acts"><button class="btn big cas-go" type="submit">${CAS_TABLE.includes(game) ? 'Jugar' : 'Apostar'}</button></div></form>
+      <div class="cas-stage"><div class="cas-show">${idle()}</div><div class="cas-res"></div></div></div>`;
+    view(el, `<div class="cas"><header class="cas-h"><b>🎰 Casino Los Ángeles</b><span class="grow"></span><span>Saldo <b data-bal>${money(bal)}</b></span></header>
+      ${tabs(Object.entries(CAS).map(([k, [i, n]]) => [k, i + ' ' + n]), game)}<div class="tabbody">${body}<p class="muted cas-legal">Juego responsable. Lo que pierdes va a la Tesorería del gobierno y los premios los paga la Tesorería. Apuesta máxima ${money(50000)}.</p></div></div>`, acts);
+    if (game === 'hist') return;
+    const form = el.querySelector('.cas-side'), show = el.querySelector('.cas-show'), res = el.querySelector('.cas-res'), go = el.querySelector('.cas-go'), acts2 = el.querySelector('.cas-acts');
+    const refreshBal = () => myAccounts().then(a => { const b = money(a.find(y => y.kind === 'personal')?.balance); el.querySelector('[data-bal]').textContent = b; document.querySelectorAll('.cash,.wb-bal').forEach(x => x.textContent = b); });
+    const result = r => { res.innerHTML = r.payout > 0 ? `<b class="cas-g cas-pop">Ganaste ${money(r.payout)} (×${fx(r.mult)})</b>` : `<b class="cas-r cas-pop">Perdiste ${money(r.bet)}</b>`; res.closest('.cas-stage').classList.toggle('cas-won', r.payout > 0); refreshBal(); };
+    if (game === 'dice') { const upd = () => { const t = +form.tg.value, o = form.over.value === '1'; el.querySelector('.cas-dinfo').textContent = `Gana si sale ${o ? 'MÁS' : 'MENOS'} de ${t} · ${o ? 100 - t : t}% · paga ×${(99 / (o ? 100 - t : t)).toFixed(4)}`; };
+      form.tg.oninput = form.over.onchange = upd; upd(); }
+    // juegos de mesa: dibuja la mano actual (las cartas nuevas entran con animación)
+    let shown = { p: 0, d: 0, h: [] }, holds = [false, false, false, false, false];
+    const table = (v, fresh) => {
+      if (v.game === 'blackjack') {
+        const row = (cs, k) => cs.map((c, i) => cardHTML(c, i >= shown[k] || fresh ? 'deal' : '')).join('');
+        show.innerHTML = `<div class="cas-bj"><div><small>Crupier · ${v.status === 'open' ? v.dv + ' + ?' : v.dv}</small><div class="cas-hand">${row(v.d, 'd')}</div></div>
+          <div><small>Tú · ${v.pv}${v.doubled ? ' · doblaste' : ''}</small><div class="cas-hand">${row(v.p, 'p')}</div></div></div>`;
+        shown = { p: v.p.length, d: v.status === 'open' ? 1 : v.d.length };
+        acts2.innerHTML = v.status === 'open' ? `<button type="button" class="btn big" data-act="bj" data-a="hit">Pedir</button><button type="button" class="btn big ghost" data-act="bj" data-a="stand">Plantarse</button>${v.p.length === 2 ? `<button type="button" class="btn big ghost" data-act="bj" data-a="double">Doblar</button>` : ''}` : `<button class="btn big cas-go" type="submit">Jugar otra</button>`;
+      } else if (v.game === 'poker') {
+        show.innerHTML = `<div class="cas-hand cas-pk">${v.h.map((c, i) => `<div class="cas-hold ${holds[i] && v.status === 'open' ? 'on' : ''}" data-act="hold" data-i="${i}">${cardHTML(c, shown.h[i] !== c ? 'deal' : '')}<small>${v.status === 'open' ? (holds[i] ? 'SE QUEDA' : 'cambiar') : ''}</small></div>`).join('')}</div>
+          ${v.status !== 'open' ? `<div class="cas-pkname">${POKER_HANDS[v.mult] || 'Nada'}</div>` : '<p class="muted">Toca las cartas que te quieres quedar.</p>'}`;
+        shown.h = [...v.h];
+        acts2.innerHTML = v.status === 'open' ? `<button type="button" class="btn big" data-act="draw">Cambiar cartas</button>` : `<button class="btn big cas-go" type="submit">Jugar otra</button>`;
+      } else {
+        show.innerHTML = `<div class="cas-mines">${Array.from({ length: 25 }, (_, i) => { const op = v.open.includes(i), mine = v.mines?.includes(i);
+          return `<button type="button" class="cas-tile ${op ? 'op' : ''} ${op && mine ? 'boom' : ''} ${!op && mine ? 'reveal' : ''}" ${v.status === 'open' && !op ? `data-act="pick" data-i="${i}"` : 'disabled'}>${op ? (mine ? '💣' : '💎') : mine ? '💣' : ''}</button>`; }).join('')}</div>
+          <p class="muted">${v.n} minas · ${v.open.length} diamantes${v.status === 'open' ? ` · ahora ×${fx(v.now)} · siguiente ×${fx(v.next)}` : ''}</p>`;
+        acts2.innerHTML = v.status === 'open' ? `<button type="button" class="btn big" data-act="cash" ${v.open.length ? '' : 'disabled'}>Retirar ${v.open.length ? money(v.bet * v.now) : ''}</button>` : `<button class="btn big cas-go" type="submit">Jugar otra</button>`;
+      }
+      form.querySelectorAll('input,select').forEach(x => x.disabled = v.status === 'open');
+      if (v.status !== 'open') result(v); else { res.innerHTML = ''; res.closest('.cas-stage').classList.remove('cas-won'); }
+      cur = v;
+    };
+    let cur = null;
+    if (hand) table(hand);
+    async function act(fn) { el.querySelectorAll('.cas-acts button').forEach(b => b.disabled = true); try { table(await fn()); } finally { el.querySelectorAll('.cas-acts button').forEach(b => b.disabled = false); } }
+    Object.assign(acts, {
       async play(v) {
+        if (CAS_TABLE.includes(game)) { shown = { p: 0, d: 0, h: [] }; holds = [false, false, false, false, false];
+          return act(() => db.rpc('casino_start', { c: S.char.id, game, bet: +v.bet, opts: game === 'mines' ? { mines: +v.mines } : {} })).then(refreshBal); }
         const opts = game === 'dice' ? { target: +v.tg, over: v.over === '1' } : game === 'limbo' ? { target: +v.tg } : game === 'coin' ? { side: v.side } : game === 'roulette' ? { pick: v.pick } : {};
-        const r = await db.rpc('casino_play', { c: S.char.id, game, bet: +v.bet, opts });
-        const view1 = { dice: () => `<div class="cas-big">${fx(r.roll)}</div>`, limbo: () => `<div class="cas-big">×${fx(r.result)}</div>`, coin: () => `<div class="cas-big">${r.side === 'cara' ? '🪙 Cara' : '🪙 Cruz'}</div>`,
-          roulette: () => `<div class="cas-big cas-${r.color}">${r.n}</div>`, slots: () => `<div class="cas-big">${r.reels.join(' ')}</div>`,
-          plinko: () => `<div class="cas-row">${PLINKO.map((m, i) => `<span class="${i === r.slot ? 'cas-hit' : ''}">×${m}</span>`).join('')}</div><div class="muted">${r.path.map(x => x ? '↘' : '↙').join(' ')}</div>`,
-          wheel: () => `<div class="cas-row">${WHEEL.map((m, i) => `<span class="${i === r.seg ? 'cas-hit' : m ? '' : 'cas-z'}">×${m}</span>`).join('')}</div>` }[game]();
-        casino.render(el, game, { ...r, bet: +v.bet, view: view1 }, +v.bet); myAccounts().then(a => document.querySelectorAll('.cash,.wb-bal').forEach(x => x.textContent = money(a.find(y => y.kind === 'personal')?.balance)));
+        go.disabled = true; res.innerHTML = '';
+        try { const r = await db.rpc('casino_play', { c: S.char.id, game, bet: +v.bet, opts }); await CAS_ANIM[game](show, r, v); result({ ...r, bet: +v.bet }); }
+        finally { go.disabled = false; }
       },
+      bj: d => act(() => db.rpc('casino_act', { hand: cur.id, action: d.a })),
+      hold: d => { if (cur?.status !== 'open') return; holds[d.i] = !holds[d.i]; table(cur); },
+      draw: () => act(() => db.rpc('casino_act', { hand: cur.id, action: 'draw', arg: holds })),
+      pick: d => act(() => db.rpc('casino_act', { hand: cur.id, action: 'pick', arg: +d.i })),
+      cash: () => act(() => db.rpc('casino_act', { hand: cur.id, action: 'cash' })),
     });
   } };
-
 // ============ DOCUMENTOS (wallet) ============
 // Documentos personales y licencias: Wallet los junta todos; Documentos y Licencias salen en el escritorio cuando tienes alguno
 const LIC_TYPES = ['licencia_conducir', 'licencia_armas', 'licencia_abogado', 'licencia_juez'];
