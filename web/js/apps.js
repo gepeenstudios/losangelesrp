@@ -302,6 +302,64 @@ const e911 = { id: 'e911', name: '911', icon: '🚨', bg: '#ff3b30,#a8000b', sho
     });
   } };
 
+
+// ============ EXPEDIENTES (staff Moderador+: toda la información de una cuenta y sus vidas) ============
+const expedientes = { id: 'expedientes', name: 'Expedientes', icon: '🗂️', bg: '#3a3f58,#1b1e2e', show: () => lvl() >= 2,
+  async render(el, uid) {
+    if (lvl() < 2) return view(el, '<p class="empty">Solo staff (Moderador o superior).</p>');
+    const profiles = await db.list('profiles', { order: 'created_at', limit: 5000 }), chars = await db.list('characters', { order: 'created_at', limit: 10000 });
+    const go = id => expedientes.render(el, id), skip = new Set(['avatar_url', 'avatar_full', 'skin_url', 'id', 'user_id']);
+    // tabla con TODAS las columnas de un registro (lo que exista en la base de datos)
+    const kv = o => `<table class="tbl kv">${Object.entries(o).filter(([k, v]) => !skip.has(k) && v !== null && v !== '' && !(Array.isArray(v) && !v.length))
+      .map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(typeof v === 'object' ? JSON.stringify(v) : /_at$|_until$|^dob$/.test(k) ? fdate(v) : v)}</td></tr>`).join('')}</table>`;
+    if (typeof uid !== 'string') {
+      const row = p => { const cs = chars.filter(c => c.user_id === p.id);
+        return `<tr class="brow" data-s="${esc([p.username, p.roblox, p.discord, ...cs.map(c => c.first_name + ' ' + c.last_name)].join(' ').toLowerCase())}" data-act="ver" data-id="${p.id}">
+          <td>${av(p.avatar_url, 'mini-av')} <b>${esc(p.username)}</b></td><td>${esc(p.roblox || '')}</td><td>${esc(p.discord || '')}</td><td>${p.staff_role ? esc(STAFF_NAME[p.staff_role]) : '—'}</td>
+          <td>${cs.map(c => `${esc(c.first_name)} ${esc(c.last_name)} <small class="muted">(${esc(c.status)})</small>`).join('<br>') || '<span class="muted">sin vida</span>'}</td><td>${fdate(p.created_at)}</td></tr>`; };
+      view(el, `<div class="exp"><h2>Expedientes · ${profiles.length} cuentas</h2><input class="filter" placeholder="Buscar por usuario, Roblox, Discord o nombre de una vida…" data-q autocomplete="off">
+        <table class="tbl hover"><thead><tr><th>Usuario</th><th>Roblox</th><th>Discord</th><th>Staff</th><th>Vidas</th><th>Creada</th></tr></thead><tbody>${profiles.map(row).join('')}</tbody></table></div>`, { ver: d => go(d.id) });
+      el.querySelector('[data-q]').oninput = e => { const q = e.target.value.toLowerCase().trim(); el.querySelectorAll('.brow').forEach(r => r.hidden = q && !r.dataset.s.includes(q)); };
+      return;
+    }
+    const p = profiles.find(x => x.id === uid), mine = chars.filter(c => c.user_id === uid), ids = mine.map(c => c.id);
+    if (!p) return go();
+    const all = (t, o = {}) => db.list(t, { limit: 5000, ...o }).catch(() => []);
+    const [accs, reqs, recs, inm, emps, vehs, models, props, comps, hold, items, calls, posts, songs, bans, tickets, shifts] = await Promise.all([
+      ids.length ? all('accounts', { overlaps: { owners: ids } }) : [], all('requests', { eq: { user_id: uid } }), all('records'), all('inmates'), all('employments', { order: null }),
+      all('vehicles'), all('vehicle_models', { order: null }), all('properties', { order: null }), all('companies', { order: null }), all('holdings', { order: null }), all('items'),
+      all('calls911'), all('posts'), all('songs'), all('bans'), all('tickets', { eq: { user_id: uid } }), all('shifts', { eq: { user_id: uid } })]);
+    const tx = accs.length ? (await Promise.all(accs.map(a => all('transactions', { eq: { to_acc: a.id }, limit: 15 }).then(r => r.concat()).then(async r => r.concat(await all('transactions', { eq: { from_acc: a.id }, limit: 15 }))))))
+      .flat().sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 25) : [];
+    const sec = (t, n, body) => `<details class="exp-s" ${n ? 'open' : ''}><summary>${t}${n === true ? '' : ` <span class="muted">(${n})</span>`}</summary>${body || '<p class="muted">Nada.</p>'}</details>`;
+    const list = (arr, f) => arr.length ? `<ul class="list">${arr.map(f).join('')}</ul>` : '';
+    const name = c => `${c.first_name} ${c.last_name}`, M = Object.fromEntries(models.map(m => [m.id, m]));
+    const sanc = bans.filter(b => [p.username, p.roblox, p.discord].filter(Boolean).some(v => [b.username, b.roblox, b.discord].map(x => String(x || '').toLowerCase()).includes(String(v).toLowerCase())));
+    const dutyH = Math.round(shifts.filter(x => new Date(x.started_at) > Date.now() - 7 * 864e5).reduce((m, x) => m + (new Date(x.ended_at || Date.now()) - new Date(x.started_at)) / 6e4, 0) / 6) / 10;
+    const life = c => { const mine1 = (arr, k = 'character_id') => arr.filter(x => x[k] === c.id);
+      const cAccs = accs.filter(a => a.owners?.includes(c.id)), cVeh = mine1(vehs, 'owner_char'), cProps = mine1(props, 'owner_char'), cComps = comps.filter(x => x.owners?.includes(c.id));
+      return `<div class="card exp-life"><div class="row">${av(c.skin_url, 'big-av')}<div class="grow"><h3>${esc(name(c))}</h3><div class="muted">${esc(c.status)} · roles: ${esc((c.roles || []).join(', '))}</div></div></div>
+        ${sec('Datos de la vida', true, kv(c))}
+        ${sec('Cuentas de banco', cAccs.length, list(cAccs, a => `<li><span class="grow">${esc(a.name || a.kind)} · ${esc(a.number || '')}</span><b>${money(a.balance)}</b></li>`))}
+        ${sec('Trámites', mine1(reqs).length, list(mine1(reqs), r => `<li><span class="grow">${esc(TRAMITES[r.type]?.name || r.type)} <small class="muted">${fdate(r.created_at)}</small><div class="muted">${esc(Object.entries(r.data || {}).filter(([, v]) => typeof v !== 'object' && !/^(data:|https?:)/.test(String(v))).map(([k, v]) => k + ': ' + v).join(' · ').slice(0, 300))}</div></span>${badge(r.status)}</li>`))}
+        ${sec('Antecedentes', mine1(recs).length, list(mine1(recs), r => `<li><span class="grow"><b>${esc(r.kind)}</b> ${esc(r.description)} <small class="muted">${fdate(r.created_at)} · ${esc(cname(r.officer_id))}</small></span>${r.amount ? `<b>${money(r.amount)}</b>` : ''}</li>`))}
+        ${sec('Prisión', mine1(inm).length, list(mine1(inm), i => `<li><span class="grow">${esc(i.status)} · ${pena(i.years)} (${Math.round(i.minutes)} min) · sale ${fdate(i.ends_at)}</span></li>`))}
+        ${sec('Empleos', mine1(emps).length, list(mine1(emps), e => `<li><span class="grow">${esc(e.dept)} · ${esc(e.rank)} <small class="muted">desde ${fdate(e.hired_at)}</small></span>${badge(e.status === 'fired' ? 'rejected' : e.status)}</li>`))}
+        ${sec('Vehículos', cVeh.length, list(cVeh, v => `<li><span class="grow">${esc(M[v.model_id]?.brand || '')} ${esc(M[v.model_id]?.model || '')} · placa ${esc(v.plate || '—')} · VIN ${esc(v.vin || '—')}</span></li>`))}
+        ${sec('Propiedades', cProps.length, list(cProps, x => `<li><span class="grow">${esc(x.name)}</span><b>${money(x.price)}</b></li>`))}
+        ${sec('Empresas y acciones', cComps.length + mine1(hold).length, list(cComps, x => `<li>🏢 ${esc(x.name)}</li>`) + list(mine1(hold), h => `<li>📈 ${esc(comps.find(x => x.id === h.company_id)?.name || h.company_id)} · ${h.shares} acciones</li>`))}
+        ${sec('Inventario (Tool Store)', mine1(items, 'owner_char').length, list(mine1(items, 'owner_char'), i => `<li>${esc(SHOPI[i.item]?.name || i.item)}${i.serial ? ' · serie ' + esc(i.serial) : ''} <small class="muted">${fdate(i.created_at)}</small></li>`))}
+        ${sec('Llamadas al 911', mine1(calls, 'caller_char').length, list(mine1(calls, 'caller_char'), k => `<li><span class="grow">${esc(SVC911[k.service]?.[1] || k.service)} · ${esc(k.location)}: ${esc(k.description)} <small class="muted">${fdate(k.created_at)}</small></span>${esc(k.status)}</li>`))}
+        ${sec('Redes y música', mine1(posts).length + mine1(songs, 'uploader_char').length, `<p>${mine1(posts).length} publicaciones · ${mine1(songs, 'uploader_char').length} canciones (${mine1(songs, 'uploader_char').reduce((n, x) => n + (x.plays || 0), 0)} reproducciones)</p>`)}
+      </div>`; };
+    view(el, `<div class="exp"><button class="link" data-act="volver">‹ Todas las cuentas</button>
+      <div class="row exp-h">${av(p.avatar_url, 'big-av')}<div class="grow"><h2>${esc(p.username)}</h2><div class="muted">Roblox ${esc(p.roblox || '—')} · Discord ${esc(p.discord || '—')} · ${p.staff_role ? esc(STAFF_NAME[p.staff_role]) : 'Sin rango de staff'} · creada ${fdate(p.created_at)}</div></div></div>
+      ${sec('Datos de la cuenta', true, kv(p) + `<p class="muted">Servicio de staff últimos 7 días: ${dutyH} h · Tickets de soporte: ${tickets.length}</p>`)}
+      ${sec('Sanciones', sanc.length, list(sanc, b => `<li><span class="grow"><b>${esc(b.kind)}</b> · ${esc(b.reason)} <small class="muted">${fdate(b.created_at)} · hasta ${esc(b.until || 'permanente')}</small></span></li>`))}
+      ${sec('Últimos movimientos de banco', tx.length, list(tx, t => `<li><span class="grow">${esc(t.concept)} <small class="muted">${fdate(t.created_at)}</small></span><b class="${accs.some(a => a.id === t.to_acc) ? 'pos' : 'neg'}">${accs.some(a => a.id === t.to_acc) ? '+' : '−'}${money(t.amount)}</b></li>`))}
+      <h2>Vidas (${mine.length})</h2>${mine.map(life).join('') || '<p class="empty">Esta cuenta no ha creado vidas.</p>'}</div>`, { volver: () => go() });
+  } };
+
 // ============ DOCUMENTOS (wallet) ============
 // Documentos personales y licencias: Wallet los junta todos; Documentos y Licencias salen en el escritorio cuando tienes alguno
 const LIC_TYPES = ['licencia_conducir', 'licencia_armas', 'licencia_abogado', 'licencia_juez'];
@@ -1653,4 +1711,4 @@ export async function seed() {
 
 export const APPS = [vida, banco, gobierno, safari, docs, documentos, licencias, archivos, spotify, trabajo, mensajes,
   social('x', 'X', '𝕏', '#000000,#1c1c1c'), social('insta', 'Instagram', '📸', '#833ab4,#fd1d1d,#fcb045'),
-  news, buscar, empleos, bolsa, casas, autos, toolstore, fec, corte, e911, policia, prision, taxi, soporte, resenas, robstore, staffApp, ajustes];
+  news, buscar, empleos, bolsa, casas, autos, toolstore, fec, corte, e911, policia, expedientes, prision, taxi, soporte, resenas, robstore, staffApp, ajustes];

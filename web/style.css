@@ -861,3 +861,7 @@ tr.click{cursor:pointer}tr.click:hover{background:#ffffff08}
 .e9-call{border-left:4px solid #888}.e9-call.abierta{border-left-color:#ff3b30;animation:e9 1.6s ease-in-out infinite}.e9-call.en_camino{border-left-color:#ff9f0a}.e9-call.cerrada{opacity:.75;border-left-color:#30d158}
 .e9-ic{font-size:26px}.e9-call p{margin:8px 0}@keyframes e9{50%{box-shadow:0 0 0 2px #ff3b3055}}
 .tag.warn{background:#ff9f0a22;color:#ff9f0a}
+/* Expedientes (staff) */
+.exp h2{margin:6px 0 10px}.exp-h{gap:14px;align-items:center;margin:8px 0 12px}.exp .tbl.hover tr[data-act]{cursor:pointer}.exp .tbl.hover tr[data-act]:hover{background:#ffffff0d}
+.exp-s{border:1px solid #ffffff14;border-radius:10px;padding:6px 12px;margin:8px 0}.exp-s summary{cursor:pointer;font-weight:700;padding:4px 0}
+.exp-life{margin:12px 0}.kv th{text-align:left;width:190px;color:#9aa0a6;font-weight:500;vertical-align:top}.kv td{word-break:break-word}
