@@ -278,6 +278,31 @@ const RPC = {
   fund_company({ req, dest }) { const r = T('requests').find(x => x.id === req && x.type === 'empresa'), d = acc(dest), cap = Number(r?.data?.capital) || 0;
     if (!r) throw new Error('Solicitud no encontrada'); if (T('transactions').some(t => t.to_acc === dest)) throw new Error('El capital ya se depositó');
     if (cap > 0) { const p = personal(r.character_id); if (!p || p.balance < cap) throw new Error(`El dueño ya no tiene el capital disponible (${cap})`); move(p, d, cap, 'Capital inicial · ' + (r.data.nombre || 'empresa')); } },
+  // espejo demo de casino_play (la versión real decide en el servidor)
+  casino_play({ c, game, bet, opts = {} }) {
+    if (!myChars().some(x => x.id === c)) throw new Error('No es tu personaje');
+    if (myChars().find(x => x.id === c).status !== 'active') throw new Error('Tu vida debe estar activa');
+    bet = Math.round(Number(bet) * 100) / 100; if (!(bet >= 1)) throw new Error('La apuesta mínima es $1'); if (bet > 50000) throw new Error('La apuesta máxima es $50000');
+    const a = personal(c); move(a, gov(), bet, 'Casino · apuesta ' + game);
+    const R = Math.random, reds = [1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]; let m = 0, res;
+    if (game === 'dice') { const t = +opts.target; if (!(t >= 2 && t <= 98)) throw new Error('Objetivo entre 2 y 98'); const r = Math.floor(R() * 10000) / 100;
+      m = opts.over !== false ? (r > t ? 99 / (100 - t) : 0) : (r < t ? 99 / t : 0); res = { roll: r }; }
+    else if (game === 'limbo') { const t = +opts.target; if (!(t >= 1.01 && t <= 1000)) throw new Error('Multiplicador entre 1.01 y 1000'); const r = Math.min(Math.floor(0.99 / (1 - R()) * 100) / 100, 1e6); m = r >= t ? t : 0; res = { result: r }; }
+    else if (game === 'coin') { const sd = R() < 0.5 ? 'cara' : 'cruz'; m = sd === opts.side ? 1.98 : 0; res = { side: sd }; }
+    else if (game === 'roulette') { const n = Math.floor(R() * 37), p = opts.pick || '';
+      m = p === 'rojo' && reds.includes(n) || p === 'negro' && n > 0 && !reds.includes(n) || p === 'par' && n > 0 && n % 2 === 0 || p === 'impar' && n % 2 === 1 || p === 'bajo' && n >= 1 && n <= 18 || p === 'alto' && n >= 19 ? 2
+        : /^d[123]$/.test(p) && n > 0 && Math.floor((n - 1) / 12) + 1 === +p[1] ? 3 : /^n\d+$/.test(p) && +p.slice(1) === n ? 36 : 0;
+      res = { n, color: n === 0 ? 'verde' : reds.includes(n) ? 'rojo' : 'negro' }; }
+    else if (game === 'slots') { const w = [30,25,20,12,8,5], sym = ['🍒','🍋','🔔','⭐','💎','7️⃣'], pay = [5,10,20,50,100,250];
+      const k = [0,0,0].map(() => { let r = R() * 100, i = 0; while (r >= w[i]) r -= w[i++]; return i; });
+      m = k[0] === k[1] && k[1] === k[2] ? pay[k[0]] : k[0] === k[1] || k[1] === k[2] || k[0] === k[2] ? 0.7 : 0; res = { reels: k.map(i => sym[i]) }; }
+    else if (game === 'plinko') { const path = Array.from({ length: 8 }, () => +(R() < 0.5)), k = path.reduce((x, y) => x + y, 0); m = [13,3,1.3,0.7,0.4,0.7,1.3,3,13][k]; res = { path, slot: k }; }
+    else if (game === 'wheel') { const n = Math.floor(R() * 10); m = [0,1.2,0,1.5,0,1.2,0,2,0,4][n]; res = { seg: n }; }
+    else throw new Error('Juego desconocido');
+    const payout = Math.round(bet * m * 100) / 100; if (m > 0) move(gov(), a, payout, `Casino · premio ${game} ×${Math.round(m * 100) / 100}`);
+    T('casino_bets').push({ id: crypto.randomUUID(), character_id: c, game, bet, mult: m, payout, result: res, created_at: now() });
+    return { ...res, mult: Math.round(m * 1e4) / 1e4, payout };
+  },
   quit_job({ emp }) { const e = T('employments').find(x => x.id === emp); if (!e) throw new Error('Ese no es tu empleo'); e.status = 'fired'; T('work_shifts').filter(w => w.character_id === e.character_id && !w.ended_at).forEach(w => w.ended_at = now()); const c = T('characters').find(x => x.id === e.character_id); if (c) c.roles = c.roles.filter(r => r !== e.dept); },
   respond_call({ cid, act, c, note }) { const k = T('calls911').find(x => x.id === cid); if (!k) throw new Error('La llamada no existe');
     if (act === 'cancel') return Object.assign(k, { status: 'cancelada', updated_at: now() });

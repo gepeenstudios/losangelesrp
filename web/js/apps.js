@@ -360,6 +360,56 @@ const expedientes = { id: 'expedientes', name: 'Expedientes', icon: '🗂️', b
       <h2>Vidas (${mine.length})</h2>${mine.map(life).join('') || '<p class="empty">Esta cuenta no ha creado vidas.</p>'}</div>`, { volver: () => go() });
   } };
 
+
+// ============ CASINO (el servidor decide el resultado; apuestas → Tesorería, premios ← Tesorería) ============
+const CAS = { dice: ['🎲', 'Dados'], limbo: ['🚀', 'Limbo'], coin: ['🪙', 'Volado'], roulette: ['🎡', 'Ruleta'], slots: ['🎰', 'Tragamonedas'], plinko: ['🔻', 'Plinko'], wheel: ['🛞', 'Rueda'], hist: ['🧾', 'Mis apuestas'] };
+const PLINKO = [13, 3, 1.3, 0.7, 0.4, 0.7, 1.3, 3, 13], WHEEL = [0, 1.2, 0, 1.5, 0, 1.2, 0, 2, 0, 4], REDS = [1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36];
+const casino = { id: 'casino', name: 'Casino', icon: '🎰', bg: '#0f212e,#1a2c38', show: () => true,
+  async render(el, game = 'dice', last = null, bet = 10) {
+    if (typeof game !== 'string') game = 'dice';
+    if (!needChar(el)) return;
+    const win = el.closest('.win'); if (win) win.dataset.dirty = '1'; // el refresco automático borraría el resultado de la jugada
+    const accs = await myAccounts(), bal = Number(accs.find(a => a.kind === 'personal')?.balance || 0);
+    const fx = n => (Math.round(n * 100) / 100).toLocaleString('en-US');
+    const out = last ? `<div class="cas-out ${last.payout > 0 ? 'cas-win' : 'cas-lose'}">${last.view}<b>${last.payout > 0 ? `Ganaste ${money(last.payout)} (×${fx(last.mult)})` : `Perdiste ${money(last.bet)}`}</b></div>` : '';
+    const betBox = `<label class="fld"><span>Apuesta (USD)</span><div class="cas-bet"><input name="bet" type="number" min="1" step="0.01" value="${bet}" required><button type="button" data-act="half">½</button><button type="button" data-act="dbl">2×</button><button type="button" data-act="max">Máx</button></div></label>`;
+    const ctl = {
+      dice: `<label class="fld"><span>Número objetivo (2–98)</span><input name="tg" type="range" min="2" max="98" value="50" oninput="this.form.querySelector('.cas-dinfo').textContent=(this.form.over.value==='1'?'Gana si sale MÁS de ':'Gana si sale MENOS de ')+this.value+' · paga ×'+(99/(this.form.over.value==='1'?100-this.value:this.value)).toFixed(4)"></label>
+        <label class="fld"><span>Dirección</span><select name="over" onchange="this.form.tg.oninput()"><option value="1">Más que (over)</option><option value="0">Menos que (under)</option></select></label><p class="cas-dinfo muted">Gana si sale MÁS de 50 · paga ×1.9800</p>`,
+      limbo: `<label class="fld"><span>Multiplicador objetivo (1.01–1000)</span><input name="tg" type="number" min="1.01" max="1000" step="0.01" value="2" required></label><p class="muted">Sale un multiplicador al azar. Si es igual o mayor a tu objetivo, ganas tu apuesta × objetivo. Probabilidad ≈ 99% ÷ objetivo.</p>`,
+      coin: `<label class="fld"><span>Elige</span><select name="side"><option value="cara">Cara</option><option value="cruz">Cruz</option></select></label><p class="muted">Paga ×1.98.</p>`,
+      roulette: `<label class="fld"><span>Apuesta a</span><select name="pick"><option value="rojo">🔴 Rojo (×2)</option><option value="negro">⚫ Negro (×2)</option><option value="par">Par (×2)</option><option value="impar">Impar (×2)</option>
+        <option value="bajo">1–18 (×2)</option><option value="alto">19–36 (×2)</option><option value="d1">1ª docena 1–12 (×3)</option><option value="d2">2ª docena 13–24 (×3)</option><option value="d3">3ª docena 25–36 (×3)</option>
+        ${Array.from({ length: 37 }, (_, n) => `<option value="n${n}">Número ${n} (×36)</option>`).join('')}</select></label><p class="muted">Ruleta europea (0–36).</p>`,
+      slots: `<p class="muted">Tres iguales: 🍒×5 · 🍋×10 · 🔔×20 · ⭐×50 · 💎×100 · 7️⃣×250. Dos iguales: ×0.7.</p>`,
+      plinko: `<div class="cas-row">${PLINKO.map(m => `<span>×${m}</span>`).join('')}</div><p class="muted">La bola cae por 8 filas de clavos.</p>`,
+      wheel: `<div class="cas-row">${WHEEL.map(m => `<span class="${m ? '' : 'cas-z'}">×${m}</span>`).join('')}</div><p class="muted">10 casillas; la rueda decide.</p>`,
+    };
+    let body;
+    if (game === 'hist') {
+      const rows = await db.list('casino_bets', { eq: { character_id: S.char.id }, limit: 100 });
+      const tb = rows.reduce((n, r) => n + Number(r.bet), 0), tp = rows.reduce((n, r) => n + Number(r.payout), 0);
+      body = `<p>Últimas ${rows.length} apuestas · apostado ${money(tb)} · ganado ${money(tp)} · <b class="${tp - tb >= 0 ? 'pos' : 'neg'}">neto ${tp - tb >= 0 ? '+' : '−'}${money(Math.abs(tp - tb))}</b></p>
+        <table class="tbl"><thead><tr><th>Juego</th><th>Apuesta</th><th>×</th><th>Pago</th><th>Fecha</th></tr></thead><tbody>${rows.map(r => `<tr><td>${CAS[r.game]?.join(' ') || esc(r.game)}</td><td>${money(r.bet)}</td><td>${fx(r.mult)}</td><td class="${r.payout > 0 ? 'pos' : 'neg'}">${money(r.payout)}</td><td>${fdate(r.created_at)}</td></tr>`).join('')}</tbody></table>`;
+    } else body = `<div class="cas-game"><form class="cas-side form" data-form="play">${betBox}${ctl[game]}<button class="btn big cas-go" type="submit">Apostar</button></form><div class="cas-stage">${out || `<div class="cas-out idle">${CAS[game][0]}<b>${CAS[game][1]}</b></div>`}</div></div>`;
+    view(el, `<div class="cas"><header class="cas-h"><b>🎰 Casino Los Ángeles</b><span class="grow"></span><span>Saldo <b>${money(bal)}</b></span></header>
+      ${tabs(Object.entries(CAS).map(([k, [i, n]]) => [k, i + ' ' + n]), game)}<div class="tabbody">${body}<p class="muted cas-legal">Juego responsable. Lo que pierdes va a la Tesorería del gobierno y los premios los paga la Tesorería. Apuesta máxima ${money(50000)}.</p></div></div>`, {
+      tab: d => casino.render(el, d.t, null, bet),
+      half: (_, b) => { const i = b.form.bet; i.value = Math.max(1, Math.round(i.value / 2 * 100) / 100); },
+      dbl: (_, b) => { const i = b.form.bet; i.value = Math.min(50000, bal, i.value * 2); },
+      max: (_, b) => { b.form.bet.value = Math.min(50000, Math.floor(bal * 100) / 100); },
+      async play(v) {
+        const opts = game === 'dice' ? { target: +v.tg, over: v.over === '1' } : game === 'limbo' ? { target: +v.tg } : game === 'coin' ? { side: v.side } : game === 'roulette' ? { pick: v.pick } : {};
+        const r = await db.rpc('casino_play', { c: S.char.id, game, bet: +v.bet, opts });
+        const view1 = { dice: () => `<div class="cas-big">${fx(r.roll)}</div>`, limbo: () => `<div class="cas-big">×${fx(r.result)}</div>`, coin: () => `<div class="cas-big">${r.side === 'cara' ? '🪙 Cara' : '🪙 Cruz'}</div>`,
+          roulette: () => `<div class="cas-big cas-${r.color}">${r.n}</div>`, slots: () => `<div class="cas-big">${r.reels.join(' ')}</div>`,
+          plinko: () => `<div class="cas-row">${PLINKO.map((m, i) => `<span class="${i === r.slot ? 'cas-hit' : ''}">×${m}</span>`).join('')}</div><div class="muted">${r.path.map(x => x ? '↘' : '↙').join(' ')}</div>`,
+          wheel: () => `<div class="cas-row">${WHEEL.map((m, i) => `<span class="${i === r.seg ? 'cas-hit' : m ? '' : 'cas-z'}">×${m}</span>`).join('')}</div>` }[game]();
+        casino.render(el, game, { ...r, bet: +v.bet, view: view1 }, +v.bet); myAccounts().then(a => document.querySelectorAll('.cash,.wb-bal').forEach(x => x.textContent = money(a.find(y => y.kind === 'personal')?.balance)));
+      },
+    });
+  } };
+
 // ============ DOCUMENTOS (wallet) ============
 // Documentos personales y licencias: Wallet los junta todos; Documentos y Licencias salen en el escritorio cuando tienes alguno
 const LIC_TYPES = ['licencia_conducir', 'licencia_armas', 'licencia_abogado', 'licencia_juez'];
@@ -1711,4 +1761,4 @@ export async function seed() {
 
 export const APPS = [vida, banco, gobierno, safari, docs, documentos, licencias, archivos, spotify, trabajo, mensajes,
   social('x', 'X', '𝕏', '#000000,#1c1c1c'), social('insta', 'Instagram', '📸', '#833ab4,#fd1d1d,#fcb045'),
-  news, buscar, empleos, bolsa, casas, autos, toolstore, fec, corte, e911, policia, expedientes, prision, taxi, soporte, resenas, robstore, staffApp, ajustes];
+  news, buscar, empleos, bolsa, casas, autos, toolstore, casino, fec, corte, e911, policia, expedientes, prision, taxi, soporte, resenas, robstore, staffApp, ajustes];
