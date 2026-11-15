@@ -1387,7 +1387,7 @@ const sebusca = { id: 'sebusca', name: 'Se Busca', icon: '🤠', bg: '#8b5a2b,#3
   async render(el) {
     const o = await db.list('records', { eq: { kind: 'orden', paid: false } }).catch(() => []), tot = o.reduce((n, r) => n + bountyOf(r), 0);
     view(el, `<div class="sb"><header class="sb-h"><b>🤠 SE BUSCA · Recompensas de la LAPD</b><span>${o.length} buscado(s) · ${money(tot)} en recompensas</span></header>
-      <p class="muted">Cada orden de arresto empieza en $0 y sube $1 por cada día del juego que la persona sigue libre; la policía también puede subirla. Si ves a alguien, manda un aviso: le llega a la policía como llamada al 911. La recompensa la cobra quien lo captura.</p>
+      <p class="muted">Cada orden de arresto empieza en $0 y sube $1 por cada día del juego (2 horas reales) que la persona sigue libre; la policía también puede subirla, hasta un máximo de $1,000,000,000. Si ves a alguien, manda un aviso: le llega a la policía como llamada al 911. La recompensa la cobra quien lo captura.</p>
       <div class="posters">${o.map(r => `<div>${posterHTML(r)}<button class="btn sm" data-act="aviso" data-id="${r.id}">📞 Dar un aviso</button></div>`).join('') || '<p class="empty">Nadie buscado por ahora. 🌴</p>'}</div></div>`, {
       aviso: d => { const r = o.find(x => x.id === d.id); if (!S.char) throw new Error('Necesitas una vida activa');
         modal('📞 Aviso sobre ' + esc(cname(r.character_id)), form('go', [{ k: 'location', label: '¿Dónde lo viste?', req: 1 }, { k: 'detalle', label: 'Detalles (ropa, auto, hacia dónde iba)', type: 'textarea', req: 1 }, { k: 'anonymous', label: 'Enviar como anónimo', type: 'checkbox' }], {}, 'Enviar aviso'), {
@@ -1405,7 +1405,7 @@ const chargesHTML = (code, on = []) => Object.entries(KIND).filter(([k]) => code
 const pena = y => { const m = Math.round(Number(y) * 12); if (m >= 1188) return 'Perpetua'; if (!m) return ''; const a = Math.floor(m / 12), r = m % 12;
   return [a && `${a} año${a > 1 ? 's' : ''}`, r && `${r} mes${r > 1 ? 'es' : ''}`].filter(Boolean).join(' y '); };
 // recompensa de una orden: $1 por cada día del juego que sigue libre + lo que agregó la policía (igual que bounty() en SQL)
-const bountyOf = r => Math.max(0, Math.round((Date.parse(gameDay()) - Date.parse(gameDay(r.created_at))) / 864e5)) + Number(r.bounty_extra || 0);
+const bountyOf = r => Math.min(1e9, Math.max(0, Math.round((Date.parse(gameDay()) - Date.parse(gameDay(r.created_at))) / 864e5)) + Number(r.bounty_extra || 0)); // tope: mil millones
 // cartel de SE BUSCA (MDT, app Se Busca y LA Times)
 const posterHTML = (r, act = '') => `<div class="poster" ${act}><div class="poster-h">SE BUSCA</div><small class="poster-sub">POR EL DEPARTAMENTO DE POLICÍA DE LOS ÁNGELES</small>
   <div class="poster-ph">${av(skin(r.character_id), 'poster-img')}</div><b class="poster-name">${esc(cname(r.character_id)).toUpperCase()}</b>
@@ -1509,7 +1509,7 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
         toast('Reporte enviado al staff');
       },
       zoom,
-      recompensa: d => modal('💰 Subir recompensa', form('go', [{ k: 'amount', label: 'Agregar a la recompensa (USD)', type: 'number', min: 1, req: 1 }], {}, 'Subir'), {
+      recompensa: d => modal('💰 Subir recompensa', form('go', [{ k: 'amount', label: 'Agregar a la recompensa (USD · máximo total $1,000,000,000)', type: 'number', min: 1, max: 1e9, req: 1 }], {}, 'Subir'), {
         async go(v, _, close) { await db.rpc('raise_bounty', { rec: d.id, amount: +v.amount }); close(); toast('Recompensa actualizada'); go({}); } }),
       async capturar() { // pasa la orden al formulario de arresto con sus cargos marcados
         const fm = el.querySelector('form[data-form=procesar]'), codes = (await db.list('records', { eq: { character_id: st.id, kind: 'orden', paid: false } })).flatMap(r => (r.charges || []).map(x => x.code));

@@ -465,10 +465,10 @@ const RPC = {
     const a = T('accounts').find(x => x.kind === 'dept' && x.dept === d), t = T('accounts').find(x => x.number === String(dest).replace(/\s/g, ''));
     guard(a, d + ' todavía no tiene presupuesto'); guard(t, 'Esa cuenta no existe'); move(a, t, amount, (concept || 'Gasto') + ' · ' + d);
   },
-  raise_bounty({ rec, amount }) { const r = T('records').find(x => x.id === rec && x.kind === 'orden' && !x.paid); guard(r, 'Esa orden ya no está activa'); guard(amount > 0, 'Monto inválido'); r.bounty_extra = (r.bounty_extra || 0) + amount; },
+  raise_bounty({ rec, amount }) { const r = T('records').find(x => x.id === rec && x.kind === 'orden' && !x.paid); guard(r, 'Esa orden ya no está activa'); guard(amount > 0, 'Monto inválido'); r.bounty_extra = Math.min(1e9, (r.bounty_extra || 0) + amount); },
   capture_orders({ c, officer }) { // shortcut: el demo cuenta la recompensa por días reales del juego igual que el cliente
     const os = T('records').filter(x => x.character_id === c && x.kind === 'orden' && !x.paid), day = t => Math.floor((new Date(t) - Date.parse('2026-11-15T06:00:00Z')) / 72e5);
-    const total = os.reduce((s, r) => s + Math.max(0, day(Date.now()) - day(r.created_at)) + (r.bounty_extra || 0), 0);
+    const total = os.reduce((s, r) => s + Math.min(1e9, Math.max(0, day(Date.now()) - day(r.created_at)) + (r.bounty_extra || 0)), 0);
     mem.t.records = T('records').filter(x => !os.includes(x));
     const to = T('accounts').find(a => a.kind === 'personal' && a.owners[0] === officer), src = T('accounts').find(x => x.kind === 'dept' && x.dept === 'Policía') || gov();
     if (total > 0 && to && src.balance >= total) { move(src, to, total, 'Recompensa por captura'); return total; } return 0;
