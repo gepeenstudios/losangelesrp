@@ -995,3 +995,5 @@ tr.click{cursor:pointer}tr.click:hover{background:#ffffff08}
 .deep .bank-h::before{content:'> TOR//RRVA-ONION · conexión cifrada AES-256 · rastreo: desactivado';display:block;font-size:.7em;opacity:.7;margin-bottom:4px}
 .deep .tabs button{color:#1fae5c}.deep .tabs button.on{color:#33ff88;border-color:#33ff88}.deep .list li,.deep .card,.deep .tx{background:#0a120d !important;border-color:#1d5c3a !important;color:#33ff88}
 .deep input,.deep select{background:#000 !important;color:#33ff88 !important;border-color:#1d5c3a !important}.deep .btn{background:#0f3d24;color:#33ff88;border:1px solid #33ff88}.deep .chips button{background:#0a120d;color:#33ff88;border-color:#1d5c3a}.deep .chips button.on{background:#33ff88;color:#000}
+
+.bx-send-amt{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end}.bx-send-amt .grow{flex:1 1 100%}.bx-send-amt .fld:not(.grow){flex:1}.bx-sum-send{background:rgba(0,0,0,.25);border-radius:8px;padding:6px 10px;margin:6px 0;font-size:.9em}.bx-sum-send:empty{display:none}

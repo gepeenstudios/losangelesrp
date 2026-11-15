@@ -483,6 +483,7 @@ const expedientes = { id: 'expedientes', name: 'Expedientes', icon: '🗂️', b
 
 // ============ BITSO (cripto con oferta fija; el precio lo mueven las compras y ventas de los jugadores contra un pool x·y=k) ============
 const cfmt = p => p >= 1000 ? money(p) : p >= 1 ? '$' + Number(p).toFixed(2) : '$' + Number(p).toFixed(4);
+const cfmt8 = n => (Math.floor(Number(n) * 1e8) / 1e8).toFixed(8).replace(/\.?0+$/, '') || '0';
 const bitso = { id: 'bitso', name: 'Bitso', icon: '🪙', bg: '#0b2b1f,#0f7a4f', show: () => true,
   async render(el, sel = null, range = 5 * 60e3) {
     if (typeof sel !== 'string') sel = null; if (range > 14 * 3600e3 || range < 60e3) range = 5 * 60e3; // range = duración de cada vela
@@ -505,7 +506,10 @@ const bitso = { id: 'bitso', name: 'Bitso', icon: '🪙', bg: '#0b2b1f,#0f7a4f',
           <form class="card form" data-form="buy"><h3>Comprar</h3><label class="fld"><span>Dólares a invertir (saldo ${money(bal)})</span><input name="usd" type="number" min="1" step="0.01" required></label><button class="btn bx-buy">Comprar ${esc(c.sym)}</button></form>
           <form class="card form" data-form="sell"><h3>Vender</h3><label class="fld"><span>Cantidad de ${esc(c.sym)}</span><input name="qty" type="number" min="0" step="any" max="${q}" required></label><div class="row"><button type="button" class="btn ghost sm" data-act="all">Todo</button><span class="grow"></span><button class="btn bx-sell">Vender</button></div></form>
           <div class="card bx-wallet"><h3>Recibir ${esc(c.sym)}</h3><p class="muted">Tu dirección de depósito. Compártela para que te envíen ${esc(c.sym)}; solo sirve para esta moneda.</p><code class="bx-addr">${esc(myAddr)}</code><button class="btn sm ghost" data-act="copyaddr">Copiar dirección</button></div>
-          <form class="card form" data-form="send"><h3>Enviar ${esc(c.sym)}</h3><label class="fld"><span>Dirección de ${esc(c.sym)} del destinatario</span><input name="addr" required placeholder="${esc(myAddr.slice(0, 6))}…" autocomplete="off" spellcheck="false"></label><label class="fld"><span>Cantidad de ${esc(c.sym)} (tienes ${q.toFixed(8).replace(/\.?0+$/, '') || 0})</span><input name="qty" type="number" min="0" step="any" max="${q}" required></label><button class="btn">Enviar</button><p class="muted">Comisión de red: 0.1% (se cobra aparte). Revisa bien la dirección: una transacción enviada no se puede revertir. No pasa por el banco.</p></form></div>
+          <form class="card form" data-form="send"><h3>Enviar ${esc(c.sym)}</h3><label class="fld"><span>Dirección de ${esc(c.sym)} del destinatario</span><input name="addr" required placeholder="${esc(myAddr.slice(0, 6))}…" autocomplete="off" spellcheck="false"></label><div class="bx-send-amt"><label class="fld grow"><span>Cantidad</span><input name="amt" type="number" min="0" step="any" required></label>
+            <label class="fld"><span>En</span><select name="unit"><option value="coin">${esc(c.sym)}</option><option value="usd">USD</option></select></label><button type="button" class="btn ghost sm" data-act="sendmax">Máx</button></div>
+            <p class="muted">Puedes mandar hasta <b>${cfmt8(q / 1.001)} ${esc(c.sym)}</b> ≈ <b>${money(q / 1.001 * Number(c.price))}</b> (ya descontando la comisión de red).</p>
+            <div class="bx-sum-send" data-sendsum></div><button class="btn">Enviar</button><p class="muted">Comisión de red: 0.1% (se cobra aparte). Solo puedes mandar ${esc(c.sym)} a una dirección de ${esc(c.sym)}. Revisa bien la dirección: una transacción enviada no se puede revertir. No pasa por el banco.</p></form></div>
         <div class="kpis"><div><small>Monedas que existen</small><b>${Number(c.supply || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}</b></div><div><small>En manos de jugadores</small><b>${Number((c.supply || 0) - (c.pool_coin || 0)).toLocaleString('en-US', { maximumFractionDigits: 4 })}</b></div>
           <div><small>Capitalización</small><b>${money(Number(c.price) * Number(c.supply || 0))}</b></div><div><small>Dólares en la reserva</small><b>${money(c.pool_usd)}</b></div></div>
         <p class="muted">Como una cripto real: hay una cantidad fija de monedas y el precio lo mueven las compras y ventas de todos los jugadores. Comprar sube el precio, vender lo baja, y entre más grande la orden más lo mueve. Comisión 0.5%. El gobierno no participa.</p>
@@ -520,10 +524,18 @@ const bitso = { id: 'bitso', name: 'Bitso', icon: '🪙', bg: '#0b2b1f,#0f7a4f',
       all: (_, b) => { b.form.qty.value = Number(H[sel]?.qty || 0); },
       async buy(v) { const r = await db.rpc('crypto_trade', { c: S.char.id, s: sel, side: 'buy', amount: +v.usd }); toast(`Compraste ${Number(r.qty).toFixed(8).replace(/\.?0+$/, '')} ${sel} · nuevo precio ${cfmt(r.new_price)}`); bitso.render(el, sel, range); window.liveRefresh?.(); },
       copyaddr: () => { navigator.clipboard?.writeText(el.querySelector('.bx-addr').textContent); toast('Dirección copiada'); },
-      async send(v) { if (!await ask(`¿Enviar ${v.qty} ${sel} a ${v.addr.trim().slice(0, 12)}…? No se puede revertir.`)) return;
-        const r = await db.rpc('crypto_send', { c: S.char.id, addr: v.addr.trim(), s: sel, amount: +v.qty }); toast(`Enviado ✓ · comisión ${r.fee} ${sel} · tx ${String(r.txid).slice(0, 10)}…`); bitso.render(el, sel, range); },
+      sendmax: (_, b) => { const f = b.form, mx = Math.floor(Number(H[sel]?.qty || 0) / 1.001 * 1e8) / 1e8, pr = Number(coins.find(x => x.sym === sel).price); f.amt.value = f.unit.value === 'usd' ? Math.floor(mx * pr * 100) / 100 : mx; f.amt.dispatchEvent(new Event('input', { bubbles: true })); },
+      async send(v) { const pr = Number(coins.find(x => x.sym === sel).price), qty = Math.floor((v.unit === 'usd' ? +v.amt / pr : +v.amt) * 1e8) / 1e8;
+        if (!(qty > 0)) throw new Error('Cantidad inválida');
+        if (!await ask(`¿Enviar ${cfmt8(qty)} ${sel} (≈ ${money(qty * pr)}) a ${v.addr.trim().slice(0, 14)}…? Comisión de red ${cfmt8(qty * 0.001)} ${sel}. No se puede revertir.`)) return;
+        const r = await db.rpc('crypto_send', { c: S.char.id, addr: v.addr.trim(), s: sel, amount: qty }); toast(`Enviado ✓ · comisión ${r.fee} ${sel} · tx ${String(r.txid).slice(0, 10)}…`); bitso.render(el, sel, range); },
       async sell(v) { const r = await db.rpc('crypto_trade', { c: S.char.id, s: sel, side: 'sell', amount: +v.qty }); toast(`Vendiste por ${money(r.usd)}`); bitso.render(el, sel, range); window.liveRefresh?.(); },
     });
+    const sf = el.querySelector('form[data-form=send]');
+    if (sf) { const pr = Number(coins.find(x => x.sym === sel).price), have = Number(H[sel]?.qty || 0);
+      sf.oninput = sf.onchange = () => { const a = +sf.amt.value || 0, qty = sf.unit.value === 'usd' ? a / pr : a, fee = qty * 0.001, ok = qty + fee <= have + 1e-9;
+        sf.querySelector('[data-sendsum]').innerHTML = a ? `<div>Envías <b>${cfmt8(qty)} ${esc(sel)}</b> ≈ <b>${money(qty * pr)}</b></div><div>Comisión de red: ${cfmt8(fee)} ${esc(sel)} ≈ ${money(fee * pr)}</div>
+          <div>Total que sale de tu wallet: <b>${cfmt8(qty + fee)} ${esc(sel)}</b> · te quedan ${cfmt8(Math.max(0, have - qty - fee))}</div>${ok ? '' : '<div class="neg">No te alcanza</div>'}` : ''; }; }
     // en vivo: vuelve a pintar cada 30 s mientras la ventana siga abierta y nadie esté escribiendo
     clearTimeout(el._bx); el._bx = setTimeout(() => { if (el.isConnected && el.querySelector('.bx') && !el.contains(document.activeElement)) bitso.render(el, sel, range); }, sel ? 10000 : 30000);
   } };
