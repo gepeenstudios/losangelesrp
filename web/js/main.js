@@ -99,8 +99,9 @@ export function openWindow({ key, title, iconHTML, bg, url, render }, from) {
       <form class="addr">${ico('lock', 'i sm')}<input value="${esc(url)}" aria-label="Dirección" spellcheck="false"></form></div>` : ''}<div class="win-b"></div><button class="home-ind" aria-label="Ir al inicio"></button>`;
   wins.append(w); focusWin(w);
   setTimeout(() => w.classList.remove('opening'), 420);
-  const body = w.querySelector('.win-b');
+  let body = w.querySelector('.win-b');
   let run = () => render(body).catch(e => { body.innerHTML = `<p class="empty">Error: ${esc(e.message)}</p>`; });
+  let paint = target => render(target); // pinta la vista actual en otro contenedor (para refrescar sin parpadeo)
   if (url) { // ventana de navegador: dirección, atrás/adelante y enlaces
     let cur = null; const hist = [], fut = [], bar = w.querySelector('.addr input');
     const go = async (u, push = true) => {
@@ -113,6 +114,7 @@ export function openWindow({ key, title, iconHTML, bg, url, render }, from) {
       try {
         if (u === url && render) return await render(body, params);
         const site = await resolveSite(host);
+        paint = async target => u === url && render ? render(target, params) : site?.(target, params);
         if (site) await site(body, params);
         else body.innerHTML = `<div class="nf"><h2>Safari no puede abrir la página</h2><p>No se encontró el servidor "${esc(host)}".</p><a class="link" data-href="google.rp/search?q=${encodeURIComponent(host)}">Buscar "${esc(host)}" en Google</a></div>`;
       } catch (e) { body.innerHTML = `<p class="empty">Error: ${esc(e.message)}</p>`; }
@@ -120,10 +122,17 @@ export function openWindow({ key, title, iconHTML, bg, url, render }, from) {
     w.querySelector('.addr').onsubmit = e => { e.preventDefault(); bar.blur(); go(bar.value); };
     w.querySelector('[data-nav=back]').onclick = () => hist.length && (fut.push(cur), go(hist.pop(), false));
     w.querySelector('[data-nav=fwd]').onclick = () => fut.length && (hist.push(cur), go(fut.pop(), false));
-    body.addEventListener('click', e => { const a = e.target.closest('[data-href]'); if (a) { e.preventDefault(); go(a.dataset.href); } });
+    w.addEventListener('click', e => { const a = e.target.closest('.win-b [data-href]'); if (a) { e.preventDefault(); go(a.dataset.href); } });
     run = () => go(cur || url, !cur);
   }
   w._run = () => { delete w.dataset.dirty; return run(); };
+  // refresco automático sin parpadeo: pinta escondido y solo cambia la ventana si algo cambió
+  w._silent = async () => {
+    const tmp = body.cloneNode(false); Object.assign(tmp, Object.fromEntries(Object.keys(body).map(k => [k, body[k]]))); // conserva el estado guardado en el elemento (pestaña actual, etc.)
+    try { await paint(tmp); } catch { return; }
+    if (tmp.innerHTML === body.innerHTML || !body.isConnected || w.dataset.dirty || w.contains(document.activeElement)) return;
+    const y = body.scrollTop; body.replaceWith(tmp); body = tmp; body.scrollTop = y;
+  };
   w.addEventListener('input', () => { w.dataset.dirty = 1; });
   w.querySelector('.re').onclick = w._run;
   w.querySelector('.l-close').onclick = w.querySelector('.back').onclick = w.querySelector('.home-ind').onclick = () => closeWin(w);
@@ -156,9 +165,11 @@ export function openWindow({ key, title, iconHTML, bg, url, render }, from) {
   body.innerHTML = '<div class="spinner"></div>';
   run(); dockState();
 }
+// cada app recuerda con qué vista se pintó por última vez (pestaña, cuenta, juego…) para que el refresco automático no la regrese al inicio
+for (const a of APPS) if (!a._wrapped) { const r = a.render; a.render = function (el, ...args) { if (el) el._args = args; return r.call(this, el, ...args); }; a._wrapped = true; }
 export function openApp(id, from) {
   const app = APPS.find(a => a.id === id);
-  openWindow({ key: id, title: app.name, iconHTML: glyph(app), bg: app.bg, url: app.url, render: app.url ? null : el => app.render(el) }, from);
+  openWindow({ key: id, title: app.name, iconHTML: glyph(app), bg: app.bg, url: app.url, render: app.url ? null : el => app.render(el, ...(el._args || [])) }, from);
 }
 // pantalla completa real: la ventana tapa todo y el navegador entra en pantalla completa
 function toggleFull(w) {
@@ -359,7 +370,7 @@ const liveRefresh = async () => {
   myAccounts().then(a => { const p = a.find(x => x.kind === 'personal'); if (p) root.querySelectorAll('.cash,.wb-bal').forEach(x => x.textContent = money(p.balance)); });
   for (const a of APPS.filter(a => a.show() && a.badge)) a.badge().then(n => { const b = root.querySelector(`[data-b="${a.id}"]`); if (b) { b.hidden = !n; b.textContent = n; } });
   // vuelve a pintar las ventanas abiertas, salvo donde el usuario está escribiendo
-  document.querySelectorAll('#wins .win').forEach(w => { if (!w.dataset.dirty && !w.contains(document.activeElement) && !document.querySelector('.modal')) { const b = w.querySelector('.win-b'), y = b?.scrollTop; Promise.resolve(w._run?.()).then(() => { if (b) b.scrollTop = y; }); } });
+  document.querySelectorAll('#wins .win').forEach(w => { if (!w.dataset.dirty && !w.contains(document.activeElement) && !document.querySelector('.modal')) w._silent?.(); });
 };
 window.liveRefresh = liveRefresh; // para cambios propios (el modo demo no recibe sus propios eventos)
 db.onChange(() => { clearTimeout(rtTimer); rtTimer = setTimeout(liveRefresh, 700); });

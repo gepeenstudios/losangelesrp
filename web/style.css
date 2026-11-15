@@ -923,4 +923,4 @@ tr.click{cursor:pointer}tr.click:hover{background:#ffffff08}
 /* Crédito RRVA */
 .cr-score{display:grid;justify-items:center;position:relative;margin:6px 0 10px}.cr-score svg{width:220px}.cr-score path{fill:none;stroke-width:16;stroke-linecap:round}.cr-bg{stroke:#ffffff1a}.cr-fg{transition:stroke-dasharray 1s}
 .cr-score>div{position:absolute;top:52px;display:grid;justify-items:center}.cr-score b{font-size:36px;line-height:1}.cr-score p{margin:4px 0 0}
-.cr-card{background:linear-gradient(135deg,#0b0f1a,#2a2f45)!important}.cr-card.off{filter:grayscale(1) brightness(.7)}.cr-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:10px 0}
+.cr-off{filter:grayscale(1) brightness(.7)}.cc-row{display:flex;gap:14px;flex-wrap:wrap}.cc-row .ccard[data-act]{cursor:pointer}.cr-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:10px 0}

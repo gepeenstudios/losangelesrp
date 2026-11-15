@@ -97,8 +97,8 @@ function cardTick(c) {
   const ev = (kind, amount, note, d) => T('credit_events').push({ id: crypto.randomUUID(), character_id: c, kind, amount, note, created_at: d.toISOString() });
   let d = new Date(k.last_tick + 'T12:00:00'), i = 0; const today = new Date(new Date().toISOString().slice(0, 10) + 'T12:00:00');
   while (d < today && i++ < 90) { d = new Date(d.getTime() + 864e5);
-    if (k.owed > 0) k.owed = Math.round(k.owed * (1 + k.apr / 365) * 100) / 100;
-    if (d >= new Date(k.stmt_due + 'T12:00:00')) {
+    if (k.owed > 0) { const it = Math.round(k.owed * k.apr / 365 * 100) / 100; k.int_cycle = (k.int_cycle || 0) + it; k.owed = Math.round((k.owed + it) * 100) / 100; }
+    if (d >= new Date(k.stmt_due + 'T12:00:00')) { if (k.int_cycle > 0) { ev('intereses', Math.round(k.int_cycle * 100) / 100, `Intereses del periodo (${Math.round(k.apr * 100)}% anual)`, d); k.int_cycle = 0; }
       if (k.stmt_min > 0 && k.stmt_paid >= k.stmt_min) { ev('pago_a_tiempo', k.stmt_paid, 'Pagaste tu mínimo a tiempo', d); k.missed = 0; { const sc = creditScore(c); if (sc >= 650 && k.owed <= k.credit_limit * 0.5) k.credit_limit = Math.round(Math.min(k.credit_limit * (sc >= 800 ? 2 : sc >= 760 ? 1.5 : sc >= 700 ? 1.25 : 1.1), creditCap(sc)) * 100) / 100; } }
       else if (k.stmt_min > 0) { k.missed++; k.owed += Math.round(25 * cpi() * 100) / 100; ev('pago_tarde', k.stmt_min, 'No cubriste tu pago mínimo · cargo por atraso', d); k.credit_limit = Math.round(Math.max(k.credit_limit * 0.8, 500) * 100) / 100;
         if (k.missed >= 3) { k.status = 'closed'; ev('impago', k.owed, '3 pagos vencidos: tarjeta cancelada, la deuda sigue', d); } else if (k.missed >= 2) k.status = 'frozen'; }
