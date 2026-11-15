@@ -1,6 +1,6 @@
 // Todas las apps del sistema. Cada una: { id, name, icon, bg, show(), render(el) }
 import * as db from './db.js';
-import { sharePrice, coOut, coPremium, coFair, etfNav, creditCap } from './db.js';
+import { sharePrice, coOut, coPremium, coFair, coBook, etfNav, creditCap } from './db.js';
 import { GAME_DAY_MS, gameDay, gameStart, fgame, S, cpi, esc, money, fdate, lvl, has, isPolice, set, cname, charOpts, toast, modal, ask, view, form, fieldsHTML, readForm, downloadImage,
   myRequests, approvedOf, requestHTML, reviewQueue, tabs, needChar, myAccounts, accSelect, stars, addRole } from './core.js';
 import { openWizardOverlay } from './vida.js';
@@ -977,6 +977,7 @@ async function market() {
   const [cos, accs, props, vehs, models, holds, etfh] = await Promise.all(['companies', 'accounts', 'properties', 'vehicles', 'vehicle_models', 'holdings', 'etf_holdings'].map(t => db.list(t, { order: null, limit: 10000 }).catch(() => [])));
   return cos.map(c => ({ ...c, price: sharePrice(c, accs, props, vehs, models, cos, holds, etfh), out: c.industry === 'ETF' ? holds.filter(h => h.company_id === c.id && h.shares > 0).reduce((s, h) => s + Number(h.shares), 0) : coOut(c, holds, etfh),
     fair: c.industry === 'ETF' ? etfNav(c, accs, props, vehs, models, cos, holds, etfh) : coFair(c, accs, props, vehs, models, holds, etfh),
+    bps: coBook(c, accs, props, vehs, models) / Math.max(coOut(c, holds, etfh), 1), // valor en libros por título SIN redondear (igual que buy_shares del servidor)
     cash: Number(accs.find(a => a.id === c.account_id)?.balance || 0), etf: c.industry === 'ETF' ? etfh.filter(e => e.shares > 0) : null }));
 }
 // gráfica de línea en SVG a partir de una lista de precios
@@ -1056,16 +1057,16 @@ const bolsa = { id: 'bolsa', name: 'GBM+', icon: '📈', bg: '#0b1f3a,#1c4f8f', 
     const q = el.querySelector('[name=qty]'), est = el.querySelector('[data-est]'), c = st.id && cos.find(x => x.id === st.id);
     if (!q || !c) return;
     // mismo cálculo que buy_shares/sell_shares del servidor: el precio se mueve mientras compras o vendes
-    const prem0 = coPremium(c), bookPs = (c.fair || c.price) / prem0, outQ = Math.max(c.out || 0, 1), cashBal = Number(acc?.balance || 0), myShares = Number(H(c.id)?.shares || 0), isSell = st.side === 'sell';
-    const tradeCost = n => isSell ? bookPs * (prem0 + Math.max(prem0 * Math.exp(-n / outQ), 0.2)) / 2 * n : bookPs * (prem0 + Math.min(prem0 * Math.exp(n / outQ), 5)) / 2 * n;
+    const isEtf = c.industry === 'ETF', prem0 = isEtf ? 1 : coPremium(c), bookPs = isEtf ? c.price : Math.max(c.bps, 0.01), outQ = Math.max(c.out || 0, 1), cashBal = Number(acc?.balance || 0), myShares = Number(H(c.id)?.shares || 0), isSell = st.side === 'sell';
+    const tradeCost = n => isEtf ? c.price * n * (isSell ? 0.995 : 1) : isSell ? bookPs * (prem0 + Math.max(prem0 * Math.exp(-n / outQ), 0.2)) / 2 * n : bookPs * (prem0 + Math.min(prem0 * Math.exp(n / outQ), 5)) / 2 * n;
     const maxBuyQty = budget => { let lo = 0, hi = 1; while (tradeCost(hi) <= budget && hi < 1e12) hi *= 2; while (hi - lo > 1) { const m = Math.floor((lo + hi) / 2); tradeCost(m) <= budget ? lo = m : hi = m; } return lo; };
     const maxSellQty = () => { let n = myShares; while (n > 0 && tradeCost(n) > c.cash) n = Math.floor(n * 0.9); return n; };
-    const fitQty = isSell ? maxSellQty() : maxBuyQty(cashBal);
+    const fitQty = isSell ? maxSellQty() : maxBuyQty(cashBal * 0.995);
     const updEst = () => { const n = Math.max(0, Math.floor(+q.value || 0)), t = tradeCost(n);
       est.innerHTML = isSell ? `Recibirías ≈ <b>${money(t)}</b>${n ? ` (promedio ${money(t / n)} por título)` : ''} · Tienes ${myShares.toLocaleString()} títulos · La empresa puede recomprarte hasta <b>${fitQty.toLocaleString()}</b>`
         : `Total estimado <b>${money(t)}</b>${n ? ` (promedio ${money(t / n)} por título)` : ''} · Tu saldo ${money(cashBal)} · <b>Te alcanza para ${fitQty.toLocaleString()} títulos</b>`; };
     el.querySelectorAll('[data-act=frac]').forEach(b => b.onclick = e => { e.stopPropagation(); const f = +b.dataset.f;
-      q.value = isSell ? Math.min(Math.floor(myShares * f), fitQty) : maxBuyQty(cashBal * f); updEst(); });
+      q.value = isSell ? Math.min(Math.floor(myShares * f), fitQty) : maxBuyQty(cashBal * f * 0.995); /* margen para redondeos */ updEst(); });
     q.addEventListener('input', updEst); updEst();
   } };
 

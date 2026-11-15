@@ -124,7 +124,7 @@ function cSettle(h, m) { const pay = Math.round(h.bet * m * 100) / 100; if (pay 
   h.status = 'done'; h.state.mult = m; h.state.payout = pay; T('casino_bets').push({ id: crypto.randomUUID(), character_id: h.character_id, game: h.game, bet: h.bet, mult: m, payout: pay, result: cView(h), created_at: now() }); }
 const newVin = () => Array.from({ length: 17 }, () => '0123456789ABCDEFGHJKLMNPRSTUVWXYZ'[Math.random() * 33 | 0]).join('');
 // igual que share_price() del SQL: valor en libros ÷ acciones en circulación × prima de mercado (que regresa a 1 un 20% por día)
-const coBook = (co, accounts, props, vehicles, models) => Number(accounts.find(a => a.id === co.account_id)?.balance || 0)
+export const coBook = (co, accounts, props, vehicles, models) => Number(accounts.find(a => a.id === co.account_id)?.balance || 0)
   + props.filter(x => x.owner_company === co.id).reduce((s, x) => s + Number(x.price), 0)
   + vehicles.filter(x => x.owner_company === co.id).reduce((s, x) => s + Number(models.find(m => m.id === x.model_id)?.price || 0), 0);
 export const coOut = (co, holdings = T('holdings'), etfh = T('etf_holdings')) => holdings.filter(h => h.company_id === co.id && h.shares > 0).reduce((s, h) => s + Number(h.shares), 0)
