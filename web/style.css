@@ -975,3 +975,13 @@ tr.click{cursor:pointer}tr.click:hover{background:#ffffff08}
 .pvp-t{background:#1a2c38;border-radius:12px;padding:10px 12px;margin:8px 0;border:1px solid #2f4553}.pvp-t.done{opacity:.85}.pvp-t.mine{border-color:#00e701}
 .pvp-seats{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}.pvp-seat{display:flex;align-items:center;gap:6px;background:#0f212e;border-radius:20px;padding:4px 10px 4px 4px}
 .pvp-seat small{color:#b1bad3}.pvp-seat.won{outline:2px solid #00e701;animation:caspop .5s}.pvp-amt{width:120px}
+
+.posters{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px}.posters>div>.btn{margin-top:6px;width:100%}
+.poster{background:#f3e3c3 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='.8'/%3E%3C/filter%3E%3Crect width='60' height='60' filter='url(%23n)' opacity='.08'/%3E%3C/svg%3E");color:#3b2412;border:3px double #6b4423;border-radius:4px;padding:12px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:4px;box-shadow:0 4px 14px rgba(0,0,0,.35);cursor:pointer;font-family:Georgia,'Times New Roman',serif}
+.poster-h{font-size:2em;font-weight:900;letter-spacing:4px;line-height:1}.poster-sub{font-size:.62em;letter-spacing:1px}
+.poster-ph{width:100%;aspect-ratio:1;border:2px solid #6b4423;background:#e6d2a8;display:grid;place-items:center;overflow:hidden}.poster-img{width:100%;height:100%;object-fit:cover;filter:sepia(.35)}
+.poster-name{font-size:1.15em;letter-spacing:1px}.poster-ch{font-size:.8em;margin:0;max-height:4.5em;overflow:hidden}
+.poster-rw{border-top:2px solid #6b4423;border-bottom:2px solid #6b4423;width:100%;padding:4px 0}.poster-rw small{display:block;letter-spacing:3px;font-weight:700}.poster-rw b{font-size:1.7em;color:#8b0000}
+.poster-f{font-size:.65em;opacity:.8}
+.sb-h{display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;padding:10px 12px;border-radius:10px;background:linear-gradient(90deg,#8b5a2b,#3e2410);color:#fff;margin-bottom:8px}
+.cr-plan{grid-column:1/-1}.cr-terms td,.cr-terms th{padding:6px 8px}.cr-terms input{width:auto}

@@ -510,6 +510,16 @@ const RPC = {
       last_tick: today, stmt_due: due, stmt_min: 0, stmt_paid: 0, missed: 0, created_at: now() });
     ev('apertura', 'Tarjeta de crédito aprobada', lim); return { ok: true, limit: lim, score: sc };
   },
+  card_plan({ c, dest, amount, months, concept = 'Compra a plazos' }) { // shortcut: el demo registra el plan pero no carga mensualidades (Supabase sí)
+    const rate = { 1: 0.03, 3: 0.09, 6: 0.20, 12: 0.45 }[months]; if (!rate) throw new Error('Plazo no válido (1, 3, 6 o 12 meses)');
+    const k = cardTick(c); if (!k) throw new Error('No tienes tarjeta de crédito'); const amt = Math.round(amount * 100) / 100; if (!(amt >= 100)) throw new Error('Las compras a plazos son desde $100');
+    const t = T('accounts').find(a => a.number === dest); if (!t) throw new Error('Cuenta destino no encontrada'); if (t === personal(c)) throw new Error('A plazos no puedes retirar efectivo a tu propia cuenta');
+    const total = Math.round(amt * (1 + rate) * 100) / 100, monthly = Math.round(total / months * 100) / 100, left = T('credit_plans').filter(p => p.character_id === c && p.status === 'active').reduce((n, p) => n + p.total - p.monthly * p.paid, 0);
+    if (k.owed + left + total > k.credit_limit) throw new Error(`Te pasas de tu línea de crédito (disponible ${(k.credit_limit - k.owed - left).toFixed(2)})`);
+    move(gov(), t, amt, 'Tarjeta de crédito RRVA · ' + concept + ` (a ${months} meses)`);
+    T('credit_plans').push({ id: crypto.randomUUID(), character_id: c, concept: concept || 'Compra a plazos', principal: amt, total, months, monthly, paid: 0, next_due: new Date(Date.now() + 60 * 3600e3).toISOString().slice(0, 10), status: 'active', created_at: now() });
+    return { total, monthly };
+  },
   card_charge({ c, dest, amount, concept = 'Compra con tarjeta' }) {
     if (!myChars().some(x => x.id === c)) throw new Error('No es tu personaje'); const k = cardTick(c);
     if (!k) throw new Error('No tienes tarjeta de crédito'); if (k.status !== 'active') throw new Error('Tu tarjeta está congelada por pagos atrasados. Paga tu mínimo.');

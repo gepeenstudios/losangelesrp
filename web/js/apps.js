@@ -137,6 +137,7 @@ const banco = { id: 'banco', name: 'RRVA', icon: '🏦', bg: '#004481,#1464a5', 
         ${nom.length ? `<p class="muted">Además se te retuvieron impuestos en ${nom.length} pagos de nómina.</p>` : ''}`;
     } else if (st.tab === 'credito') {
       const r = await db.rpc('card_status', { c: S.char.id }), k = r.card, sc = r.score, ev = await db.list('credit_events', { eq: { character_id: S.char.id }, limit: 40 });
+      const plans = await db.list('credit_plans', { eq: { character_id: S.char.id }, limit: 20 }).catch(() => []);
       const lvlTxt = sc >= 760 ? ['Excelente', '#00b37e'] : sc >= 700 ? ['Muy bueno', '#4cc38a'] : sc >= 620 ? ['Bueno', '#f2c94c'] : sc >= 560 ? ['Regular', '#f2994a'] : ['Malo', '#eb5757'];
       const EV = { intereses: '📈 Intereses cobrados', apertura: '🟢 Tarjeta aprobada', cargo: '💳 Cargo', abono: '💵 Pago', pago_a_tiempo: '✅ Pago a tiempo', pago_tarde: '⚠️ Pago atrasado', impago: '⛔ Impago', rechazo: '❌ Solicitud rechazada' };
       const gauge = `<div class="cr-score"><svg viewBox="0 0 200 110"><path d="M15 100 A85 85 0 0 1 185 100" class="cr-bg"/><path d="M15 100 A85 85 0 0 1 185 100" class="cr-fg" style="stroke:${lvlTxt[1]};stroke-dasharray:${((sc - 300) / 550 * 267).toFixed(0)} 400"/></svg>
@@ -146,7 +147,13 @@ const banco = { id: 'banco', name: 'RRVA', icon: '🏦', bg: '#004481,#1464a5', 
         <div class="kpis"><div><small>Línea de crédito</small><b>${money(k.credit_limit)}</b></div><div><small>Debes</small><b class="${k.owed > 0 ? 'neg' : ''}">${money(k.owed)}</b></div><div><small>Disponible</small><b>${money(Math.max(0, k.credit_limit - k.owed))}</b></div>
           <div><small>Intereses</small><b>${Math.round(k.apr * 100)}% anual</b><small> · este periodo ${money(k.int_cycle || 0)}</small></div><div><small>Con tu score tu línea puede llegar a</small><b>${money(creditCap(sc))}</b>${sc < 800 ? `<small> · con score ${sc < 650 ? 650 : sc < 700 ? 700 : sc < 760 ? 760 : 800}: ${money(creditCap(sc < 650 ? 650 : sc < 700 ? 700 : sc < 760 ? 760 : 800))}</small>` : ''}</div><div><small>Pago mínimo</small><b>${money(Math.max(0, k.stmt_min - k.stmt_paid))}</b><small> antes del ${fdate(k.stmt_due)} (en ${Math.max(0, Math.ceil((gameStart(k.stmt_due) - Date.now()) / 36e5))} h reales)</small></div></div>
         <div class="cr-grid"><form class="card form" data-form="ccpay"><h3>Pagar tarjeta</h3>${fieldsHTML([{ k: 'amount', label: 'Monto (sale de tu cuenta personal)', type: 'number', min: 0.01, step: 0.01, req: 1, def: Math.max(0, k.stmt_min - k.stmt_paid) || '' }])}<button class="btn big">Pagar</button></form>
-          <form class="card form" data-form="cccharge"><h3>Usar tarjeta</h3>${fieldsHTML([{ k: 'dest', label: 'Cuenta RRVA a la que pagas', req: 1, ph: '10 dígitos', help: 'Pon tu propia cuenta para retirar efectivo (comisión 3%).' }, { k: 'amount', label: 'Monto', type: 'number', min: 1, step: 0.01, req: 1 }, { k: 'concept', label: 'Concepto', ph: 'Compra, renta…' }])}<button class="btn big">Pagar con tarjeta</button></form></div>`
+          <form class="card form" data-form="cccharge"><h3>Usar tarjeta</h3>${fieldsHTML([{ k: 'dest', label: 'Cuenta RRVA a la que pagas', req: 1, ph: '10 dígitos', help: 'Pon tu propia cuenta para retirar efectivo (comisión 3%).' }, { k: 'amount', label: 'Monto', type: 'number', min: 1, step: 0.01, req: 1 }, { k: 'concept', label: 'Concepto', ph: 'Compra, renta…' }])}<button class="btn big">Pagar con tarjeta</button></form></div>
+        <form class="card form cr-plan" data-form="ccplan"><h3>🗓️ Comprar a plazos</h3><p class="muted">Pagas en mensualidades que se cargan solas a tu tarjeta cada mes del juego (1 mes del juego = 2.5 días reales). Entre más largo el plazo, más interés.</p>
+          ${fieldsHTML([{ k: 'dest', label: 'Cuenta RRVA a la que pagas', req: 1, ph: '10 dígitos (no tu propia cuenta)' }, { k: 'amount', label: 'Monto de la compra', type: 'number', min: 100, step: 0.01, req: 1 }, { k: 'concept', label: 'Concepto', ph: 'Auto, casa, tele…' }])}
+          <table class="tbl cr-terms"><thead><tr><th></th><th>Plazo (juego)</th><th>Tiempo real</th><th>Interés</th><th>Mensualidad</th><th>Total</th></tr></thead><tbody>${PLAZOS.map(([m, r, real], i) => `<tr><td><input type="radio" name="months" value="${m}" ${i === 1 ? 'checked' : ''}></td><td><b>${m} ${m === 1 ? 'mes' : 'meses'}</b></td><td>${real}</td><td>${r * 100}% · <span data-int="${m}">—</span></td><td data-mo="${m}">—</td><td data-tot="${m}">—</td></tr>`).join('')}</tbody></table>
+          <button class="btn big">Comprar a plazos</button></form>
+        ${plans.length ? `<div class="card"><h3>Mis compras a plazos</h3><ul class="list">${plans.map(p => `<li><span class="grow"><b>${esc(p.concept)}</b> <small class="muted">${money(p.principal)} a ${p.months} ${p.months === 1 ? 'mes' : 'meses'} · total ${money(p.total)}</small>
+          <div class="meter"><i style="width:${p.paid / p.months * 100}%"></i></div><small class="muted">${p.status === 'done' ? '✅ Liquidada' : `${p.paid}/${p.months} pagadas · siguiente ${money(p.monthly)} el ${fdate(p.next_due)}`}</small></span></li>`).join('')}</ul></div>` : ''}`
         : r.debt > 0 ? `<div class="notice"><b>Tienes una deuda de ${money(r.debt)} con RRVA</b> de una tarjeta cancelada. Págala para volver a pedir crédito.</div><form class="card form" data-form="ccpay">${fieldsHTML([{ k: 'amount', label: 'Monto', type: 'number', min: 0.01, step: 0.01, req: 1, def: r.debt }])}<button class="btn big">Pagar deuda</button></form>`
         : `<div class="card"><h3>Solicita tu Tarjeta de Crédito RRVA</h3><p>RRVA revisa tu buró de crédito. La primera tarjeta suele ser de <b>${money(10000 * cpi())}</b>; con buen historial te dan más, con mal historial menos o nada.</p>
           <ul class="muted"><li>Cada semana hay un corte con <b>pago mínimo</b> (10% de lo que debes). Tienes 7 días para pagarlo.</li><li>Pagar a tiempo sube tu score y tu línea: entre mejor historial, más rápido crece, <b>hasta millones</b> (score 800+ → hasta $10M).</li><li>Pagar tarde cobra un cargo, baja tu score y tu línea.</li>
@@ -204,6 +211,8 @@ const banco = { id: 'banco', name: 'RRVA', icon: '🏦', bg: '#004481,#1464a5', 
       async pagar(d) { await db.rpc('pay_fine', { record: d.id, acc: cur.id }); toast('Multa pagada'); go({}); },
       async ccapply() { const r = await db.rpc('card_apply', { c: S.char.id }); r.ok ? toast(`¡Aprobada! Línea de crédito de ${money(r.limit)} 💳`) : toast(r.reason, 'err'); go({}); },
       async ccpay(d) { await db.rpc('card_pay', { c: S.char.id, amount: +d.amount }); toast('Pago aplicado a tu tarjeta'); go({}); window.liveRefresh?.(); },
+      async ccplan(d) { d.dest = String(d.dest).replace(/\D/g, '').slice(0, 10); const r = await db.rpc('card_plan', { c: S.char.id, dest: d.dest, amount: +d.amount, months: +d.months, concept: d.concept });
+        toast(`Compra a ${d.months} ${+d.months === 1 ? 'mes' : 'meses'}: ${money(r.monthly)} al mes, total ${money(r.total)}`); banco.render(el, st); },
       async cccharge(d) { d.dest = String(d.dest).replace(/\D/g, '').slice(0, 10); const r = await db.rpc('card_charge', { c: S.char.id, dest: d.dest, amount: +d.amount, concept: d.concept }); toast(`Pagado con tarjeta · te quedan ${money(r.available)} disponibles`); go({}); window.liveRefresh?.(); },
     });
   } };
@@ -1369,6 +1378,23 @@ async function juzgado(el, again) {
   reviewQueue(el.querySelector('.dem'), { types: ['demanda'], title: 'Demandas civiles' });
 }
 
+// ============ SE BUSCA (recompensas públicas) ============
+// tabla de plazos: [meses del juego, interés total, duración real]. 12 meses del juego ≈ 1 mes real.
+const PLAZOS = [[1, 0.03, '2.5 días'], [3, 0.09, '7.5 días'], [6, 0.20, '15 días'], [12, 0.45, '1 mes']];
+document.addEventListener('input', e => { const f = e.target.closest?.('.cr-plan'); if (!f) return; const a = +f.amount.value || 0;
+  PLAZOS.forEach(([m, r]) => { const t = a * (1 + r); f.querySelector(`[data-int="${m}"]`).textContent = money(a * r); f.querySelector(`[data-mo="${m}"]`).textContent = money(t / m); f.querySelector(`[data-tot="${m}"]`).textContent = money(t); }); });
+const sebusca = { id: 'sebusca', name: 'Se Busca', icon: '🤠', bg: '#8b5a2b,#3e2410', show: () => true,
+  async render(el) {
+    const o = await db.list('records', { eq: { kind: 'orden', paid: false } }).catch(() => []), tot = o.reduce((n, r) => n + bountyOf(r), 0);
+    view(el, `<div class="sb"><header class="sb-h"><b>🤠 SE BUSCA · Recompensas de la LAPD</b><span>${o.length} buscado(s) · ${money(tot)} en recompensas</span></header>
+      <p class="muted">Cada orden de arresto empieza en $0 y sube $1 por cada día del juego que la persona sigue libre; la policía también puede subirla. Si ves a alguien, manda un aviso: le llega a la policía como llamada al 911. La recompensa la cobra quien lo captura.</p>
+      <div class="posters">${o.map(r => `<div>${posterHTML(r)}<button class="btn sm" data-act="aviso" data-id="${r.id}">📞 Dar un aviso</button></div>`).join('') || '<p class="empty">Nadie buscado por ahora. 🌴</p>'}</div></div>`, {
+      aviso: d => { const r = o.find(x => x.id === d.id); if (!S.char) throw new Error('Necesitas una vida activa');
+        modal('📞 Aviso sobre ' + esc(cname(r.character_id)), form('go', [{ k: 'location', label: '¿Dónde lo viste?', req: 1 }, { k: 'detalle', label: 'Detalles (ropa, auto, hacia dónde iba)', type: 'textarea', req: 1 }, { k: 'anonymous', label: 'Enviar como anónimo', type: 'checkbox' }], {}, 'Enviar aviso'), {
+          async go(v, _, close) { await db.insert('calls911', { caller_char: S.char.id, service: 'policia', location: v.location, description: `Aviso de recompensa · ${cname(r.character_id)}: ${v.detalle}`.slice(0, 500), anonymous: !!v.anonymous }); close(); toast('Aviso enviado a la policía 🚓'); } }); },
+    });
+  } };
+
 // ============ POLICÍA (MDT) + PRISIÓN ============
 const REC = { arresto: 'Arresto', multa: 'Multa', orden: 'Orden de arresto', advertencia: 'Advertencia', cancelacion: 'Documento cancelado', decomiso: 'Decomiso' };
 const KIND = { advertencia: 'Advertencias', infraccion: 'Infracciones (solo multa)', menor: 'Delitos menores (hasta 1 año)', grave: 'Delitos graves (más de 1 año)' };
@@ -1380,6 +1406,11 @@ const pena = y => { const m = Math.round(Number(y) * 12); if (m >= 1188) return 
   return [a && `${a} año${a > 1 ? 's' : ''}`, r && `${r} mes${r > 1 ? 'es' : ''}`].filter(Boolean).join(' y '); };
 // recompensa de una orden: $1 por cada día del juego que sigue libre + lo que agregó la policía (igual que bounty() en SQL)
 const bountyOf = r => Math.max(0, Math.round((Date.parse(gameDay()) - Date.parse(gameDay(r.created_at))) / 864e5)) + Number(r.bounty_extra || 0);
+// cartel de SE BUSCA (MDT, app Se Busca y LA Times)
+const posterHTML = (r, act = '') => `<div class="poster" ${act}><div class="poster-h">SE BUSCA</div><small class="poster-sub">POR EL DEPARTAMENTO DE POLICÍA DE LOS ÁNGELES</small>
+  <div class="poster-ph">${av(skin(r.character_id), 'poster-img')}</div><b class="poster-name">${esc(cname(r.character_id)).toUpperCase()}</b>
+  <p class="poster-ch">${esc((r.description || '').replace(/^En espera de juicio: /, ''))}</p><div class="poster-rw"><small>RECOMPENSA</small><b>${money(bountyOf(r))}</b></div>
+  <small class="poster-f">Sube $1 por cada día que sigue libre · desde ${fdate(r.created_at)}</small></div>`;
 const isGuard = () => isPolice() || has('Custodio');
 const left = i => Math.max(0, new Date(i.ends_at) - Date.now()), since = i => Date.now() - new Date(i.started_at);
 const clockTxt = ms => { const m = Math.ceil(ms / 6e4); return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`; };
@@ -1460,7 +1491,7 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
           <button class="btn" type="submit">Registrar</button></form>`;
     } else if (st.tab === 'buscados') {
       const o = await db.list('records', { eq: { kind: 'orden', paid: false } });
-      body = `<div class="grid-cards">${o.map(r => `<div class="card prop wanted" data-act="ver" data-id="${r.character_id}"><b>SE BUSCA</b>${av(skin(r.character_id), 'big-av')}<b>${esc(cname(r.character_id))}</b><small>${esc(r.description)}</small><b class="bounty">💰 ${money(bountyOf(r))}</b></div>`).join('') || '<p class="empty">Nadie buscado.</p>'}</div>`;
+      body = `<div class="posters">${o.map(r => posterHTML(r, `data-act="ver" data-id="${r.character_id}"`)).join('') || '<p class="empty">Nadie buscado.</p>'}</div>`;
     }
     view(el, `${tabs([['buscar', 'Consultar'], ['buscados', 'Buscados'], ['pend', 'Trámites']], st.tab === 'ver' ? 'buscar' : st.tab)}<div class="tabbody">${body}</div>`, {
       tab: d => go({ tab: d.t, q: '' }), buscar: d => go({ q: d.q }), ver: d => go({ tab: 'ver', id: d.id, f: 'todos' }), f: d => go({ f: d.f }),
@@ -1513,6 +1544,8 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
         const reward = ords.length ? await db.rpc('capture_orders', { c: st.id, officer: S.char?.id || null }) : 0; // la orden se vuelve este arresto y paga la recompensa
         if (reward > 0) toast(`💰 Recompensa cobrada: ${money(reward)}`);
         await db.insert('records', { kind: v.kind === 'advertencia' ? 'advertencia' : v.kind, character_id: st.id, officer_id: S.char?.id || null, amount: v.kind === 'multa' || (v.kind === 'arresto' && !juicio) ? Math.round(fine) : null, description: (juicio ? '[Pendiente de juicio: multa y sentencia las fija el juez] ' : '') + (ords.length ? 'Capturado por orden de arresto · ' : '') + desc, charges });
+        if (v.kind === 'orden') await db.insert('posts', { app: 'news', section: 'Policía', anonimo: true, character_id: S.char?.id || null, media_url: skin(st.id) || null,
+          title: `SE BUSCA: ${cname(st.id)}`, body: `La LAPD emitió una orden de arresto contra ${cname(st.id)}.\n\nCargos: ${desc}\n\nRecompensa: empieza en $0 y sube $1 por cada día que siga libre. Si lo ves, avisa al 911 o desde la app Se Busca. No intentes detenerlo tú mismo.` }).catch(() => {});
         if (v.kind === 'arresto' && years > 0) {
           const minutes = years * Number(set('prison_min_per_year'));
           await db.insert('inmates', { character_id: st.id, officer_id: S.char?.id || null, charges, years, minutes, mugshots: Object.fromEntries(MUG.map(([k]) => [k, v['mug_' + k]])), started_at: new Date().toISOString(),
@@ -2162,4 +2195,4 @@ export async function seed() {
 
 export const APPS = [vida, banco, gobierno, safari, docs, documentos, licencias, archivos, spotify, trabajo, mensajes,
   social('x', 'X', '𝕏', '#000000,#1c1c1c'), social('insta', 'Instagram', '📸', '#833ab4,#fd1d1d,#fcb045'),
-  news, buscar, empleos, bolsa, casas, autos, toolstore, casino, bitso, fec, corte, e911, policia, expedientes, prision, taxi, soporte, resenas, robstore, staffApp, ajustes];
+  news, buscar, empleos, bolsa, casas, autos, toolstore, casino, bitso, fec, corte, e911, sebusca, policia, expedientes, prision, taxi, soporte, resenas, robstore, staffApp, ajustes];
