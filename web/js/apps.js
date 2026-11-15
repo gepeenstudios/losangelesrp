@@ -1311,6 +1311,13 @@ async function searchPeople(q) {
     if (docNumber(c, 'D').toLowerCase() === q) add(c.id, 'No. de licencia');
     if (c.id.slice(0, 8).toLowerCase() === q) add(c.id, 'Folio de registro');
   }
+  // por usuario de Roblox o de Discord (todas las vidas de esa cuenta; primero las activas)
+  const qq = q.replace(/^@/, ''), profs = await db.list('profiles', { order: null, limit: 5000 }).catch(() => []);
+  for (const p of profs) {
+    const rb = String(p.roblox || '').toLowerCase().replace(/^@/, ''), dc = String(p.discord || '').toLowerCase().replace(/^@/, '');
+    const why = rb && rb.includes(qq) ? `Roblox ${p.roblox}` : dc && dc.includes(qq) ? `Discord ${p.discord}` : null;
+    if (why) S.all.filter(c => c.user_id === p.id).sort((a, b) => (b.status === 'active') - (a.status === 'active')).forEach(c => add(c.id, why + (c.status === 'active' ? '' : ' · vida ' + (ST[c.status] || c.status))));
+  }
   vehs.filter(v => v.plate?.toLowerCase() === q).forEach(v => add(v.owner_char, 'Placa ' + v.plate));
   vehs.filter(v => v.vin?.toLowerCase() === q).forEach(v => add(v.owner_char, 'VIN ' + v.vin));
   reqs.filter(r => r.type === 'placa' && r.data.placa?.toLowerCase() === q).forEach(r => add(r.character_id, 'Placa ' + r.data.placa.toUpperCase()));
@@ -1328,7 +1335,7 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
     let body = '';
     if (st.tab === 'buscar') {
       const res = await searchPeople(st.q || '');
-      body = `<form data-form="buscar" class="row"><input name="q" value="${esc(st.q || '')}" placeholder="Nombre, No. de identificación o licencia, placa, VIN, serie de arma o folio" required autofocus><button class="btn">Buscar</button></form>
+      body = `<form data-form="buscar" class="row"><input name="q" value="${esc(st.q || '')}" placeholder="Nombre, usuario de Roblox o Discord, No. de identificación o licencia, placa, VIN, serie de arma o folio" required autofocus><button class="btn">Buscar</button></form>
         ${st.q && !res.length ? '<p class="empty">Sin coincidencias.</p>' : ''}
         ${res.map(({ c, why }) => `<button class="result" data-act="ver" data-id="${c.id}">${av(c.skin_url, 'av sm')}<div><b>${esc(c.first_name)} ${esc(c.last_name)}</b><div class="muted">Coincide por: ${esc(why)}</div></div>${badge(c.status)}</button>`).join('')}`;
     } else if (st.tab === 'ver') {
