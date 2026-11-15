@@ -88,6 +88,22 @@ function move(f, t, amt, concept) {
   if (t) t.balance += amt;
   T('transactions').push({ id: crypto.randomUUID(), from_acc: f?.id || null, to_acc: t?.id || null, amount: amt, concept, created_at: now() });
 }
+function creditScore(c) { const E = T('credit_events').filter(e => e.character_id === c), n = k => E.filter(e => e.kind === k && (k === 'pago_a_tiempo' || new Date(e.created_at) > Date.now() - 60 * 864e5)).length;
+  const k = T('credit_cards').find(x => x.character_id === c && x.status !== 'closed'), age = E.length ? (Date.now() - Math.min(...E.map(e => new Date(e.created_at)))) / 864e5 : 0;
+  return Math.round(Math.max(300, Math.min(850, 620 + 12 * Math.min(n('pago_a_tiempo'), 15) - 45 * n('pago_tarde') - 160 * n('impago') - (k ? 80 * Math.max(k.owed / k.credit_limit - 0.3, 0) : 0) + Math.min(30, Math.floor(age))))); }
+function cardTick(c) {
+  const k = T('credit_cards').find(x => x.character_id === c && x.status !== 'closed'); if (!k) return null;
+  const ev = (kind, amount, note, d) => T('credit_events').push({ id: crypto.randomUUID(), character_id: c, kind, amount, note, created_at: d.toISOString() });
+  let d = new Date(k.last_tick + 'T12:00:00'), i = 0; const today = new Date(new Date().toISOString().slice(0, 10) + 'T12:00:00');
+  while (d < today && i++ < 90) { d = new Date(d.getTime() + 864e5);
+    if (k.owed > 0) k.owed = Math.round(k.owed * (1 + k.apr / 365) * 100) / 100;
+    if (d >= new Date(k.stmt_due + 'T12:00:00')) {
+      if (k.stmt_min > 0 && k.stmt_paid >= k.stmt_min) { ev('pago_a_tiempo', k.stmt_paid, 'Pagaste tu mínimo a tiempo', d); k.missed = 0; if (creditScore(c) >= 680 && k.owed <= k.credit_limit * 0.5) k.credit_limit = Math.round(Math.min(k.credit_limit * 1.15, 250000 * cpi()) * 100) / 100; }
+      else if (k.stmt_min > 0) { k.missed++; k.owed += Math.round(25 * cpi() * 100) / 100; ev('pago_tarde', k.stmt_min, 'No cubriste tu pago mínimo · cargo por atraso', d); k.credit_limit = Math.round(Math.max(k.credit_limit * 0.8, 500) * 100) / 100;
+        if (k.missed >= 3) { k.status = 'closed'; ev('impago', k.owed, '3 pagos vencidos: tarjeta cancelada, la deuda sigue', d); } else if (k.missed >= 2) k.status = 'frozen'; }
+      k.stmt_min = k.owed <= 0 ? 0 : Math.round(Math.max(Math.min(k.owed, 50 * cpi()), k.owed * 0.1) * 100) / 100; k.stmt_paid = 0; k.stmt_due = new Date(d.getTime() + 7 * 864e5).toISOString().slice(0, 10); } }
+  k.last_tick = d.toISOString().slice(0, 10); return k.status === 'closed' ? null : k;
+}
 const bjVal = cs => { let t = 0, a = 0; for (const c of cs) { const r = c % 13; if (r === 12) { t += 11; a++; } else t += r >= 8 ? 10 : r + 2; } while (t > 21 && a) { t -= 10; a--; } return t; };
 function pokerMult(cs) {
   const r = cs.map(c => c % 13).sort((a, b) => a - b), cnt = Object.values(r.reduce((m, x) => (m[x] = (m[x] || 0) + 1, m), {})).sort((a, b) => b - a);
@@ -301,6 +317,39 @@ const RPC = {
   fund_company({ req, dest }) { const r = T('requests').find(x => x.id === req && x.type === 'empresa'), d = acc(dest), cap = Number(r?.data?.capital) || 0;
     if (!r) throw new Error('Solicitud no encontrada'); if (T('transactions').some(t => t.to_acc === dest)) throw new Error('El capital ya se depositó');
     if (cap > 0) { const p = personal(r.character_id); if (!p || p.balance < cap) throw new Error(`El dueño ya no tiene el capital disponible (${cap})`); move(p, d, cap, 'Capital inicial · ' + (r.data.nombre || 'empresa')); } },
+  // espejo demo de la tarjeta de crédito (la versión real está en el SQL)
+  card_status({ c }) { const k = cardTick(c); return { score: creditScore(c), card: k ? { ...k } : null, debt: T('credit_cards').filter(x => x.character_id === c).reduce((n, x) => n + x.owed, 0) }; },
+  card_apply({ c }) {
+    if (!myChars().some(x => x.id === c)) throw new Error('No es tu personaje'); cardTick(c);
+    if (T('credit_cards').some(x => x.character_id === c && x.status !== 'closed')) throw new Error('Ya tienes una tarjeta de crédito');
+    const ev = (kind, note, amount = null) => T('credit_events').push({ id: crypto.randomUUID(), character_id: c, kind, amount, note, created_at: now() });
+    const debt = T('credit_cards').filter(x => x.character_id === c && x.status === 'closed').reduce((n, x) => n + x.owed, 0);
+    if (debt > 0) { ev('rechazo', 'Solicitud rechazada: tienes una deuda pendiente'); return { ok: false, reason: `Tienes una deuda pendiente de ${debt.toFixed(2)} con RRVA. Págala primero.` }; }
+    const sc = creditScore(c), lim = Math.round(10000 * cpi() * (sc >= 760 ? 2 : sc >= 700 ? 1.5 : sc >= 620 ? 1 : sc >= 560 ? 0.5 : 0) * 100) / 100;
+    if (!lim) { ev('rechazo', `Solicitud rechazada por historial (score ${sc})`); return { ok: false, reason: `Tu historial crediticio no alcanza (score ${sc}). Necesitas al menos 560.`, score: sc }; }
+    const today = new Date().toISOString().slice(0, 10), due = new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10);
+    T('credit_cards').push({ id: crypto.randomUUID(), character_id: c, number: '4152' + String(Math.floor(Math.random() * 1e12)).padStart(12, '0'), credit_limit: lim, owed: 0, status: 'active', apr: 0.36,
+      last_tick: today, stmt_due: due, stmt_min: 0, stmt_paid: 0, missed: 0, created_at: now() });
+    ev('apertura', 'Tarjeta de crédito aprobada', lim); return { ok: true, limit: lim, score: sc };
+  },
+  card_charge({ c, dest, amount, concept = 'Compra con tarjeta' }) {
+    if (!myChars().some(x => x.id === c)) throw new Error('No es tu personaje'); const k = cardTick(c);
+    if (!k) throw new Error('No tienes tarjeta de crédito'); if (k.status !== 'active') throw new Error('Tu tarjeta está congelada por pagos atrasados. Paga tu mínimo.');
+    const amt = Math.round(amount * 100) / 100; if (!(amt >= 1)) throw new Error('Monto inválido');
+    const t = T('accounts').find(a => a.number === dest); if (!t) throw new Error('Cuenta destino no encontrada');
+    const fee = t === personal(c) ? Math.round(amt * 3) / 100 : 0;
+    if (k.owed + amt + fee > k.credit_limit) throw new Error(`Te pasas de tu línea de crédito (disponible ${(k.credit_limit - k.owed).toFixed(2)})`);
+    move(gov(), t, amt, 'Tarjeta de crédito RRVA · ' + (concept || 'Compra')); k.owed += amt + fee;
+    T('credit_events').push({ id: crypto.randomUUID(), character_id: c, kind: 'cargo', amount: amt + fee, note: (concept || 'Compra') + (fee ? ' (retiro de efectivo, comisión 3%)' : ''), created_at: now() });
+    return { owed: k.owed, available: k.credit_limit - k.owed };
+  },
+  card_pay({ c, amount }) {
+    if (!myChars().some(x => x.id === c)) throw new Error('No es tu personaje'); cardTick(c);
+    const k = T('credit_cards').filter(x => x.character_id === c && x.owed > 0).sort((a, b) => (b.status !== 'closed') - (a.status !== 'closed'))[0]; if (!k) throw new Error('No debes nada');
+    let amt = Math.round(amount * 100) / 100; if (!(amt > 0)) throw new Error('Monto inválido'); amt = Math.min(amt, k.owed);
+    move(personal(c), gov(), amt, 'Pago de tarjeta de crédito RRVA'); k.owed = Math.round((k.owed - amt) * 100) / 100; k.stmt_paid += amt; if (k.status === 'frozen' && k.stmt_paid >= k.stmt_min) k.status = 'active';
+    T('credit_events').push({ id: crypto.randomUUID(), character_id: c, kind: 'abono', amount: amt, note: 'Pago a tu tarjeta', created_at: now() }); return { owed: k.owed };
+  },
   // espejo demo de las funciones de cripto (pool x·y=k: el precio lo mueven las compras y ventas)
   crypto_tick() {
     const C = T('crypto_coins'); if (!C.length) C.push(...[['BTC','Bitcoin',95000,'#f7931a'],['ETH','Ethereum',3500,'#8c8cff'],['SOL','Solana',180,'#14f195'],['XRP','XRP',2.3,'#c9d1d9'],

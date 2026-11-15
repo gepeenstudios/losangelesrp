@@ -107,6 +107,24 @@ const banco = { id: 'banco', name: 'RRVA', icon: '🏦', bg: '#004481,#1464a5', 
         <ul class="muted small"><li>Compra de autos: Sales Tax de LA ${tc.sales}%.</li><li>Compra de casa a otra persona: impuesto de transferencia ${tc.transfer}%.</li><li>Casas que tienes: impuesto predial ${tc.property}% al año (se cobra un poco cada día).</li><li>Empresas: impuesto corporativo ${tc.corp}% (federal 21% + California 8.84%).</li></ul></div>
         <h3>Impuestos pagados</h3><ul class="list">${txs.map(t => `<li><div><b>${esc(t.concept)}</b><div class="muted">${fdate(t.created_at)}</div></div><b class="neg">−${money(t.amount)}</b></li>`).join('') || '<li class="muted">Todavía no has pagado impuestos directos.</li>'}</ul>
         ${nom.length ? `<p class="muted">Además se te retuvieron impuestos en ${nom.length} pagos de nómina.</p>` : ''}`;
+    } else if (st.tab === 'credito') {
+      const r = await db.rpc('card_status', { c: S.char.id }), k = r.card, sc = r.score, ev = await db.list('credit_events', { eq: { character_id: S.char.id }, limit: 40 });
+      const lvlTxt = sc >= 760 ? ['Excelente', '#00b37e'] : sc >= 700 ? ['Muy bueno', '#4cc38a'] : sc >= 620 ? ['Bueno', '#f2c94c'] : sc >= 560 ? ['Regular', '#f2994a'] : ['Malo', '#eb5757'];
+      const EV = { apertura: '🟢 Tarjeta aprobada', cargo: '💳 Cargo', abono: '💵 Pago', pago_a_tiempo: '✅ Pago a tiempo', pago_tarde: '⚠️ Pago atrasado', impago: '⛔ Impago', rechazo: '❌ Solicitud rechazada' };
+      const gauge = `<div class="cr-score"><svg viewBox="0 0 200 110"><path d="M15 100 A85 85 0 0 1 185 100" class="cr-bg"/><path d="M15 100 A85 85 0 0 1 185 100" class="cr-fg" style="stroke:${lvlTxt[1]};stroke-dasharray:${((sc - 300) / 550 * 267).toFixed(0)} 400"/></svg>
+        <div><b>${sc}</b><small style="color:${lvlTxt[1]}">${lvlTxt[0]}</small></div><p class="muted">Buró de crédito · de 300 a 850</p></div>`;
+      body = `<div class="tx">${gauge}${k ? `<div class="ccard cr-card ${k.status !== 'active' ? 'off' : ''}"><div class="row"><b class="cc-bank">RRVA</b><small class="grow" style="text-align:right">Crédito${k.status === 'frozen' ? ' · CONGELADA' : ''}</small></div><div class="chip"></div>
+          <div class="num">${k.number.replace(/(\d{4})(?=\d)/g, '$1 ')}</div><div class="row"><span>${esc(cname(S.char.id).toUpperCase())}</span><b class="grow" style="text-align:right">VISA</b></div></div>
+        <div class="kpis"><div><small>Línea de crédito</small><b>${money(k.credit_limit)}</b></div><div><small>Debes</small><b class="${k.owed > 0 ? 'neg' : ''}">${money(k.owed)}</b></div><div><small>Disponible</small><b>${money(Math.max(0, k.credit_limit - k.owed))}</b></div>
+          <div><small>Pago mínimo</small><b>${money(Math.max(0, k.stmt_min - k.stmt_paid))}</b><small> antes del ${esc(k.stmt_due)}</small></div></div>
+        <div class="cr-grid"><form class="card form" data-form="ccpay"><h3>Pagar tarjeta</h3>${fieldsHTML([{ k: 'amount', label: 'Monto (sale de tu cuenta personal)', type: 'number', min: 0.01, step: 0.01, req: 1, def: Math.max(0, k.stmt_min - k.stmt_paid) || '' }])}<button class="btn big">Pagar</button></form>
+          <form class="card form" data-form="cccharge"><h3>Usar tarjeta</h3>${fieldsHTML([{ k: 'dest', label: 'Cuenta RRVA a la que pagas', req: 1, pattern: '[0-9]{10}', ph: '10 dígitos', help: 'Pon tu propia cuenta para retirar efectivo (comisión 3%).' }, { k: 'amount', label: 'Monto', type: 'number', min: 1, step: 0.01, req: 1 }, { k: 'concept', label: 'Concepto', ph: 'Compra, renta…' }])}<button class="btn big">Pagar con tarjeta</button></form></div>`
+        : r.debt > 0 ? `<div class="notice"><b>Tienes una deuda de ${money(r.debt)} con RRVA</b> de una tarjeta cancelada. Págala para volver a pedir crédito.</div><form class="card form" data-form="ccpay">${fieldsHTML([{ k: 'amount', label: 'Monto', type: 'number', min: 0.01, step: 0.01, req: 1, def: r.debt }])}<button class="btn big">Pagar deuda</button></form>`
+        : `<div class="card"><h3>Solicita tu Tarjeta de Crédito RRVA</h3><p>RRVA revisa tu buró de crédito. La primera tarjeta suele ser de <b>${money(10000 * cpi())}</b>; con buen historial te dan más, con mal historial menos o nada.</p>
+          <ul class="muted"><li>Cada semana hay un corte con <b>pago mínimo</b> (10% de lo que debes). Tienes 7 días para pagarlo.</li><li>Pagar a tiempo sube tu score y tu línea. Pagar tarde cobra un cargo, baja tu score y tu línea.</li>
+          <li>Dos atrasos seguidos congelan la tarjeta; tres la cancelan y la deuda sigue.</li><li>Interés anual 36% sobre lo que debes. El crédito lo presta el gobierno: no se crea dinero.</li></ul>
+          <button class="btn big" data-act="ccapply">Solicitar tarjeta</button></div>`}
+        <h3>Historial crediticio</h3><ul class="list">${ev.map(e => `<li><span class="grow">${EV[e.kind] || esc(e.kind)} <small class="muted">${fdate(e.created_at)}</small><div class="muted">${esc(e.note || '')}</div></span>${e.amount != null ? `<b>${money(e.amount)}</b>` : ''}</li>`).join('') || '<p class="muted">Aún no tienes historial. Pedir tu primera tarjeta y pagarla a tiempo lo construye.</p>'}</ul></div>`;
     } else if (st.tab === 'tarjeta') {
       body = `<div class="ccard"><div class="row"><b class="cc-bank">RRVA</b><small class="grow" style="text-align:right">${cur.kind === 'personal' ? 'Débito' : 'Business'}</small></div><div class="chip"></div>
         <div class="num">${cur.number.replace(/(\d{4})(?=\d)/g, '$1 ')} 00</div><div class="row"><span>${esc(cur.kind === 'personal' ? cname(S.char.id).toUpperCase() : cur.name.toUpperCase())}</span><b class="grow" style="text-align:right">VISA</b></div></div>
@@ -115,7 +133,7 @@ const banco = { id: 'banco', name: 'RRVA', icon: '🏦', bg: '#004481,#1464a5', 
     view(el, `<div class="bank-h"><div class="row"><small class="grow">${esc(accLabel(cur))}</small><button class="link light" data-act="copyacc">Cuenta ${cur.number} ⧉</button></div>
       <small>Saldo disponible</small><h2>${money(cur.balance)}</h2>
       ${accs.length > 1 ? `<div class="chips">${accs.map(a => `<button data-act="acc" data-id="${a.id}" class="${a.id === cur.id ? 'on' : ''}">${a.kind === 'personal' ? 'Personal' : a.kind === 'savings' ? 'Ahorro' : esc(a.name)}</button>`).join('')}</div>` : ''}</div>
-      ${tabs([['mov', 'Movimientos'], ['send', 'Transferir'], ['ahorro', 'Ahorro e intereses'], ['multas', 'Multas'], ['imp', 'Impuestos'], ['tarjeta', 'Tarjeta']], st.tab)}${body}`, {
+      ${tabs([['mov', 'Movimientos'], ['send', 'Transferir'], ['ahorro', 'Ahorro e intereses'], ['multas', 'Multas'], ['imp', 'Impuestos'], ['tarjeta', 'Tarjeta'], ['credito', 'Crédito']], st.tab)}${body}`, {
       async ahorro() { await db.rpc('open_savings', { c: S.char.id }); toast('Cuenta de ahorro abierta'); go({}); },
       tab: d => banco.render(el, { tab: d.t, acc: cur.id }),
       acc: d => banco.render(el, { tab: st.tab, acc: d.id }),
@@ -142,6 +160,9 @@ const banco = { id: 'banco', name: 'RRVA', icon: '🏦', bg: '#004481,#1464a5', 
       },
       copy: async () => { await navigator.clipboard?.writeText(el.querySelector('#rcpt').innerText); toast('Comprobante copiado'); },
       async pagar(d) { await db.rpc('pay_fine', { record: d.id, acc: cur.id }); toast('Multa pagada'); go({}); },
+      async ccapply() { const r = await db.rpc('card_apply', { c: S.char.id }); r.ok ? toast(`¡Aprobada! Línea de crédito de ${money(r.limit)} 💳`) : toast(r.reason, 'err'); go({}); },
+      async ccpay(d) { await db.rpc('card_pay', { c: S.char.id, amount: +d.amount }); toast('Pago aplicado a tu tarjeta'); go({}); window.liveRefresh?.(); },
+      async cccharge(d) { const r = await db.rpc('card_charge', { c: S.char.id, dest: d.dest, amount: +d.amount, concept: d.concept }); toast(`Pagado con tarjeta · te quedan ${money(r.available)} disponibles`); go({}); window.liveRefresh?.(); },
     });
   } };
 
