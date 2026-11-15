@@ -1647,12 +1647,12 @@ const staffApp = { id: 'staff', name: 'Panel Staff', icon: '🛡️', bg: '#8e2d
         banP: async d => { await db.update('profiles', d.id, { banned: true }); go('aprob'); },
         aprobC: d => { const c = S.all.find(x => x.id === d.id);
           modal(`Aprobar a ${esc(c.first_name)}`, `<form data-form="ok" class="form">${rolesPicker(c.extranjero ? ['Extranjero'] : ['Ciudadano'])}
-            ${fieldsHTML([{ k: 'money', label: 'Dinero inicial', type: 'number', min: 0, def: set('start_money') }])}<button class="btn ok" type="submit">Aprobar vida</button></form>`, {
+            ${fieldsHTML([{ k: 'money', label: 'Dinero inicial (sale de la Tesorería, ya ajustado a la inflación)', type: 'number', min: 0, def: Math.round(set('start_money') * cpi()) }])}<button class="btn ok" type="submit">Aprobar vida</button></form>`, {
             async ok(_, f, close) {
               const roles = [...f.querySelectorAll('[name=role]:checked')].map(i => i.value), m = Number(f.money.value || 0);
               await db.update('characters', c.id, { status: 'active', roles });
               const acc = await db.insert('accounts', { kind: 'personal', name: c.first_name + ' ' + c.last_name, owners: [c.id] });
-              if (m > 0) await db.rpc('staff_pay', { acc: acc.id, amount: m, concept: 'Dinero inicial', mint: true });
+              if (m > 0) await db.rpc('staff_pay', { acc: acc.id, amount: Math.round(m * 100) / 100, concept: 'Dinero inicial (de la Tesorería)' });
               close(); toast(`Aprobada. El bot le pone en Discord: ${roles.join(', ')}${c.extranjero ? ' · Recuérdale sacar su visa en ' + set('visa_days') + ' días' : ''}`); if (c.user_id === S.me.id) return window.refreshShell?.('staff'); // es mi vida: activarla al instante
               S.all = await db.list('characters', { order: 'first_name', asc: true }); go('aprob');
             } }); },
@@ -1877,7 +1877,7 @@ export async function seed() {
   await all(PENAL_CODE.filter(([code]) => !pc.some(x => x.code === code)).map(([code, title, kind, fine, years, lic, notes]) => db.upsert('penal_code', { code, title, kind, fine, years, lic, notes: notes || null }, 'code')));
   if (!(await db.list('companies', { eq: { industry: 'ETF' } })).length) await db.insert('companies', { name: 'LA500 ETF', industry: 'ETF', owners: [], description: 'Fondo que sigue el promedio de todas las empresas de Los Ángeles.' });
   const g = (await db.list('accounts', { eq: { kind: 'gov' } }))[0];
-  if (g && Number(g.balance) === 0) await db.rpc('staff_pay', { acc: g.id, amount: 13950000000, concept: 'Presupuesto inicial FY 2025-26', mint: true });
+  if (g && Number(g.balance) === 0) await db.rpc('staff_pay', { acc: g.id, amount: 13950000000, concept: 'Presupuesto inicial FY 2025-26', mint: true }).catch(() => {}); // solo funciona si la economía está vacía
 }
 
 export const APPS = [vida, banco, gobierno, safari, docs, documentos, licencias, archivos, spotify, trabajo, mensajes,

@@ -220,7 +220,7 @@ const RPC = {
     if (t === a) throw new Error('Es la misma cuenta');
     move(a, t, amount, concept || 'Transferencia');
   },
-  staff_pay({ acc: id, amount, concept, mint }) { mint && amount > 0 ? move(null, acc(id), amount, concept) : amount >= 0 ? move(gov(), acc(id), amount, concept) : move(acc(id), gov(), -amount, concept); },
+  staff_pay({ acc: id, amount, concept, mint }) { if (mint && amount > 0 && T('accounts').some(x => x.balance > 0)) throw new Error('El dinero no se crea: solo el Presidente puede emitir más (Reserva Federal)'); mint && amount > 0 ? move(null, acc(id), amount, concept) : amount >= 0 ? move(gov(), acc(id), amount, concept) : move(acc(id), gov(), -amount, concept); },
   buy({ kind, item, acc: id, qty = 1 }) {
     let sellerIsPerson = false;
     const a = acc(id), co = a.kind === 'business' ? T('companies').find(c => c.account_id === id) : null, buyer = co ? null : a.owners[0];
