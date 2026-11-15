@@ -1,6 +1,6 @@
 // Todas las apps del sistema. Cada una: { id, name, icon, bg, show(), render(el) }
 import * as db from './db.js';
-import { sharePrice } from './db.js';
+import { sharePrice, coOut } from './db.js';
 import { S, cpi, esc, money, fdate, lvl, has, isPolice, set, cname, charOpts, toast, modal, ask, view, form, fieldsHTML, readForm, downloadImage,
   myRequests, approvedOf, requestHTML, reviewQueue, tabs, needChar, myAccounts, accSelect, stars, addRole } from './core.js';
 import { openWizardOverlay } from './vida.js';
@@ -932,8 +932,8 @@ const empleos = { id: 'empleos', name: 'LinkedIn', icon: '💼', bg: '#0a66c2,#0
 
 // ============ BOLSA DE VALORES ============
 async function market() {
-  const [cos, accs, props, vehs, models] = await Promise.all(['companies', 'accounts', 'properties', 'vehicles', 'vehicle_models'].map(t => db.list(t, { order: null })));
-  return cos.map(c => ({ ...c, price: sharePrice(c, accs, props, vehs, models, cos) }));
+  const [cos, accs, props, vehs, models, holds] = await Promise.all(['companies', 'accounts', 'properties', 'vehicles', 'vehicle_models', 'holdings'].map(t => db.list(t, { order: null, limit: 10000 })));
+  return cos.map(c => ({ ...c, price: sharePrice(c, accs, props, vehs, models, cos, holds), out: coOut(c, holds), cash: Number(accs.find(a => a.id === c.account_id)?.balance || 0) }));
 }
 // gráfica de línea en SVG a partir de una lista de precios
 const chart = (pts, w = 600, h = 160, line = true) => {
@@ -958,12 +958,12 @@ const bolsa = { id: 'bolsa', name: 'GBM+', icon: '📈', bg: '#0b1f3a,#1c4f8f', 
     if (st.id) {
       const c = cos.find(x => x.id === st.id), h = H(c.id), ser = series(c);
       body = `<button class="link" data-act="back">‹ Mercado</button><div class="q-h"><div><b>${esc(c.name)}</b><small>${esc(c.industry)}</small></div><div class="q-p"><b>${money(c.price)}</b>${sgn(pct(c.price, ser[0]))}</div></div>
-        ${chart(ser)}<div class="kpis"><div><small>Valor de mercado</small><b>${money(c.price * (c.shares_total || 1000))}</b></div><div><small>Títulos</small><b>${(c.shares_total || 0).toLocaleString()}</b></div>
+        ${chart(ser)}<div class="kpis"><div><small>Valor de mercado</small><b>${money(c.price * (c.out || c.shares_total || 1000))}</b></div><div><small>Efectivo para recomprar</small><b>${c.industry === 'ETF' ? '—' : money(c.cash)}</b></div><div><small>Títulos en circulación</small><b>${(c.out || 0).toLocaleString()}</b></div>
           <div><small>Hoy</small><b>${sgn(day(c))}</b></div><div><small>Tu posición</small><b>${h ? h.shares + ' títulos' : '—'}</b></div></div>
         ${h ? `<p class="muted">Costo promedio ${money(h.cost / h.shares)} · Rendimiento ${sgn(pct(h.shares * c.price, h.cost))} (${money(h.shares * c.price - h.cost)})</p>` : ''}
         <div class="order"><div class="seg"><button data-act="side" data-s="buy" class="${st.side !== 'sell' ? 'on buy' : ''}">Comprar</button><button data-act="side" data-s="sell" class="${st.side === 'sell' ? 'on sell' : ''}">Vender</button></div>
           <form data-form="orden" class="form">${fieldsHTML([{ k: 'qty', label: 'Títulos', type: 'number', min: 1, max: st.side === 'sell' ? h?.shares || 0 : undefined, req: 1, def: 1 }])}
-          <p class="muted" data-est>Precio de mercado ${money(c.price)} · Poder de compra ${money(acc?.balance)}</p>
+          <p class="muted" data-est>Precio de mercado ${money(c.price)} · Poder de compra ${money(acc?.balance)}</p><p class="muted">Comprar emite acciones nuevas (tu dinero entra a la empresa) y empuja el precio hacia arriba; vender hace que la empresa te recompre con su efectivo y empuja el precio hacia abajo. Pedidos grandes mueven más el precio.</p>
           <button class="btn big ${st.side === 'sell' ? 'bad' : 'ok'}" type="submit">${st.side === 'sell' ? 'Vender a mercado' : 'Comprar a mercado'}</button></form></div>`;
     } else if (st.tab === 'port') body = mine.length ? `<table class="tbl"><thead><tr><th>Emisora</th><th>Títulos</th><th>Costo prom.</th><th>Precio</th><th>Valor</th><th>Rendimiento</th></tr></thead><tbody>
         ${mine.map(c => { const h = H(c.id); return `<tr class="click" data-act="ver" data-id="${c.id}"><td><b>${esc(c.name)}</b></td><td>${h.shares}</td><td>${money(h.cost / h.shares)}</td><td>${money(c.price)}</td><td>${money(h.shares * c.price)}</td>

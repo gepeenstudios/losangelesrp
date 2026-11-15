@@ -103,12 +103,16 @@ function cView(h) { const s = h.state, o = h.status === 'open', v = { id: h.id, 
 function cSettle(h, m) { const pay = Math.round(h.bet * m * 100) / 100; if (pay > 0) move(gov(), personal(h.character_id), pay, `Casino · premio ${h.game} ×${Math.round(m * 100) / 100}`);
   h.status = 'done'; h.state.mult = m; h.state.payout = pay; T('casino_bets').push({ id: crypto.randomUUID(), character_id: h.character_id, game: h.game, bet: h.bet, mult: m, payout: pay, result: cView(h), created_at: now() }); }
 const newVin = () => Array.from({ length: 17 }, () => '0123456789ABCDEFGHJKLMNPRSTUVWXYZ'[Math.random() * 33 | 0]).join('');
-export function sharePrice(co, accounts = T('accounts'), props = T('properties'), vehicles = T('vehicles'), models = T('vehicle_models'), companies = T('companies')) {
-  if (co.industry === 'ETF') { const o = companies.filter(x => x.industry !== 'ETF'); return o.length ? Math.round(o.reduce((s, x) => s + sharePrice(x, accounts, props, vehicles, models, companies), 0) / o.length * 1000) / 100 : 10; }
-  const bal = accounts.find(a => a.id === co.account_id)?.balance || 0;
-  const p = props.filter(x => x.owner_company === co.id).reduce((s, x) => s + Number(x.price), 0);
-  const v = vehicles.filter(x => x.owner_company === co.id).reduce((s, x) => s + Number(models.find(m => m.id === x.model_id)?.price || 0), 0);
-  return Math.max(1, Math.round((Number(bal) + p + v) / Math.max(co.shares_total, 1) * 100) / 100);
+// igual que share_price() del SQL: valor en libros ÷ acciones en circulación × prima de mercado (que regresa a 1 un 20% por día)
+const coBook = (co, accounts, props, vehicles, models) => Number(accounts.find(a => a.id === co.account_id)?.balance || 0)
+  + props.filter(x => x.owner_company === co.id).reduce((s, x) => s + Number(x.price), 0)
+  + vehicles.filter(x => x.owner_company === co.id).reduce((s, x) => s + Number(models.find(m => m.id === x.model_id)?.price || 0), 0);
+export const coOut = (co, holdings = T('holdings')) => holdings.filter(h => h.company_id === co.id && h.shares > 0).reduce((s, h) => s + Number(h.shares), 0);
+export const coPremium = co => 1 + (Number(co.premium ?? 1) - 1) * Math.pow(0.8, (Date.now() - new Date(co.premium_at || Date.now())) / 864e5);
+export function sharePrice(co, accounts = T('accounts'), props = T('properties'), vehicles = T('vehicles'), models = T('vehicle_models'), companies = T('companies'), holdings = T('holdings')) {
+  if (co.industry === 'ETF') { const o = companies.filter(x => x.industry !== 'ETF'); return o.length ? Math.round(o.reduce((s, x) => s + sharePrice(x, accounts, props, vehicles, models, companies, holdings), 0) / o.length * 10 * 100) / 100 : 10; }
+  const out = coOut(co, holdings) || co.shares_total || 1;
+  return Math.max(0.01, Math.round(coBook(co, accounts, props, vehicles, models) / out * coPremium(co) * 100) / 100);
 }
 const setting = (k, d) => T('settings').find(x => x.key === k)?.value ?? d;
 const putSetting = (key, value) => { const r = T('settings').find(x => x.key === key); r ? r.value = value : T('settings').push({ key, value }); };
@@ -245,8 +249,10 @@ const RPC = {
       Object.assign(v, { owner_char: buyer, owner_company: co?.id || null, sale_price: null, plate: null, vin: v.vin || newVin(), registered_at: now() });
     } else if (kind === 'shares') {
       if (!buyer) throw new Error('Compra acciones con tu cuenta personal');
-      const c = company(item); price = sharePrice(c) * q;
-      move(a, c.industry === 'ETF' ? gov() : acc(c.account_id), price, 'Compra de acciones');
+      const c = company(item); if (c.industry === 'ETF') throw new Error('El ETF ya no acepta compras nuevas'); if (!(q >= 1)) throw new Error('Cantidad inválida');
+      const out = Math.max(coOut(c), 1), ps = coBook(c, T('accounts'), T('properties'), T('vehicles'), T('vehicle_models')) / out, p0 = coPremium(c), p1 = Math.min(p0 * Math.exp(q / out), 5);
+      price = Math.round(Math.max(ps, 0.01) * (p0 + p1) / 2 * q * 100) / 100;
+      move(a, acc(c.account_id), price, 'Compra de acciones · ' + c.name); Object.assign(c, { premium: p1, premium_at: now() });
       const h = T('holdings').find(x => x.character_id === buyer && x.company_id === item);
       h ? (h.shares += q, h.cost = (h.cost || 0) + price) : T('holdings').push({ id: crypto.randomUUID(), character_id: buyer, company_id: item, shares: q, cost: price, created_at: now() });
       T('trades').push({ id: crypto.randomUUID(), character_id: buyer, company_id: item, side: 'compra', qty: q, price: price / q, total: price, created_at: now() });
@@ -261,9 +267,12 @@ const RPC = {
   sell_shares({ company: cid, qty, acc: id }) {
     const a = acc(id), h = T('holdings').find(x => x.character_id === a.owners[0] && x.company_id === cid);
     if (!h || h.shares < qty || qty < 1) throw new Error('No tienes tantas acciones');
-    const c = company(cid), price = sharePrice(c) * qty;
-    const ca = c.account_id && acc(c.account_id); // sin efectivo en la empresa, compra la Tesorería
-    move(c.industry === 'ETF' || !ca || ca.balance < price ? gov() : ca, a, price, 'Venta de acciones');
+    const c = company(cid); let price;
+    if (c.industry === 'ETF') { price = sharePrice(c) * qty; move(gov(), a, price, 'Venta de acciones · ETF'); }
+    else { const out = Math.max(coOut(c), 1), ps = coBook(c, T('accounts'), T('properties'), T('vehicles'), T('vehicle_models')) / out, p0 = coPremium(c), p1 = Math.max(p0 * Math.exp(-qty / out), 0.2);
+      price = Math.round(Math.max(ps, 0) * (p0 + p1) / 2 * qty * 100) / 100; const ca = acc(c.account_id);
+      if (price > ca.balance) throw new Error(`La empresa solo tiene ${ca.balance.toFixed(2)} en efectivo para recomprar acciones (tus ${qty} títulos valen ${price.toFixed(2)})`);
+      if (price > 0) move(ca, a, price, 'Venta de acciones · ' + c.name); Object.assign(c, { premium: p1, premium_at: now() }); }
     h.cost = Math.round((h.cost || 0) * (h.shares - qty) / h.shares * 100) / 100; h.shares -= qty;
     T('trades').push({ id: crypto.randomUUID(), character_id: a.owners[0], company_id: cid, side: 'venta', qty, price: price / qty, total: price, created_at: now() });
     T('price_history').push({ id: crypto.randomUUID(), company_id: cid, price: sharePrice(c), created_at: now() });
@@ -460,7 +469,9 @@ const LOCAL = {
     if (t === 'accounts' && !r.number) r.number = String(Math.floor(Math.random() * 1e10)).padStart(10, '0');
     if (t === 'profiles' && !T('profiles').length) Object.assign(r, { staff_role: 'owner', verified: true });
     if (t === 'votes' && T('votes').some(v => v.election_id === r.election_id && v.user_id === myId)) throw new Error('Ya votaste en esta elección');
-    T(t).push(r); save(); return structuredClone(r);
+    T(t).push(r);
+    if (t === 'companies' && r.industry !== 'ETF' && r.owners?.length) T('holdings').push({ id: crypto.randomUUID(), character_id: r.owners[0], company_id: r.id, shares: r.shares_total || 1000, cost: 0, created_at: now() }); // como el trigger del SQL
+    save(); return structuredClone(r);
   },
   async update(t, id, patch) { const r = T(t).find(x => x.id === id); Object.assign(r, structuredClone(patch)); if (t === 'requests') Object.assign(r, { reviewer_id: myId, reviewed_at: now() }); save(); return structuredClone(r); },
   async upsert(t, row, key = 'key') { const ks = key.split(','), i = T(t).findIndex(x => ks.every(k => x[k] === row[k])); i < 0 ? T(t).push(row) : (T(t)[i] = row); save(); },
