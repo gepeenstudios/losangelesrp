@@ -318,6 +318,8 @@ const RPC = {
   fund_company({ req, dest }) { const r = T('requests').find(x => x.id === req && x.type === 'empresa'), d = acc(dest), cap = Number(r?.data?.capital) || 0;
     if (!r) throw new Error('Solicitud no encontrada'); if (T('transactions').some(t => t.to_acc === dest)) throw new Error('El capital ya se depositó');
     if (cap > 0) { const p = personal(r.character_id); if (!p || p.balance < cap) throw new Error(`El dueño ya no tiene el capital disponible (${cap})`); move(p, d, cap, 'Capital inicial · ' + (r.data.nombre || 'empresa')); } },
+  account_by_name({ q }) { q = String(q).trim().toLowerCase(); return T('characters').filter(c => c.status === 'active' && (c.first_name + ' ' + c.last_name).toLowerCase().includes(q)).slice(0, 5)
+    .map(c => ({ number: personal(c.id)?.number, holder: c.first_name + ' ' + c.last_name })).filter(x => x.number); },
   // espejo demo de la tarjeta de crédito (la versión real está en el SQL)
   card_status({ c }) { const k = cardTick(c); return { score: creditScore(c), card: k ? { ...k } : null, debt: T('credit_cards').filter(x => x.character_id === c).reduce((n, x) => n + x.owed, 0) }; },
   card_apply({ c }) {
