@@ -297,6 +297,24 @@ const RPC = {
     if (tax > 0) move(a, gov(), Math.round(tax * 100) / 100, kind === 'property' ? 'Impuesto de transferencia de inmueble' : 'Impuesto sobre ventas (Sales Tax LA)');
     return price + Math.round(tax * 100) / 100;
   },
+  // espejo demo de las leyes (enact_law / repeal_law del SQL)
+  enact_law({ c, title, body, effect = 'ninguno', params = {} }) {
+    const ch = T('characters').find(x => x.id === c), office = ch?.roles?.includes('Presidente') ? 'Presidente' : ch?.roles?.includes('Gobernador') ? 'Gobernador' : 'Staff';
+    if (!String(title || '').trim() || !String(body || '').trim()) throw new Error('La ley necesita título y texto');
+    let prev = null; const v = Number(params.valor);
+    if (effect === 'impuesto') { const imp = { ...(setting('impuestos', {})) }; prev = { tipo: params.tipo, valor: imp[params.tipo] ?? null }; if (!(v >= 0 && v <= 50)) throw new Error('Impuesto inválido (0 a 50%)'); imp[params.tipo] = v; putSetting('impuestos', imp); }
+    else if (['ahorro', 'dinero_inicial', 'casino_max', 'visa_dias'].includes(effect)) { const k = { ahorro: 'savings_rate', dinero_inicial: 'start_money', casino_max: 'casino_max_bet', visa_dias: 'visa_days' }[effect];
+      if (!(v >= 0) || (effect === 'ahorro' && v > 30) || (effect === 'dinero_inicial' && v > 100000)) throw new Error('Valor fuera de rango'); prev = { key: k, value: setting(k, null) }; putSetting(k, v); }
+    else if (effect === 'servicio_militar') { prev = { key: 'military_required', value: setting('military_required', null) }; putSetting('military_required', params.depts || []); }
+    else if (effect === 'delito') { if (T('penal_code').some(x => x.code === params.code)) throw new Error('Ya existe el artículo ' + params.code);
+      T('penal_code').push({ code: params.code, title: params.title, kind: params.kind || 'delito', fine: Number(params.fine || 0), years: Number(params.months || 0) / 12, notes: 'Ley ' + title }); }
+    const number = T('laws').length + 1; T('laws').push({ id: crypto.randomUUID(), number, title, body, effect, params, prev, author: c, author_office: office, status: 'vigente', created_at: now() });
+    T('posts').push({ id: crypto.randomUUID(), app: 'news', section: 'Gobierno', character_id: null, anonimo: true, title: `Entra en vigor la Ley ${number}: ${title}`, body, created_at: now() }); return number;
+  },
+  repeal_law({ c, law }) { const l = T('laws').find(x => x.id === law && x.status === 'vigente'); if (!l) throw new Error('Esa ley no está vigente');
+    if (l.effect === 'impuesto') { const imp = { ...setting('impuestos', {}) }; if (l.prev.valor == null) delete imp[l.prev.tipo]; else imp[l.prev.tipo] = l.prev.valor; putSetting('impuestos', imp); }
+    else if (l.prev?.key) putSetting(l.prev.key, l.prev.value); else if (l.effect === 'delito') mem.t.penal_code = T('penal_code').filter(x => x.code !== l.params.code);
+    Object.assign(l, { status: 'derogada', repealed_by: c, repealed_at: now() }); },
   // espejo demo de familias, heredero y grupos (la herencia al morir solo corre en el servidor)
   group_create({ c, name, members = [] }) { if (!myChars().some(x => x.id === c)) throw new Error('No es tu personaje'); if (!String(name || '').trim()) throw new Error('Ponle nombre al grupo');
     const g = { id: crypto.randomUUID(), name: name.trim(), created_by: c, created_at: now() }; T('chat_groups').push(g); T('chat_group_members').push({ group_id: g.id, character_id: c, admin: true, created_at: now() });

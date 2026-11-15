@@ -207,9 +207,16 @@ const banco = { id: 'banco', name: 'RRVA', icon: '🏦', bg: '#004481,#1464a5', 
   } };
 
 // ============ GOBIERNO (trámites) ============
+// qué cambia una ley (texto para la lista de leyes)
+const LAW_EFFECT = l => { const p = l.params || {}, TX = { sales: 'ventas', property: 'predial', corp: 'corporativo', transfer: 'transferencias' };
+  return { impuesto: `Impuesto de ${TX[p.tipo] || p.tipo}: ${p.valor}%`, ahorro: `Interés de ahorro: ${p.valor}% anual`, dinero_inicial: `Dinero inicial de cada vida: ${money(p.valor)}`,
+    servicio_militar: `Servicio militar obligatorio para: ${(p.depts || []).join(', ') || 'ningún empleo'}`, casino_max: `Apuesta máxima del casino: ${money(p.valor)}`, visa_dias: `Plazo de visa: ${p.valor} días del juego`,
+    delito: `Nuevo delito ${esc(p.code || '')} «${esc(p.title || '')}»: multa ${money(p.fine || 0)}${p.months ? `, ${p.months} meses de prisión` : ''}` }[l.effect] || ''; };
 const gobierno = { id: 'gobierno', name: 'LA City', icon: '🏛️', bg: '#1d3b6e,#2f5aa8', url: 'lacity.rp', show: () => true,
   async render(el) {
     const reqs = await myRequests(), ch = S.char, pres = has('Presidente') || lvl() >= 4;
+    const laws = await db.list('laws', { order: 'created_at', limit: 300 }).catch(() => []), lawmaker = has('Presidente') || has('Gobernador') || lvl() >= 4;
+    const tax = k => (set('impuestos') || {})[k] ?? DEFAULT_SETTINGS.impuestos[k];
     const gov = (await db.list('accounts', { eq: { kind: 'gov' } }))[0];
     const visaOk = approvedOf(reqs, 'visa').length, days = ch ? Math.ceil(set('visa_days') - (Date.now() - new Date(ch.created_at)) / GAME_DAY_MS) : 0;
     const cats = {};
@@ -218,7 +225,7 @@ const gobierno = { id: 'gobierno', name: 'LA City', icon: '🏛️', bg: '#1d3b6
     const infl = ((cpi() - 1) * 100).toFixed(2);
     view(el, `<div class="portal"><div class="gov-top">Sitio oficial de la Ciudad de Los Ángeles · Roleplay</div>
       <header class="gov-bar"><img class="gov-logo" src="img/logo.png" alt=""><div><b>City of Los Angeles</b><span>Servicios en línea para residentes</span></div>
-        <nav><a data-act="go" data-k="tramites">Trámites</a><a data-act="go" data-k="mis">Mis solicitudes</a><a data-act="go" data-k="finanzas">Finanzas</a></nav></header>
+        <nav><a data-act="go" data-k="tramites">Trámites</a><a data-act="go" data-k="mis">Mis solicitudes</a><a data-act="go" data-k="leyes">Leyes</a><a data-act="go" data-k="finanzas">Finanzas</a></nav></header>
       <section class="gov-hero"><div><h1>${ch ? `Hola, ${esc(ch.first_name)}` : 'Bienvenido a Los Ángeles'}</h1><p>Realiza tus trámites de identidad, licencias, registros y negocios en línea.</p></div>
         <div class="hero-stats"><div><small>Tesorería de la ciudad</small><b>${money(gov?.balance)}</b></div><div><small>Inflación acumulada</small><b>${infl}%</b></div><div><small>Tasa de la Reserva Federal</small><b>${set('fed_rate')}%</b></div></div></section>
       <main class="gov-main">
@@ -230,6 +237,22 @@ const gobierno = { id: 'gobierno', name: 'LA City', icon: '🏛️', bg: '#1d3b6
       <h2 id="mis" class="sec-h">Mis solicitudes</h2>
       <table class="gov-tbl"><thead><tr><th>Folio</th><th>Trámite</th><th>Fecha</th><th>Estado</th><th>Nota</th></tr></thead><tbody>${reqs.map(r => `<tr><td>${r.id.slice(0, 8).toUpperCase()}</td>
         <td>${esc(TRAMITES[r.type]?.name || r.data.job_title || r.type)}</td><td>${fdate(r.created_at)}</td><td>${badge(r.status)}</td><td>${esc(r.note || '')}</td></tr>`).join('') || '<tr><td colspan="5">Sin solicitudes.</td></tr>'}</tbody></table>
+      <h2 id="leyes" class="sec-h">Leyes de Los Ángeles</h2>
+      ${(() => { const vig = laws.filter(l => l.status === 'vigente'), der = laws.filter(l => l.status !== 'vigente');
+        const card = l => `<div class="law ${l.status}"><div class="row"><b class="grow">Ley ${l.number}: ${esc(l.title)}</b>${l.status === 'vigente' ? '<span class="tag on">Vigente</span>' : '<span class="tag">Derogada</span>'}</div>
+          <small class="muted">Promulgada por ${esc(l.author_office || '')} ${esc(cname(l.author))} · ${fdate(l.created_at)}${l.repealed_at ? ' · derogada ' + fdate(l.repealed_at) : ''}</small>
+          <p>${esc(l.body)}</p>${LAW_EFFECT(l) ? `<p class="law-eff">⚙️ ${LAW_EFFECT(l)}</p>` : ''}${lawmaker && l.status === 'vigente' ? `<button class="btn sm ghost" data-act="derogar" data-id="${l.id}">Derogar</button>` : ''}</div>`;
+        return (vig.map(card).join('') || '<p class="muted">Aún no hay leyes promulgadas.</p>') + (der.length ? `<details><summary>Leyes derogadas (${der.length})</summary>${der.map(card).join('')}</details>` : ''); })()}
+      ${lawmaker ? `<div class="pres"><h3>📜 Despacho legislativo (${has('Presidente') ? 'Presidente' : has('Gobernador') ? 'Gobernador' : 'Staff'})</h3><p>Promulga leyes para la ciudad. Pueden ser solo texto o cambiar reglas del juego. Se publican solas en LA Times y se pueden derogar (regresa todo como estaba).</p>
+        <form data-form="ley" class="form">${fieldsHTML([{ k: 'title', label: 'Nombre de la ley', req: 1 }, { k: 'body', label: 'Texto de la ley', type: 'textarea', req: 1 },
+          { k: 'effect', label: '¿Qué cambia?', type: 'select', options: [['ninguno', 'Solo texto (sin efecto automático)'], ['impuesto', 'Un impuesto'], ['ahorro', 'Interés de las cuentas de ahorro'], ['dinero_inicial', 'Dinero inicial de cada vida'],
+            ['servicio_militar', 'Empleos que piden servicio militar'], ['casino_max', 'Apuesta máxima del casino'], ['visa_dias', 'Días para sacar visa (extranjeros)'], ['delito', 'Agregar un delito al código penal']] }])}
+          <div data-eff="impuesto" hidden>${fieldsHTML([{ k: 'tipo', label: 'Impuesto', type: 'select', options: [['sales', `Ventas (hoy ${tax('sales')}%)`], ['property', `Predial (hoy ${tax('property')}%)`], ['corp', `Corporativo (hoy ${tax('corp')}%)`], ['transfer', `Transferencias (hoy ${tax('transfer')}%)`]] }])}</div>
+          <div data-eff="impuesto ahorro dinero_inicial casino_max visa_dias" hidden>${fieldsHTML([{ k: 'valor', label: 'Nuevo valor', type: 'number', min: 0, step: 0.01 }])}</div>
+          <div data-eff="servicio_militar" hidden><div class="g-pick">${Object.keys(set('payroll') || {}).map(d => `<label class="chk"><input type="checkbox" name="dep" value="${esc(d)}" ${set('military_required').includes(d) ? 'checked' : ''}> ${esc(d)}</label>`).join('')}</div></div>
+          <div data-eff="delito" hidden>${fieldsHTML([{ k: 'code', label: 'Artículo', ph: 'Art. 120' }, { k: 'dtitle', label: 'Nombre del delito' }, { k: 'kind', label: 'Tipo', type: 'select', options: [['infraccion', 'Infracción'], ['delito', 'Delito'], ['grave', 'Delito grave']] },
+            { k: 'fine', label: 'Multa (USD)', type: 'number', min: 0 }, { k: 'months', label: 'Prisión (meses)', type: 'number', min: 0 }])}</div>
+          <button class="btn" type="submit">Promulgar ley</button></form></div>` : ''}
       <h2 id="finanzas" class="sec-h">Finanzas públicas</h2>
       <div class="fin"><div><small>Presupuesto inicial (real, FY 2025-26)</small><b>$13,950,000,000</b></div><div><small>Saldo actual</small><b>${money(gov?.balance)}</b></div>
         <div><small>Índice de precios (CPI)</small><b>${cpi().toFixed(4)}</b></div><div><small>Emisiones de dinero</small><b>${hist.length}</b></div></div>
@@ -244,7 +267,16 @@ const gobierno = { id: 'gobierno', name: 'LA City', icon: '🏛️', bg: '#1d3b6
         const c = await db.rpc('print_money', { amount: d.amount }); S.settings.cpi = c; toast(`Dinero emitido. Nuevo índice de precios: ${Number(c).toFixed(4)}`); gobierno.render(el);
       },
       async rate(d) { await db.rpc('set_fed_rate', { rate: d.rate }); S.settings.fed_rate = d.rate; toast('Tasa actualizada'); gobierno.render(el); },
+      async ley(f) {
+        const e = f.effect || 'ninguno', params = e === 'impuesto' ? { tipo: f.tipo, valor: +f.valor } : ['ahorro', 'dinero_inicial', 'casino_max', 'visa_dias'].includes(e) ? { valor: +f.valor }
+          : e === 'servicio_militar' ? { depts: [...el.querySelectorAll('[data-eff=servicio_militar] input:checked')].map(x => x.value) } : e === 'delito' ? { code: f.code, title: f.dtitle, kind: f.kind, fine: +f.fine || 0, months: +f.months || 0 } : {};
+        if (!await ask('¿Promulgar esta ley? Se publica en LA Times y entra en vigor de inmediato.')) return;
+        const n = await db.rpc('enact_law', { c: S.char.id, title: f.title, body: f.body, effect: e, params }); toast(`Ley ${n} promulgada 📜`); await window.refreshShell?.('gobierno');
+      },
+      async derogar(d) { if (!await ask('¿Derogar esta ley? Lo que cambió regresa como estaba.')) return; await db.rpc('repeal_law', { c: S.char.id, law: d.id }); toast('Ley derogada'); await window.refreshShell?.('gobierno'); },
     });
+    const effSel = el.querySelector('[data-form=ley] [name=effect]');
+    if (effSel) { const upd = () => el.querySelectorAll('[data-eff]').forEach(d => d.hidden = !d.dataset.eff.split(' ').includes(effSel.value)); effSel.onchange = upd; upd(); }
   } };
 
 // ============ WORKDAY (mi trabajo) ============
