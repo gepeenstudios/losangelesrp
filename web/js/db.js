@@ -134,9 +134,8 @@ export function coFair(co, accounts = T('accounts'), props = T('properties'), ve
   const out = coOut(co, holdings, etfh) || co.shares_total || 1;
   return Math.max(0.01, Math.round(coBook(co, accounts, props, vehicles, models) / out * coPremium(co) * 100) / 100);
 }
-// igual que share_price() del SQL: el precio es el del último trato; si no hay, el valor justo. El ETF se valúa con el valor justo de sus acciones.
+// igual que share_price() del SQL: precio justo (en libros × prima); el ETF vale lo que valen sus acciones más su efectivo
 export function sharePrice(co, accounts = T('accounts'), props = T('properties'), vehicles = T('vehicles'), models = T('vehicle_models'), companies = T('companies'), holdings = T('holdings'), etfh = T('etf_holdings')) {
-  if (co.last_price != null) return Math.round(Number(co.last_price) * 100) / 100;
   if (co.industry === 'ETF') return etfNav(co, accounts, props, vehicles, models, companies, holdings, etfh);
   return coFair(co, accounts, props, vehicles, models, holdings, etfh);
 }
