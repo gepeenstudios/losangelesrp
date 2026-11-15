@@ -134,13 +134,16 @@ const banco = { id: 'banco', name: 'RRVA', icon: '🏦', bg: '#004481,#1464a5', 
         ${cc ? `<p class="muted">Crédito: debes ${money(cc.owed)} de ${money(cc.credit_limit)} · intereses ${Math.round(cc.apr * 100)}% anual. Toca la tarjeta para ver tu estado de cuenta.</p>` : '<p class="muted">¿Quieres una tarjeta de crédito? Pídela en la pestaña Crédito.</p>'}
         <p class="muted">Las cuentas empresariales se crean al aprobarse tu empresa; puedes tener varios socios. Para invertir abre la app Bolsa.</p>`;
     }
-    view(el, `<div class="bank-h"><div class="row"><small class="grow">${esc(accLabel(cur))}</small><button class="link light" data-act="copyacc">Cuenta ${cur.number} ⧉</button></div>
-      <small>Saldo disponible</small><h2>${money(cur.balance)}</h2>
-      ${accs.length > 1 ? `<div class="chips">${accs.map(a => `<button data-act="acc" data-id="${a.id}" class="${a.id === cur.id ? 'on' : ''}">${a.kind === 'personal' ? 'Personal' : a.kind === 'savings' ? 'Ahorro' : esc(a.name)}</button>`).join('')}</div>` : ''}</div>
+    const ccard = (await db.list('credit_cards', { eq: { character_id: S.char.id }, order: null })).find(x => x.status !== 'closed'), onCC = st.tab === 'credito' && ccard;
+    view(el, `<div class="bank-h">${onCC ? `<div class="row"><small class="grow">Tarjeta de crédito RRVA ${last4(ccard.number)}</small><small>${Math.round(ccard.apr * 100)}% anual</small></div>
+      <small>Crédito disponible</small><h2>${money(Math.max(0, ccard.credit_limit - ccard.owed))}</h2><small>Debes ${money(ccard.owed)} de una línea de ${money(ccard.credit_limit)}</small>`
+      : `<div class="row"><small class="grow">${esc(accLabel(cur))}</small><button class="link light" data-act="copyacc">Cuenta ${cur.number} ⧉</button></div>
+      <small>Saldo disponible</small><h2>${money(cur.balance)}</h2>`}
+      ${accs.length > 1 || ccard ? `<div class="chips">${accs.map(a => `<button data-act="acc" data-id="${a.id}" class="${a.id === cur.id && !onCC ? 'on' : ''}">${a.kind === 'personal' ? 'Personal' : a.kind === 'savings' ? 'Ahorro' : esc(a.name)}</button>`).join('')}${ccard ? `<button data-act="tab" data-t="credito" class="${onCC ? 'on' : ''}">💳 Crédito</button>` : ''}</div>` : ''}</div>
       ${tabs([['mov', 'Movimientos'], ['send', 'Transferir'], ['ahorro', 'Ahorro e intereses'], ['multas', 'Multas'], ['imp', 'Impuestos'], ['tarjeta', 'Tarjeta'], ['credito', 'Crédito']], st.tab)}${body}`, {
       async ahorro() { await db.rpc('open_savings', { c: S.char.id }); toast('Cuenta de ahorro abierta'); go({}); },
       tab: d => banco.render(el, { tab: d.t, acc: cur.id }),
-      acc: d => banco.render(el, { tab: st.tab, acc: d.id }),
+      acc: d => banco.render(el, { tab: st.tab === 'credito' ? 'mov' : st.tab, acc: d.id }),
       copyacc: async () => { await navigator.clipboard?.writeText(cur.number); toast('Número de cuenta copiado'); },
       async dest(d) {
         if (d.number === cur.number) throw new Error('Es tu misma cuenta');
