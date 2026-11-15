@@ -1429,8 +1429,9 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
           await db.insert('records', { kind: 'orden', character_id: st.id, officer_id: S.char?.id || null, description: 'En espera de juicio: ' + desc, charges });
           return toast(`Son ${pena(years)}: requiere juicio. Se envió el caso a los jueces y quedó con orden de arresto (si ya lo tienes, usa Arresto).`), go({});
         }
-        if (v.kind === 'arresto') for (const o of await db.list('records', { eq: { character_id: st.id, kind: 'orden', paid: false } })) await db.update('records', o.id, { paid: true }); // capturado: la orden queda cumplida
-        await db.insert('records', { kind: v.kind === 'advertencia' ? 'advertencia' : v.kind, character_id: st.id, officer_id: S.char?.id || null, amount: v.kind === 'multa' || v.kind === 'arresto' ? Math.round(fine) : null, description: desc, charges });
+        const ords = v.kind === 'arresto' ? await db.list('records', { eq: { character_id: st.id, kind: 'orden', paid: false } }) : [];
+        for (const o of ords) await db.remove('records', o.id); // capturado: la orden se vuelve este arresto (un solo registro, sin cargos repetidos)
+        await db.insert('records', { kind: v.kind === 'advertencia' ? 'advertencia' : v.kind, character_id: st.id, officer_id: S.char?.id || null, amount: v.kind === 'multa' || v.kind === 'arresto' ? Math.round(fine) : null, description: (ords.length ? 'Capturado por orden de arresto · ' : '') + desc, charges });
         if (v.kind === 'arresto' && years > 0) {
           const minutes = years * Number(set('prison_min_per_year'));
           await db.insert('inmates', { character_id: st.id, officer_id: S.char?.id || null, charges, years, minutes, mugshots: Object.fromEntries(MUG.map(([k]) => [k, v['mug_' + k]])), started_at: new Date().toISOString(),
@@ -1438,7 +1439,7 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
           const who = cname(st.id), list = charges.map(x => `• ${x.code} ${x.title}`).join('\n');
           await db.insert('posts', { app: 'news', section: 'Policía', character_id: S.char?.id || null, anonimo: true, media_url: v.mug_frente || null,
             title: juicio ? `LAPD arresta a ${who}: queda en prisión preventiva en espera de juicio` : `LAPD arresta a ${who}: ${pena(years)} de prisión`,
-            body: `LOS ÁNGELES — Agentes del Departamento de Policía de Los Ángeles detuvieron a ${who}, quien fue fichado y trasladado a prisión. Le leyeron sus derechos Miranda en el lugar.\n\nCargos:\n${list}\n\n${juicio ? `La fiscalía pide ${pena(years)} de prisión; un juez decidirá. Multa: ${money(Math.round(fine))}.` : `Sentencia: ${pena(years)} de prisión y multa de ${money(Math.round(fine))}.`}${v.description ? '\n\n' + v.description : ''}\n\nOficial a cargo: ${cname(S.char?.id) || 'LAPD'}.` }).catch(() => {});
+            body: `LOS ÁNGELES — Agentes del Departamento de Policía de Los Ángeles detuvieron a ${who}, quien fue fichado y trasladado a prisión. ${ords.length ? 'Tenía una orden de arresto activa y fue capturado. ' : ''}Le leyeron sus derechos Miranda en el lugar.\n\nCargos:\n${list}\n\n${juicio ? `La fiscalía pide ${pena(years)} de prisión; un juez decidirá. Multa: ${money(Math.round(fine))}.` : `Sentencia: ${pena(years)} de prisión y multa de ${money(Math.round(fine))}.`}${v.description ? '\n\n' + v.description : ''}\n\nOficial a cargo: ${cname(S.char?.id) || 'LAPD'}.` }).catch(() => {});
           toast(juicio ? 'Arrestado en prisión preventiva: el contador corre hacia arriba hasta que el juez dicte sentencia.' : `Arrestado: ${pena(years)} = ${Math.round(minutes)} min reales. El contador ya empezó.`);
         } else toast('Registrado');
         go({});

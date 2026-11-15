@@ -231,7 +231,8 @@ export const ON_APPROVE = {
     await db.rpc('hire', { c: r.character_id, d: r.data.role_tag });
     return `Contratado en ${r.data.role_tag}. El bot le pone en Discord el rol "${r.data.role_tag}".`;
   },
-  async juicio(r) { // aprobar = culpable: entra a prisión con los años pedidos
+  async juicio(r) { await courtNews(r, true); return ON_APPROVE.juicioCulpable(r); },
+  async juicioCulpable(r) { // aprobar = culpable: entra a prisión con los años pedidos
     const minutes = Number(r.data.anos) * Number(set('prison_min_per_year'));
     const prev = (await db.list('inmates', { eq: { character_id: r.character_id, status: 'preventiva' } }))[0];
     if (prev) { const ends = new Date(new Date(prev.started_at).getTime() + minutes * 6e4); // la preventiva cuenta como tiempo cumplido
@@ -263,6 +264,10 @@ export async function addRole(charId, role) {
 }
 
 // cola de revisión: muestra solicitudes pendientes que este usuario puede aprobar
+// nota del LA Times con el veredicto de un juicio penal
+const courtNews = (r, guilty) => db.insert('posts', { app: 'news', section: 'Policía', anonimo: true, character_id: S.char?.id || null,
+  title: guilty ? `Culpable: ${r.data.acusado} recibe ${Math.round(r.data.anos * 12)} meses de prisión` : `${r.data.acusado} es declarado inocente y sale libre`,
+  body: `TRIBUNAL SUPERIOR DE LOS ÁNGELES — ${guilty ? `El juez declaró culpable a ${r.data.acusado}. La condena es de ${Math.round(r.data.anos * 12)} meses de prisión${r.data.multa ? ' y una multa de $' + Number(r.data.multa).toLocaleString('en-US') : ''}; el tiempo en prisión preventiva cuenta como cumplido.` : `El juez declaró inocente a ${r.data.acusado} de todos los cargos y ordenó su liberación inmediata.`}\n\nCargos: ${r.data.cargos}\n\nCaso presentado por: ${r.data.oficial || 'LAPD'}. Juez: ${cname(S.char?.id) || 'Tribunal'}.` }).catch(() => {});
 export async function reviewQueue(el, { types, title = 'Pendientes por revisar', extra } = {}) {
   let rows = (await db.list('requests', { eq: { status: 'pending' }, overlaps: { dept: S.tags } }))
     .filter(r => (!types || types.includes(r.type)) && (r.user_id !== S.me.id || lvl() >= 3));
@@ -277,6 +282,7 @@ export async function reviewQueue(el, { types, title = 'Pendientes por revisar',
     const r = rows.find(x => x.id === d.id), note = el.querySelector(`[data-note="${d.id}"]`).value;
     let msg = '';
     if (status === 'approved') msg = (await ON_APPROVE[r.type]?.(r)) || '';
+    if (status === 'rejected' && r.type === 'juicio') await courtNews(r, false);
     if (status === 'rejected' && r.type === 'juicio') for (const i of await db.list('inmates', { eq: { character_id: r.character_id, status: 'preventiva' } })) // inocente: sale de la preventiva
       await db.update('inmates', i.id, { status: 'liberado', ends_at: new Date().toISOString(), note: 'Inocente: liberado por el juez' });
     if (status === 'rejected') await db.rpc('reject_request', { id: r.id, note }); // se borra y queda en el historial de la persona
