@@ -89,9 +89,9 @@ const banco = { id: 'banco', name: 'RRVA', icon: '🏦', bg: '#004481,#1464a5', 
         <small class="muted">Banco RRVA · Los Ángeles RP · Operación sujeta a revisión del staff</small></div>
         <div class="row"><button class="btn ghost" data-act="copy">Copiar comprobante</button><button class="btn grow" data-act="tab" data-t="send">Nueva transferencia</button></div>`;
     } else if (st.tab === 'ahorro') {
-      const sav = accs.find(a => a.kind === 'savings'), rate = Number(set('fed_rate'));
-      body = `<div class="tx"><h3>Cuenta de ahorro RRVA</h3><p class="muted">Tu dinero gana ${rate}% anual (tasa de la Reserva Federal), pagado cada día. La inflación acumulada de la ciudad es ${((cpi() - 1) * 100).toFixed(2)}%.</p>
-        ${sav ? `<dl class="rcpt"><dt>Saldo</dt><dd>${money(sav.balance)}</dd><dt>Número de cuenta</dt><dd>${sav.number}</dd><dt>Interés diario estimado</dt><dd class="pos">+${money(sav.balance * rate / 100 / 365)}</dd></dl>
+      const sav = accs.find(a => a.kind === 'savings'), rate = Number(set('savings_rate'));
+      body = `<div class="tx"><h3>Cuenta de ahorro RRVA</h3><p class="muted">Tu dinero gana <b>${rate}% anual</b>, pagado cada día del juego (cada 2 horas reales). La inflación acumulada de la ciudad es ${((cpi() - 1) * 100).toFixed(2)}%.</p>
+        ${sav ? `<dl class="rcpt"><dt>Saldo</dt><dd>${money(sav.balance)}</dd><dt>Número de cuenta</dt><dd>${sav.number}</dd><dt>Interés por día del juego</dt><dd class="pos">+${money(sav.balance * rate / 100 / 365)}</dd><dt>Interés por día real (12 días del juego)</dt><dd class="pos">+${money(sav.balance * rate / 100 / 365 * 12)}</dd></dl>
           <p class="muted">Para ahorrar, transfiere desde tu cuenta personal al número ${sav.number}. Para retirar, elige "Ahorro" arriba y transfiere a tu cuenta personal.</p>`
         : `<button class="btn big" data-act="ahorro">Abrir cuenta de ahorro</button>`}</div>`;
     } else if (st.tab === 'multas') {
@@ -400,12 +400,12 @@ const expedientes = { id: 'expedientes', name: 'Expedientes', icon: '🗂️', b
 // ============ BITSO (cripto con oferta fija; el precio lo mueven las compras y ventas de los jugadores contra un pool x·y=k) ============
 const cfmt = p => p >= 1000 ? money(p) : p >= 1 ? '$' + Number(p).toFixed(2) : '$' + Number(p).toFixed(4);
 const bitso = { id: 'bitso', name: 'Bitso', icon: '🪙', bg: '#0b2b1f,#0f7a4f', show: () => true,
-  async render(el, sel = null, range = 1440) {
-    if (typeof sel !== 'string') sel = null;
+  async render(el, sel = null, range = 5 * 60e3) {
+    if (typeof sel !== 'string') sel = null; if (range > 14 * 3600e3 || range < 60e3) range = 5 * 60e3; // range = duración de cada vela
     if (!needChar(el)) return;
     await db.rpc('crypto_tick').catch(() => {});
     const [coins, holds, accs] = await Promise.all([db.list('crypto_coins', { order: 'ord', asc: true }), db.list('crypto_hold', { eq: { character_id: S.char.id }, order: null }), myAccounts()]);
-    const day = Object.fromEntries(await Promise.all(coins.map(async c => [c.sym, (await db.rpc('crypto_chart', { s: c.sym, minutes: sel === c.sym ? range : 1440 }) || []).map(x => Number(x.price))])));
+    const day = Object.fromEntries(await Promise.all(coins.map(async c => [c.sym, (await db.rpc('crypto_chart', { s: c.sym, minutes: 1440 }) || []).map(x => Number(x.price))])));
     const H = Object.fromEntries(holds.map(h => [h.sym, h])), bal = Number(accs.find(a => a.kind === 'personal')?.balance || 0);
     const val = c => Number(H[c.sym]?.qty || 0) * Number(c.price), total = coins.reduce((n, c) => n + val(c), 0), cost = holds.reduce((n, h) => n + Number(h.cost), 0);
     const ch = c => pct(Number(c.price), day[c.sym][0] || Number(c.price));
@@ -413,10 +413,10 @@ const bitso = { id: 'bitso', name: 'Bitso', icon: '🪙', bg: '#0b2b1f,#0f7a4f',
     if (sel) {
       const c = coins.find(x => x.sym === sel), h = H[sel], q = Number(h?.qty || 0), pl = val(c) - Number(h?.cost || 0);
       const trades = await db.list('crypto_trades', { eq: { character_id: S.char.id, sym: sel }, limit: 20 });
+      const rawHist = (await db.list('crypto_hist', { eq: { sym: sel }, order: 't', limit: 5000 }).catch(() => [])).reverse();
       body = `<button class="link" data-act="home">‹ Mercado</button>
         <div class="bx-top"><span class="bx-dot" style="background:${c.color}">${esc(c.sym[0])}</span><div><h2>${esc(c.name)} <small class="muted">${esc(c.sym)}</small></h2><div class="bx-price">${cfmt(c.price)} ${sgn(ch(c))}</div></div></div>
-        <div class="bx-range">${[[60, '1H'], [1440, '24H'], [10080, '7D']].map(([m, l]) => `<button class="${m === range ? 'on' : ''}" data-act="range" data-m="${m}">${l}</button>`).join('')}</div>
-        <div class="bx-chart">${chart(day[sel], 600, 200)}</div>
+        ${tfBar(range)}${candles(rawHist.map(x => ({ t: +new Date(x.t), p: +x.price })), range, Number(c.price))}
         <div class="bx-grid"><div class="card"><h3>Tu ${esc(c.sym)}</h3><p><b>${q.toFixed(8).replace(/\.?0+$/, '') || 0}</b> ${esc(c.sym)} ≈ <b>${money(val(c))}</b></p>${q ? `<p>Ganancia/pérdida: <b class="${pl >= 0 ? 'pos' : 'neg'}">${pl >= 0 ? '+' : '−'}${money(Math.abs(pl))}</b></p>` : ''}</div>
           <form class="card form" data-form="buy"><h3>Comprar</h3><label class="fld"><span>Dólares a invertir (saldo ${money(bal)})</span><input name="usd" type="number" min="1" step="0.01" required></label><button class="btn bx-buy">Comprar ${esc(c.sym)}</button></form>
           <form class="card form" data-form="sell"><h3>Vender</h3><label class="fld"><span>Cantidad de ${esc(c.sym)}</span><input name="qty" type="number" min="0" step="any" max="${q}" required></label><div class="row"><button type="button" class="btn ghost sm" data-act="all">Todo</button><span class="grow"></span><button class="btn bx-sell">Vender</button></div></form></div>
@@ -425,16 +425,18 @@ const bitso = { id: 'bitso', name: 'Bitso', icon: '🪙', bg: '#0b2b1f,#0f7a4f',
         <p class="muted">Como una cripto real: hay una cantidad fija de monedas y el precio lo mueven las compras y ventas de todos los jugadores. Comprar sube el precio, vender lo baja, y entre más grande la orden más lo mueve. Comisión 0.5%. El gobierno no participa.</p>
         <h3>Tus movimientos</h3><ul class="list">${trades.map(t => `<li><span class="grow">${t.side === 'buy' ? '🟢 Compra' : '🔴 Venta'} ${Number(t.qty).toFixed(8).replace(/\.?0+$/, '')} ${esc(t.sym)} a ${cfmt(t.price)} <small class="muted">${fdate(t.created_at)}</small></span><b>${money(t.usd)}</b></li>`).join('') || '<p class="muted">Aún no operas esta moneda.</p>'}</ul>`;
     } else body = `<div class="bx-sum card"><div><small class="muted">Tu portafolio cripto</small><div class="bx-price">${money(total)}</div>${cost ? `<div class="${total - cost >= 0 ? 'pos' : 'neg'}">${total - cost >= 0 ? '+' : '−'}${money(Math.abs(total - cost))} desde que compraste</div>` : ''}</div><div><small class="muted">Saldo en tu cuenta</small><div><b>${money(bal)}</b></div></div></div>
+      ${holds.some(h => h.qty > 0) ? `<h3>Mi portafolio</h3><table class="tbl"><thead><tr><th>Moneda</th><th>Tienes</th><th>Invertiste</th><th>Vale hoy</th><th>Ganancia</th><th>%</th></tr></thead><tbody>${coins.filter(c => H[c.sym]?.qty > 0).map(c => { const h = H[c.sym], v = val(c), g = v - Number(h.cost);
+        return `<tr class="click" data-act="coin" data-s="${c.sym}"><td><b>${esc(c.sym)}</b></td><td>${Number(h.qty).toFixed(8).replace(/\.?0+$/, '')}</td><td>${money(h.cost)}</td><td>${money(v)}</td><td class="${g >= 0 ? 'pos' : 'neg'}">${g >= 0 ? '+' : '−'}${money(Math.abs(g))}</td><td>${sgn(pct(v, Number(h.cost)))}</td></tr>`; }).join('')}</tbody></table>` : ''}
       <h3>Mercado</h3><ul class="list bx-list">${coins.map(c => `<li data-act="coin" data-s="${c.sym}"><span class="bx-dot" style="background:${c.color}">${esc(c.sym[0])}</span><div class="grow"><b>${esc(c.name)}</b><div class="muted">${esc(c.sym)}${H[c.sym]?.qty > 0 ? ` · tienes ${money(val(c))}` : ''}</div></div>
         <div class="bx-spark">${chart(day[c.sym], 120, 36, false)}</div><div class="bx-r"><b>${cfmt(c.price)}</b><div>${sgn(ch(c))}</div></div></li>`).join('')}</ul><p class="muted">El precio de cada moneda lo deciden las compras y ventas de los jugadores. Se actualiza en vivo.</p>`;
     view(el, `<div class="bx"><header class="bx-h"><b>bitso</b><span class="grow"></span><span class="muted">en vivo ●</span></header><div class="tabbody">${body}</div></div>`, {
-      home: () => bitso.render(el), coin: d => bitso.render(el, d.s), range: d => bitso.render(el, sel, +d.m),
+      home: () => bitso.render(el), coin: d => bitso.render(el, d.s), tf: d => bitso.render(el, sel, +d.ms),
       all: (_, b) => { b.form.qty.value = Number(H[sel]?.qty || 0); },
       async buy(v) { const r = await db.rpc('crypto_trade', { c: S.char.id, s: sel, side: 'buy', amount: +v.usd }); toast(`Compraste ${Number(r.qty).toFixed(8).replace(/\.?0+$/, '')} ${sel} · nuevo precio ${cfmt(r.new_price)}`); bitso.render(el, sel, range); window.liveRefresh?.(); },
       async sell(v) { const r = await db.rpc('crypto_trade', { c: S.char.id, s: sel, side: 'sell', amount: +v.qty }); toast(`Vendiste por ${money(r.usd)}`); bitso.render(el, sel, range); window.liveRefresh?.(); },
     });
     // en vivo: vuelve a pintar cada 30 s mientras la ventana siga abierta y nadie esté escribiendo
-    clearTimeout(el._bx); el._bx = setTimeout(() => { if (el.isConnected && el.querySelector('.bx') && !el.contains(document.activeElement)) bitso.render(el, sel, range); }, 30000);
+    clearTimeout(el._bx); el._bx = setTimeout(() => { if (el.isConnected && el.querySelector('.bx') && !el.contains(document.activeElement)) bitso.render(el, sel, range); }, sel ? 10000 : 30000);
   } };
 
 // ============ CASINO (el servidor decide todo; apuestas → Tesorería, premios ← Tesorería) ============
@@ -887,7 +889,7 @@ async function robpedia(el, params = {}) {
       <h3>Datos actuales</h3><ul>${facts.slice(0, 5).map(f => `<li>${f}</li>`).join('')}</ul>`,
     'Economía de Los Ángeles': `<p>La moneda es el dólar estadounidense. El banco principal es <b>RRVA</b>. La <b>Tesorería</b> empezó con <b>$13,950 millones</b>, el presupuesto real de la Ciudad de Los Ángeles.</p>
       <p>El único dinero nuevo que entra solo es el inicial de cada vida nueva. El presidente puede imprimir dinero, lo que genera <b>inflación</b> (hoy ${((cpi() - 1) * 100).toFixed(2)}%).</p>
-      <p>En la bolsa (GBM+) se negocian acciones de las empresas y el ETF <b>LA500</b>. Los ahorros pagan intereses según la tasa de la Reserva Federal (${set('fed_rate')}%).</p>`,
+      <p>En la bolsa (GBM+) se negocian acciones de las empresas y el ETF <b>LA500</b>. Las cuentas de ahorro pagan ${set('savings_rate')}% anual.</p>`,
     'Gobierno y elecciones': `<p>Cada mes hay elección presidencial: registro de candidatos del día 1 al ${set('elecciones').registro_hasta}, votación del ${set('elecciones').votacion_desde} al ${set('elecciones').votacion_hasta}. El ganador gobierna el mes siguiente completo.</p>
       <p>Presidente actual: <b>${pres.length ? esc(cname(pres[0].id)) : 'vacante'}</b>.</p><h3>Partidos</h3><ul>${parties.map(p => `<li>${esc(p.name)}${p.siglas ? ' (' + esc(p.siglas) + ')' : ''} — ${esc(p.ideologia || '')}</li>`).join('') || '<li>Sin partidos registrados.</li>'}</ul>`,
     'Reglas de CK': `<p>El <b>CK</b> (Character Kill) es la muerte permanente de un personaje. Reglas oficiales:</p><ol>${CK_RULES.map(([h, b]) => `<li><b>${esc(h)}.</b> ${esc(b)}</li>`).join('')}</ol>`,
@@ -971,8 +973,9 @@ const empleos = { id: 'empleos', name: 'LinkedIn', icon: '💼', bg: '#0a66c2,#0
 
 // ============ BOLSA DE VALORES ============
 async function market() {
-  const [cos, accs, props, vehs, models, holds] = await Promise.all(['companies', 'accounts', 'properties', 'vehicles', 'vehicle_models', 'holdings'].map(t => db.list(t, { order: null, limit: 10000 })));
-  return cos.map(c => ({ ...c, price: sharePrice(c, accs, props, vehs, models, cos, holds), out: coOut(c, holds), cash: Number(accs.find(a => a.id === c.account_id)?.balance || 0) }));
+  const [cos, accs, props, vehs, models, holds, etfh] = await Promise.all(['companies', 'accounts', 'properties', 'vehicles', 'vehicle_models', 'holdings', 'etf_holdings'].map(t => db.list(t, { order: null, limit: 10000 }).catch(() => [])));
+  return cos.map(c => ({ ...c, price: sharePrice(c, accs, props, vehs, models, cos, holds, etfh), out: c.industry === 'ETF' ? holds.filter(h => h.company_id === c.id && h.shares > 0).reduce((s, h) => s + Number(h.shares), 0) : coOut(c, holds, etfh),
+    cash: Number(accs.find(a => a.id === c.account_id)?.balance || 0), etf: c.industry === 'ETF' ? etfh.filter(e => e.shares > 0) : null }));
 }
 // gráfica de línea en SVG a partir de una lista de precios
 const chart = (pts, w = 600, h = 160, line = true) => {
@@ -982,13 +985,32 @@ const chart = (pts, w = 600, h = 160, line = true) => {
   return `<svg class="chart ${up ? 'up' : 'down'}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">${line ? `<polygon points="0,${h} ${xy} ${w},${h}" class="area"/>` : ''}<polyline points="${xy}"/></svg>`;
 };
 const pct = (a, b) => b ? (a - b) / b * 100 : 0;
+// gráfica de velas tipo trading. pts = [{t: ms, p: precio}] en orden; tf = duración de cada vela (ms reales). Velas vacías repiten el último cierre.
+const TF = [['1H', 5 * 60e3, '1 hora del juego'], ['6H', 30 * 60e3, '6 horas del juego'], ['1D', 2 * 3600e3, '1 día del juego'], ['1S', 14 * 3600e3, '1 semana del juego']];
+function candles(pts, tf, live, n = 48) {
+  const W = 760, H = 300, PR = 64, PB = 22, end = Math.floor(Date.now() / tf) * tf, start = end - (n - 1) * tf;
+  let prev = [...pts].reverse().find(x => x.t < start)?.p ?? pts[0]?.p ?? live; const cs = [];
+  for (let k = 0; k < n; k++) { const b0 = start + k * tf, inb = pts.filter(x => x.t >= b0 && x.t < b0 + tf).map(x => x.p); if (k === n - 1) inb.push(live);
+    const o = prev, c = inb.length ? inb.at(-1) : prev; cs.push({ t: b0, o, c, h: Math.max(o, c, ...inb), l: Math.min(o, c, ...inb), v: inb.length }); prev = c; }
+  let mn = Math.min(...cs.map(c => c.l)), mx = Math.max(...cs.map(c => c.h)); if (mx - mn < mx * 0.002) { mn *= 0.995; mx *= 1.005; } const pad = (mx - mn) * 0.08; mn -= pad; mx += pad;
+  const y = v => (H - PB - (v - mn) / (mx - mn) * (H - PB - 10)).toFixed(1), cw = (W - PR) / n, last = cs.at(-1), up = last.c >= cs[0].o;
+  const fmt = v => v >= 1000 ? Math.round(v).toLocaleString('en-US') : v >= 1 ? v.toFixed(2) : v.toFixed(4);
+  const grid = [0, 1, 2, 3, 4].map(i => { const v = mn + (mx - mn) * i / 4; return `<line x1="0" x2="${W - PR}" y1="${y(v)}" y2="${y(v)}" class="tv-g"/><text x="${W - PR + 6}" y="${+y(v) + 4}" class="tv-t">${fmt(v)}</text>`; }).join('');
+  const times = [0, 0.25, 0.5, 0.75].map(f => { const i = Math.floor(f * n); return `<text x="${(i * cw + 2).toFixed(0)}" y="${H - 6}" class="tv-t">${fgame(cs[i].t, tf >= 2 * 3600e3 ? { day: 'numeric', month: 'short' } : { hour: 'numeric', minute: '2-digit' })}</text>`; }).join('');
+  const body = cs.map((c, i) => { const x = i * cw + cw / 2, g = c.c >= c.o, top = y(Math.max(c.o, c.c)), hh = Math.max(1, Math.abs(y(c.o) - y(c.c)));
+    return `<g class="${g ? 'tv-up' : 'tv-dn'}${i === n - 1 ? ' tv-live' : ''}"><line x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="${y(c.h)}" y2="${y(c.l)}"/><rect x="${(x - cw * 0.35).toFixed(1)}" y="${top}" width="${(cw * 0.7).toFixed(1)}" height="${hh.toFixed(1)}" rx="1"/></g>`; }).join('');
+  return `<svg class="tv" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-label="Gráfica de velas">${grid}${times}${body}
+    <line x1="0" x2="${W - PR}" y1="${y(live)}" y2="${y(live)}" class="tv-last ${up ? 'tv-up' : 'tv-dn'}"/><rect x="${W - PR + 2}" y="${+y(live) - 9}" width="${PR - 4}" height="18" rx="3" class="tv-tag ${up ? 'tv-up' : 'tv-dn'}"/><text x="${W - PR + 6}" y="${+y(live) + 4}" class="tv-tag-t">${fmt(live)}</text></svg>`;
+}
+const tfBar = cur => `<div class="tv-tf">${TF.map(([l, ms, t]) => `<button class="${ms === cur ? 'on' : ''}" data-act="tf" data-ms="${ms}" title="${t}">${l}</button>`).join('')}<span class="tv-livedot">● En vivo</span></div>`;
+
 const sgn = n => `<span class="${n >= 0 ? 'pos' : 'neg'}">${n >= 0 ? '+' : ''}${n.toFixed(2)}%</span>`;
 const bolsa = { id: 'bolsa', name: 'GBM+', icon: '📈', bg: '#0b1f3a,#1c4f8f', url: 'gbm.rp', show: () => true,
   async render(el, params = {}) {
     if (!needChar(el)) return;
     const st = el._gbm ||= { tab: 'port', id: null };
     const [cos, hold, acc, hist, trades] = await Promise.all([market(), db.list('holdings', { eq: { character_id: S.char.id } }), personalAcc(),
-      db.list('price_history', { order: 'created_at', asc: true, limit: 5000 }), db.list('trades', { eq: { character_id: S.char.id } })]);
+      db.list('price_history', { order: 'created_at', limit: 5000 }).then(r => r.reverse()), db.list('trades', { eq: { character_id: S.char.id } })]);
     const H = id => hold.find(x => x.company_id === id && x.shares > 0), series = c => [...hist.filter(p => p.company_id === c.id).map(p => +p.price), c.price];
     const day = c => { const s = hist.filter(p => p.company_id === c.id && new Date(p.created_at) > Date.now() - 864e5); return pct(c.price, s[0]?.price ?? series(c)[0]); };
     const mine = cos.filter(c => H(c.id)?.shares > 0), value = mine.reduce((s, c) => s + H(c.id).shares * c.price, 0), cost = mine.reduce((s, c) => s + Number(H(c.id).cost || 0), 0);
@@ -997,7 +1019,7 @@ const bolsa = { id: 'bolsa', name: 'GBM+', icon: '📈', bg: '#0b1f3a,#1c4f8f', 
     if (st.id) {
       const c = cos.find(x => x.id === st.id), h = H(c.id), ser = series(c);
       body = `<button class="link" data-act="back">‹ Mercado</button><div class="q-h"><div><b>${esc(c.name)}</b><small>${esc(c.industry)}</small></div><div class="q-p"><b>${money(c.price)}</b>${sgn(pct(c.price, ser[0]))}</div></div>
-        ${chart(ser)}<div class="kpis"><div><small>Valor de mercado</small><b>${money(c.price * (c.out || c.shares_total || 1000))}</b></div><div><small>Efectivo para recomprar</small><b>${c.industry === 'ETF' ? '—' : money(c.cash)}</b></div><div><small>Títulos en circulación</small><b>${(c.out || 0).toLocaleString()}</b></div>
+        ${tfBar(st.tf ||= 30 * 60e3)}${candles(hist.filter(p => p.company_id === c.id).map(p => ({ t: +new Date(p.created_at), p: +p.price })), st.tf, c.price)}<div class="kpis"><div><small>Valor de mercado</small><b>${money(c.price * (c.out || c.shares_total || 1000))}</b></div><div><small>Efectivo para recomprar</small><b>${c.industry === 'ETF' ? '—' : money(c.cash)}</b></div><div><small>Títulos en circulación</small><b>${(c.out || 0).toLocaleString()}</b></div>
           <div><small>Hoy</small><b>${sgn(day(c))}</b></div><div><small>Tu posición</small><b>${h ? h.shares + ' títulos' : '—'}</b></div></div>
         ${h ? `<p class="muted">Costo promedio ${money(h.cost / h.shares)} · Rendimiento ${sgn(pct(h.shares * c.price, h.cost))} (${money(h.shares * c.price - h.cost)})</p>` : ''}
         <div class="order"><div class="seg"><button data-act="side" data-s="buy" class="${st.side !== 'sell' ? 'on buy' : ''}">Comprar</button><button data-act="side" data-s="sell" class="${st.side === 'sell' ? 'on sell' : ''}">Vender</button></div>
@@ -1005,9 +1027,11 @@ const bolsa = { id: 'bolsa', name: 'GBM+', icon: '📈', bg: '#0b1f3a,#1c4f8f', 
           <div class="qty-btns">${[[0.25, '25%'], [0.5, '50%'], [1, st.side === 'sell' ? 'Todo' : 'Todo mi dinero']].map(([f, l]) => `<button type="button" class="btn ghost sm" data-act="frac" data-f="${f}">${l}</button>`).join('')}</div>
           <p class="muted" data-est>Precio de mercado ${money(c.price)} · Poder de compra ${money(acc?.balance)}</p><p class="muted">Comprar emite acciones nuevas (tu dinero entra a la empresa) y empuja el precio hacia arriba; vender hace que la empresa te recompre con su efectivo y empuja el precio hacia abajo. Pedidos grandes mueven más el precio.</p>
           <button class="btn big ${st.side === 'sell' ? 'bad' : 'ok'}" type="submit">${st.side === 'sell' ? 'Vender a mercado' : 'Comprar a mercado'}</button></form></div>`;
-    } else if (st.tab === 'port') body = mine.length ? `<table class="tbl"><thead><tr><th>Emisora</th><th>Títulos</th><th>Costo prom.</th><th>Precio</th><th>Valor</th><th>Rendimiento</th></tr></thead><tbody>
-        ${mine.map(c => { const h = H(c.id); return `<tr class="click" data-act="ver" data-id="${c.id}"><td><b>${esc(c.name)}</b></td><td>${h.shares}</td><td>${money(h.cost / h.shares)}</td><td>${money(c.price)}</td><td>${money(h.shares * c.price)}</td>
-          <td>${sgn(pct(h.shares * c.price, h.cost))}</td></tr>`; }).join('')}</tbody></table>` : `<p class="empty">Aún no tienes inversiones. Ve a Mercado para comprar tus primeras acciones.</p>`;
+    } else if (st.tab === 'port') body = mine.length ? `<div class="kpis inv-sum"><div><small>Invertiste</small><b>${money(cost)}</b></div><div><small>Vale hoy</small><b>${money(value)}</b></div>
+        <div><small>Vas ${value - cost >= 0 ? 'ganando' : 'perdiendo'}</small><b class="${value - cost >= 0 ? 'pos' : 'neg'}">${value - cost >= 0 ? '+' : '−'}${money(Math.abs(value - cost))}</b></div><div><small>Rendimiento</small><b>${sgn(pct(value, cost))}</b></div></div>
+        <table class="tbl"><thead><tr><th>Emisora</th><th>Títulos</th><th>Costo prom.</th><th>Invertiste</th><th>Precio</th><th>Vale hoy</th><th>Ganancia</th><th>%</th></tr></thead><tbody>
+        ${mine.map(c => { const h = H(c.id), v = h.shares * c.price, g = v - h.cost; return `<tr class="click" data-act="ver" data-id="${c.id}"><td><b>${esc(c.name)}</b></td><td>${h.shares}</td><td>${money(h.cost / h.shares)}</td><td>${money(h.cost)}</td><td>${money(c.price)}</td><td>${money(v)}</td>
+          <td class="${g >= 0 ? 'pos' : 'neg'}">${g >= 0 ? '+' : '−'}${money(Math.abs(g))}</td><td>${sgn(pct(v, h.cost))}</td></tr>`; }).join('')}</tbody></table>` : `<p class="empty">Aún no tienes inversiones. Ve a Mercado para comprar tus primeras acciones.</p>`;
     else if (st.tab === 'mkt') body = `<div class="mkt">${cos.map(c => `<button class="mkt-row" data-act="ver" data-id="${c.id}"><div><b>${esc(c.name)}</b><small>${esc(c.industry)}</small></div>${chart(series(c).slice(-30), 120, 36, false)}
         <div class="q-p"><b>${money(c.price)}</b>${sgn(day(c))}</div></button>`).join('') || '<p class="empty">Aún no hay emisoras en la bolsa.</p>'}</div>`;
     else body = `<ul class="list">${trades.map(t => `<li><div><b class="${t.side === 'compra' ? 'pos' : 'neg'}">${t.side === 'compra' ? 'Compra' : 'Venta'}</b> ${t.qty} × ${esc(cos.find(c => c.id === t.company_id)?.name || '—')}
@@ -1016,14 +1040,15 @@ const bolsa = { id: 'bolsa', name: 'GBM+', icon: '📈', bg: '#0b1f3a,#1c4f8f', 
       <div class="gbm-sum"><div><small>Valor del portafolio</small><b>${money(value)}</b>${sgn(pct(value, cost))}</div><div><small>Poder de compra</small><b>${money(acc?.balance)}</b></div>
         <div><small>Ganancia / pérdida</small><b class="${value - cost >= 0 ? 'pos' : 'neg'}">${money(value - cost)}</b></div><div><small>Inflación acumulada</small><b>${((cpi() - 1) * 100).toFixed(2)}%</b></div></div>
       ${st.id ? '' : tabs([['port', 'Portafolio'], ['mkt', 'Mercado'], ['ord', 'Órdenes']], st.tab)}<div class="gbm-b">${body}</div>
-      <p class="muted small">Precio por título = (efectivo + casas + autos de la empresa) ÷ títulos. El ETF LA500 sigue el promedio del mercado. Los precios se registran con cada operación y al cierre del día.</p></div>`, {
-      tab: d => go({ tab: d.t, id: null }), ver: d => go({ id: d.id, side: 'buy' }), back: () => go({ id: null, tab: 'mkt' }), side: d => go({ side: d.s }),
+      <p class="muted small">Precio por título = (efectivo + casas + autos de la empresa) ÷ títulos. El ETF LA500 es un fondo: con tu dinero compra acciones de todas las empresas según su tamaño, y su precio es lo que valen sus acciones más su efectivo, entre sus títulos. Los precios se registran con cada operación y al cierre del día.</p></div>`, {
+      tab: d => go({ tab: d.t, id: null }), ver: d => go({ id: d.id, side: 'buy' }), back: () => go({ id: null, tab: 'mkt' }), tf: d => go({ tf: +d.ms }), side: d => go({ side: d.s }),
       async orden(f) {
         if (!acc) throw new Error('Necesitas tu cuenta personal');
         const r = st.side === 'sell' ? await db.rpc('sell_shares', { company: st.id, qty: f.qty, acc: acc.id }) : await db.rpc('buy', { kind: 'shares', item: st.id, acc: acc.id, qty: f.qty });
         toast(`Orden ejecutada: ${st.side === 'sell' ? 'vendiste' : 'compraste'} ${f.qty} títulos por ${money(r)}`); go({}); window.liveRefresh?.();
       },
     });
+    clearTimeout(el._live); if (st.id) el._live = setTimeout(() => { if (el.isConnected && el.querySelector('.tv') && !el.contains(document.activeElement)) bolsa.render(el, params); }, 10000); // en vivo
     const q = el.querySelector('[name=qty]'), est = el.querySelector('[data-est]'), c = st.id && cos.find(x => x.id === st.id);
     if (!q || !c) return;
     // mismo cálculo que buy_shares/sell_shares del servidor: el precio se mueve mientras compras o vendes
@@ -1391,14 +1416,14 @@ const robstore = { id: 'robstore', name: 'App Store', icon: '🛍️', bg: '#1fa
     const apps = await db.list('store_apps'), owner = lvl() >= 5;
     view(el, `<div class="card row"><div class="grow"><b>¿Quieres tu propia app?</b><div class="muted">Paga el permiso de ${money(TRAMITES.app_store.cost)}, describe cómo la quieres y el equipo de la ciudad la programa y la publica con tu nombre.</div></div>
         ${S.char?.status === 'active' ? '<button class="btn" data-act="pedir">Solicitar mi app</button>' : ''}${owner ? '<button class="btn ghost" data-act="subir">Publicar app (Owner)</button>' : ''}</div>
-      <div class="tiles">${apps.filter(a => a.approved).map(a => `<button class="tile" data-act="abrir" data-id="${a.id}"><span class="ico">${esc(a.icon || '📱')}</span><b>${esc(a.name)}</b><small>${esc(cname(a.author_char))}</small></button>`).join('') || '<p class="empty">Todavía no hay apps publicadas.</p>'}</div>
-      ${owner ? apps.filter(a => a.approved).map(a => `<div class="row sub"><span class="grow">${esc(a.icon)} ${esc(a.name)}</span><button class="btn sm bad" data-act="del" data-id="${a.id}">Quitar</button></div>`).join('') : ''}`, {
+      <div class="tiles">${apps.filter(a => a.approved).map(a => `<button class="tile" data-act="abrir" data-id="${a.id}"><span class="ico">${/^(data:image|https?:)/.test(a.icon || '') ? `<img src="${esc(a.icon)}" alt="" class="app-logo">` : esc(a.icon || '📱')}</span><b>${esc(a.name)}</b><small>${esc(cname(a.author_char))}</small></button>`).join('') || '<p class="empty">Todavía no hay apps publicadas.</p>'}</div>
+      ${owner ? apps.filter(a => a.approved).map(a => `<div class="row sub"><span class="grow">${/^(data:image|https?:)/.test(a.icon || '') ? `<img src="${esc(a.icon)}" alt="" class="app-logo sm">` : esc(a.icon)} ${esc(a.name)}</span><button class="btn sm bad" data-act="del" data-id="${a.id}">Quitar</button></div>`).join('') : ''}`, {
       abrir: d => { const a = apps.find(x => x.id === d.id); modal(esc(a.name), '<iframe class="appframe" sandbox="allow-scripts allow-forms" title="app"></iframe>'); [...document.querySelectorAll('.appframe')].pop().srcdoc = a.html; },
       pedir: () => openTramite('app_store'),
-      subir: () => modal('Publicar app', form('up', [{ k: 'author', label: 'Dueño de la app (quien pagó el permiso)', type: 'select', options: charOpts(), req: 1 }, { k: 'name', label: 'Nombre', req: 1 }, { k: 'icon', label: 'Ícono (emoji)', def: '📱', req: 1 },
+      subir: () => modal('Publicar app', form('up', [{ k: 'author', label: 'Dueño de la app (quien pagó el permiso)', type: 'select', options: charOpts(), req: 1 }, { k: 'name', label: 'Nombre', req: 1 }, { k: 'logo', label: 'Logo (imagen; la del trámite de la persona)', type: 'file', accept: 'image/*' }, { k: 'icon', label: '…o ícono emoji', def: '📱', req: 1 },
         { k: 'file', label: 'Archivo .html', type: 'textfile' }, { k: 'html', label: '…o pega el HTML aquí', type: 'textarea' }]), {
         async up(f, _, close) { const html = f.file || f.html; if (!html) throw new Error('Falta el HTML');
-          await db.insert('store_apps', { name: f.name, icon: f.icon, html, author_char: f.author, approved: true }); close(); toast('App publicada'); robstore.render(el); } }),
+          await db.insert('store_apps', { name: f.name, icon: f.logo || f.icon, html, author_char: f.author, approved: true }); close(); toast('App publicada'); robstore.render(el); } }),
       del: async d => { if (!await ask('¿Quitar esta app del App Store?')) return; await db.remove('store_apps', d.id); robstore.render(el); },
     });
   } };

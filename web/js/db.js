@@ -127,11 +127,15 @@ const newVin = () => Array.from({ length: 17 }, () => '0123456789ABCDEFGHJKLMNPR
 const coBook = (co, accounts, props, vehicles, models) => Number(accounts.find(a => a.id === co.account_id)?.balance || 0)
   + props.filter(x => x.owner_company === co.id).reduce((s, x) => s + Number(x.price), 0)
   + vehicles.filter(x => x.owner_company === co.id).reduce((s, x) => s + Number(models.find(m => m.id === x.model_id)?.price || 0), 0);
-export const coOut = (co, holdings = T('holdings')) => holdings.filter(h => h.company_id === co.id && h.shares > 0).reduce((s, h) => s + Number(h.shares), 0);
+export const coOut = (co, holdings = T('holdings'), etfh = T('etf_holdings')) => holdings.filter(h => h.company_id === co.id && h.shares > 0).reduce((s, h) => s + Number(h.shares), 0)
+  + Number(etfh.find(e => e.company_id === co.id)?.shares || 0); // las acciones del ETF también circulan
 export const coPremium = co => 1 + (Number(co.premium ?? 1) - 1) * Math.pow(0.8, (Date.now() - new Date(co.premium_at || Date.now())) / 864e5);
-export function sharePrice(co, accounts = T('accounts'), props = T('properties'), vehicles = T('vehicles'), models = T('vehicle_models'), companies = T('companies'), holdings = T('holdings')) {
-  if (co.industry === 'ETF') { const o = companies.filter(x => x.industry !== 'ETF'); return o.length ? Math.round(o.reduce((s, x) => s + sharePrice(x, accounts, props, vehicles, models, companies, holdings), 0) / o.length * 10 * 100) / 100 : 10; }
-  const out = coOut(co, holdings) || co.shares_total || 1;
+export function sharePrice(co, accounts = T('accounts'), props = T('properties'), vehicles = T('vehicles'), models = T('vehicle_models'), companies = T('companies'), holdings = T('holdings'), etfh = T('etf_holdings')) {
+  if (co.industry === 'ETF') { // valor del fondo ÷ sus títulos (igual que etf_nav() del SQL)
+    const units = holdings.filter(h => h.company_id === co.id && h.shares > 0).reduce((s, h) => s + Number(h.shares), 0); if (units <= 0) return 10;
+    const val = Number(accounts.find(a => a.id === co.account_id)?.balance || 0) + etfh.filter(e => e.shares > 0).reduce((s, e) => { const x = companies.find(y => y.id === e.company_id); return s + (x ? e.shares * sharePrice(x, accounts, props, vehicles, models, companies, holdings, etfh) : 0); }, 0);
+    return Math.max(0.01, Math.round(val / units * 100) / 100); }
+  const out = coOut(co, holdings, etfh) || co.shares_total || 1;
   return Math.max(0.01, Math.round(coBook(co, accounts, props, vehicles, models) / out * coPremium(co) * 100) / 100);
 }
 const setting = (k, d) => T('settings').find(x => x.key === k)?.value ?? d;
@@ -269,7 +273,7 @@ const RPC = {
       Object.assign(v, { owner_char: buyer, owner_company: co?.id || null, sale_price: null, plate: null, vin: v.vin || newVin(), registered_at: now() });
     } else if (kind === 'shares') {
       if (!buyer) throw new Error('Compra acciones con tu cuenta personal');
-      const c = company(item); if (c.industry === 'ETF') throw new Error('El ETF ya no acepta compras nuevas'); if (!(q >= 1)) throw new Error('Cantidad inválida');
+      const c = company(item); if (c.industry === 'ETF') return RPC.etf_trade({ side: 'buy', qty: q, acc: id }); if (!(q >= 1)) throw new Error('Cantidad inválida');
       const out = Math.max(coOut(c), 1), ps = coBook(c, T('accounts'), T('properties'), T('vehicles'), T('vehicle_models')) / out, p0 = coPremium(c), p1 = Math.min(p0 * Math.exp(q / out), 5);
       price = Math.round(Math.max(ps, 0.01) * (p0 + p1) / 2 * q * 100) / 100;
       move(a, acc(c.account_id), price, 'Compra de acciones · ' + c.name); Object.assign(c, { premium: p1, premium_at: now() });
@@ -284,11 +288,35 @@ const RPC = {
     if (tax > 0) move(a, gov(), Math.round(tax * 100) / 100, kind === 'property' ? 'Impuesto de transferencia de inmueble' : 'Impuesto sobre ventas (Sales Tax LA)');
     return price + Math.round(tax * 100) / 100;
   },
+  // espejo demo de etf_trade: el fondo invierte en todas las empresas y paga las ventas con su efectivo o revendiendo acciones
+  etf_trade({ side, qty, acc: id }) {
+    const a = acc(id), c = a.owners[0], etf = T('companies').find(x => x.industry === 'ETF'); if (!(qty >= 1)) throw new Error('Cantidad inválida');
+    if (!etf.account_id) { const n = { id: crypto.randomUUID(), kind: 'business', name: 'LA500 ETF · fondo', owners: [], balance: 0, number: String(Math.floor(Math.random() * 1e10)).padStart(10, '0'), created_at: now() }; T('accounts').push(n); etf.account_id = n.id; }
+    const fa = acc(etf.account_id), nav = sharePrice(etf), E = T('etf_holdings'), others = T('companies').filter(x => x.industry !== 'ETF' && x.account_id);
+    let h = T('holdings').find(x => x.character_id === c && x.company_id === etf.id), total;
+    if (side === 'buy') { total = Math.round(nav * qty * 100) / 100; move(a, fa, total, 'Compra de ETF LA500');
+      h ? (h.shares += qty, h.cost = (h.cost || 0) + total) : T('holdings').push(h = { id: crypto.randomUUID(), character_id: c, company_id: etf.id, shares: qty, cost: total, created_at: now() });
+      const w = others.map(x => sharePrice(x) * Math.max(coOut(x), 1)), cap = w.reduce((s, x) => s + x, 0);
+      others.forEach((x, i) => { const budget = Math.round(total * 0.95 * w[i] / cap * 100) / 100; if (!(budget >= 1)) return;
+        const out = Math.max(coOut(x), 1), ps = Math.max(coBook(x, T('accounts'), T('properties'), T('vehicles'), T('vehicle_models')) / out, 0.01), p0 = coPremium(x);
+        let q = Math.floor(budget / (ps * p0)), cost = 0; while (q >= 1 && (cost = Math.round(ps * (p0 + Math.min(p0 * Math.exp(q / out), 5)) / 2 * q * 100) / 100) > budget) q = Math.floor(q * 0.9);
+        if (q < 1) return; move(fa, acc(x.account_id), cost, 'ETF LA500 compra acciones · ' + x.name); Object.assign(x, { premium: Math.min(p0 * Math.exp(q / out), 5), premium_at: now() });
+        const e = E.find(y => y.company_id === x.id); e ? e.shares += q : E.push({ company_id: x.id, shares: q }); }); }
+    else { if (!h || h.shares < qty) throw new Error('No tienes tantos títulos del ETF'); total = Math.round(nav * qty * 0.995 * 100) / 100;
+      const units = T('holdings').filter(x => x.company_id === etf.id && x.shares > 0).reduce((s, x) => s + x.shares, 0);
+      if (fa.balance < total) for (const e of E.filter(y => y.shares > 0)) { const x = company(e.company_id), q = Math.min(e.shares, Math.ceil(e.shares * qty / units)), out = Math.max(coOut(x), 1);
+        const ps = Math.max(coBook(x, T('accounts'), T('properties'), T('vehicles'), T('vehicle_models')) / out, 0), p0 = coPremium(x), p1 = Math.max(p0 * Math.exp(-q / out), 0.2), t = Math.round(ps * (p0 + p1) / 2 * q * 100) / 100, xa = acc(x.account_id);
+        if (t > 0 && t <= xa.balance) { move(xa, fa, t, 'ETF LA500 vende acciones · ' + x.name); Object.assign(x, { premium: p1, premium_at: now() }); e.shares -= q; } }
+      if (fa.balance < total) throw new Error(`El ETF no consigue liquidez ahora (tiene ${fa.balance.toFixed(2)}, necesita ${total.toFixed(2)}). Intenta con menos títulos.`);
+      move(fa, a, total, 'Venta de ETF LA500'); h.cost = Math.round((h.cost || 0) * (h.shares - qty) / h.shares * 100) / 100; h.shares -= qty; }
+    T('trades').push({ id: crypto.randomUUID(), character_id: c, company_id: etf.id, side: side === 'buy' ? 'compra' : 'venta', qty, price: total / qty, total, created_at: now() });
+    T('price_history').push({ id: crypto.randomUUID(), company_id: etf.id, price: sharePrice(etf), created_at: now() }); return total;
+  },
   sell_shares({ company: cid, qty, acc: id }) {
     const a = acc(id), h = T('holdings').find(x => x.character_id === a.owners[0] && x.company_id === cid);
     if (!h || h.shares < qty || qty < 1) throw new Error('No tienes tantas acciones');
     const c = company(cid); let price;
-    if (c.industry === 'ETF') { price = sharePrice(c) * qty; move(gov(), a, price, 'Venta de acciones · ETF'); }
+    if (c.industry === 'ETF') return RPC.etf_trade({ side: 'sell', qty, acc: id });
     else { const out = Math.max(coOut(c), 1), ps = coBook(c, T('accounts'), T('properties'), T('vehicles'), T('vehicle_models')) / out, p0 = coPremium(c), p1 = Math.max(p0 * Math.exp(-qty / out), 0.2);
       price = Math.round(Math.max(ps, 0) * (p0 + p1) / 2 * qty * 100) / 100; const ca = acc(c.account_id);
       if (price > ca.balance) throw new Error(`La empresa solo tiene ${ca.balance.toFixed(2)} en efectivo para recomprar acciones (tus ${qty} títulos valen ${price.toFixed(2)})`);

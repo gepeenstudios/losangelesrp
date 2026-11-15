@@ -210,7 +210,8 @@ export const TRAMITES = {
     fields:[{k:'motivo',label:'¿Por qué deberías estar verificado? (influencer, empresa, figura pública…)',type:'textarea',req:1}]},
   app_store: { cat:'Negocios', name:'Permiso para publicar una app', icon:'📱', dept:['staff:owner'], cost:100,
     desc:'Pagas $100 por el permiso y describes la app que quieres. El equipo de la ciudad la programa por ti y la publica en el App Store con tu nombre.',
-    fields:[{k:'nombre',label:'Nombre de la app',req:1},{k:'icono',label:'Ícono (un emoji)',def:'📱',req:1},
+    fields:[{k:'nombre',label:'Nombre de la app',req:1},{k:'logo',label:'Logo de la app (foto o imagen)',type:'file',accept:'image/*'},{k:'icono',label:'…o un emoji si no tienes logo',def:'📱',req:1},
+      {k:'fotos',label:'Foto de referencia de cómo la quieres (opcional)',type:'file',accept:'image/*'},
       {k:'descripcion',label:'¿Cómo quieres tu app? Explica qué hace, qué pantallas tiene, colores, etc.',type:'textarea',req:1}]},
   partido: { cat:'Gobierno', name:'Registrar partido político', icon:'🏛️', dept:['FEC','staff:admin'],
     fields:[{k:'nombre',label:'Nombre del partido',req:1},{k:'siglas',label:'Siglas'},{k:'ideologia',label:'Ideología',req:1},
@@ -231,7 +232,7 @@ export const TRAMITES = {
 };
 
 export const DEFAULT_SETTINGS = {
-  start_money: 5000, cpi: 1, fed_rate: 4.5, job_min_minutes: 40, prison_min_per_year: 60, trial_years: 10,
+  start_money: 5000, cpi: 1, fed_rate: 4.5, savings_rate: 15, job_min_minutes: 40, prison_min_per_year: 60, trial_years: 10,
   visa_days: 84, // días del juego (= 1 semana real)
   elecciones: { registro_hasta: 20, votacion_desde: 21, votacion_hasta: 27 }, // días del mes; el ganador gobierna todo el mes siguiente
   influencer_like_pay: 15, spotify_play_pay: 2,
