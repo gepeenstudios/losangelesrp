@@ -219,7 +219,7 @@ const gobierno = { id: 'gobierno', name: 'LA City', icon: '🏛️', bg: '#1d3b6
     const reqs = await myRequests(), ch = S.char, pres = has('Presidente') || lvl() >= 4;
     const laws = await db.list('laws', { order: 'created_at', limit: 300 }).catch(() => []), lawmaker = has('Presidente') || has('Gobernador') || lvl() >= 4;
     const tax = k => (set('impuestos') || {})[k] ?? DEFAULT_SETTINGS.impuestos[k];
-    const gov = (await db.list('accounts', { eq: { kind: 'gov' } }))[0];
+    const gov = (await db.list('accounts', { eq: { kind: 'gov' } }))[0], budgets = await db.list('accounts', { eq: { kind: 'dept' } }).catch(() => []);
     const visaOk = approvedOf(reqs, 'visa').length, days = ch ? Math.ceil(set('visa_days') - (Date.now() - new Date(ch.created_at)) / GAME_DAY_MS) : 0;
     const cats = {};
     Object.entries(TRAMITES).forEach(([k, t]) => { if (t.hidden || k === 'apelacion_ck' || (t.foreignOnly && !ch?.extranjero)) return; (cats[t.cat] ??= []).push([k, t]); });
@@ -256,6 +256,10 @@ const gobierno = { id: 'gobierno', name: 'LA City', icon: '🏛️', bg: '#1d3b6
             { k: 'fine', label: 'Multa (USD)', type: 'number', min: 0 }, { k: 'months', label: 'Prisión (meses)', type: 'number', min: 0 }])}</div>
           <button class="btn" type="submit">Promulgar ley</button></form></div>` : ''}
       <h2 id="finanzas" class="sec-h">Finanzas públicas</h2>
+      ${(() => { const state = has('Presidente') || has('Gobernador') || lvl() >= 3, mgr = d => S.tags.includes('mgr:' + d) || lvl() >= 3, depts = Object.keys(DEPTS);
+        return `<h3 class="cat-h">Presupuesto de cada departamento</h3><p class="muted">Todo sale de la Tesorería. Con su presupuesto cada departamento paga la nómina de su gente y su jefe lo gasta en lo que ocupe. Las multas entran al presupuesto de la Policía.</p>
+        <table class="gov-tbl"><thead><tr><th>Departamento</th><th>Presupuesto</th><th></th></tr></thead><tbody>${depts.map(d => { const a = budgets.find(x => x.dept === d);
+          return `<tr><td>${esc(d)}</td><td><b>${a ? money(a.balance) : '<span class="muted">Sin asignar (paga la Tesorería)</span>'}</b>${a ? ` <small class="muted">· cuenta ${a.number}</small>` : ''}</td><td class="nowrap">${state ? `<button class="btn sm" data-act="presu" data-d="${esc(d)}">Dar / quitar</button>` : ''}${a && mgr(d) ? `<button class="btn sm ghost" data-act="gastar" data-d="${esc(d)}">Gastar</button>` : ''}</td></tr>`; }).join('')}</tbody></table>`; })()}
       <div class="fin"><div><small>Presupuesto inicial (real, FY 2025-26)</small><b>$13,950,000,000</b></div><div><small>Saldo actual</small><b>${money(gov?.balance)}</b></div>
         <div><small>Índice de precios (CPI)</small><b>${cpi().toFixed(4)}</b></div><div><small>Emisiones de dinero</small><b>${hist.length}</b></div></div>
       ${pres ? `<div class="pres"><h3>Despacho del Presidente</h3><p>Emitir dinero llena la tesorería, pero sube la inflación: todo (autos, casas y sueldos) se encarece. La tasa de la Reserva Federal es el interés que paga el ahorro.</p>
@@ -263,6 +267,10 @@ const gobierno = { id: 'gobierno', name: 'LA City', icon: '🏛️', bg: '#1d3b6
         <form data-form="rate" class="form">${fieldsHTML([{ k: 'rate', label: 'Tasa de la Reserva Federal (% anual)', type: 'number', min: 0, max: 25, req: 1, def: set('fed_rate') }])}<button class="btn" type="submit">Fijar tasa</button></form></div></div>` : ''}
       </main><footer class="gov-f"><img class="gov-logo sm" src="img/logo.png" alt=""><span>City of Los Angeles · Portal de roleplay de Los Ángeles RP. Los documentos emitidos solo son válidos dentro del juego.</span></footer></div>`, {
       tramite: d => openTramite(d.k, {}, () => gobierno.render(el)),
+      presu: d => modal('Presupuesto · ' + esc(d.d), `<p class="muted">Positivo: se lo das desde la Tesorería. Negativo: lo regresas a la Tesorería.</p>` + form('go', [{ k: 'amount', label: 'Monto (USD)', type: 'number', req: 1, ph: '1000000 o -500000' }], {}, 'Aplicar'), {
+        async go(v, _, close) { const b = await db.rpc('budget_move', { d: d.d, amount: +v.amount }); close(); toast(`Presupuesto de ${d.d}: ${money(b)}`); gobierno.render(el); } }),
+      gastar: d => modal('Gastar presupuesto · ' + esc(d.d), form('go', [{ k: 'dest', label: 'Número de cuenta destino', req: 1 }, { k: 'amount', label: 'Monto (USD)', type: 'number', min: 1, req: 1 }, { k: 'concept', label: 'Concepto', req: 1, ph: 'Ej. compra de patrullas' }], {}, 'Pagar'), {
+        async go(v, _, close) { await db.rpc('dept_spend', { d: d.d, dest: v.dest, amount: +v.amount, concept: v.concept }); close(); toast('Pago hecho desde el presupuesto'); gobierno.render(el); } }),
       go: d => el.querySelector('#' + d.k)?.scrollIntoView({ behavior: 'smooth' }),
       async print(d) {
         if (!await ask(`¿Emitir ${money(d.amount)}? Esto genera inflación para toda la ciudad.`)) return;
@@ -1301,6 +1309,8 @@ const KIND = { advertencia: 'Advertencias', infraccion: 'Infracciones (solo mult
 // años de prisión → texto («6 meses», «2 años y 6 meses», «Perpetua»)
 const pena = y => { const m = Math.round(Number(y) * 12); if (m >= 1188) return 'Perpetua'; if (!m) return ''; const a = Math.floor(m / 12), r = m % 12;
   return [a && `${a} año${a > 1 ? 's' : ''}`, r && `${r} mes${r > 1 ? 'es' : ''}`].filter(Boolean).join(' y '); };
+// recompensa de una orden: $1 por cada día del juego que sigue libre + lo que agregó la policía (igual que bounty() en SQL)
+const bountyOf = r => Math.max(0, Math.round((Date.parse(gameDay()) - Date.parse(gameDay(r.created_at))) / 864e5)) + Number(r.bounty_extra || 0);
 const isGuard = () => isPolice() || has('Custodio');
 const left = i => Math.max(0, new Date(i.ends_at) - Date.now()), since = i => Date.now() - new Date(i.started_at);
 const clockTxt = ms => { const m = Math.ceil(ms / 6e4); return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`; };
@@ -1354,8 +1364,8 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
         ${(() => { const m = inm.find(i => i.mugshots)?.mugshots; return m ? `<div class="mugs">${MUG.map(([k, l]) => m[k] ? `<figure><img src="${esc(m[k])}" alt="${l}" data-act="zoom" data-src="${esc(m[k])}"><figcaption>${l}</figcaption></figure>` : '').join('')}</div>` : ''; })()}
         ${jail ? `<div class="alert">EN PRISIÓN · ${jail.status === 'preventiva' ? 'preventiva (espera juicio), lleva ' + clockTxt(since(jail)) : 'le faltan ' + clockTxt(left(jail))}. Si está en la calle sin fuga aprobada, repórtalo al staff (warn administrativo).
           <button class="btn sm bad" data-act="reportar" data-id="${jail.id}">Reportar al staff</button></div>` : ''}
-        ${(() => { const o = recs.filter(r => r.kind === 'orden' && !r.paid); return o.length && !jail ? `<div class="alert wanted-alert"><b>🚨 SE BUSCA · ORDEN DE ARRESTO ACTIVA</b><ul>${o.map(r => `<li>${esc(r.description)}</li>`).join('')}</ul>
-          <button class="btn bad" data-act="capturar">🚔 Capturado: procesar arresto</button> <small class="muted">Carga los cargos de la orden; puedes agregar más antes de registrar.</small></div>` : ''; })()}</div></div>
+        ${(() => { const o = recs.filter(r => r.kind === 'orden' && !r.paid); return o.length && !jail ? `<div class="alert wanted-alert"><b>🚨 SE BUSCA · ORDEN DE ARRESTO ACTIVA</b><ul>${o.map(r => `<li>${esc(r.description)} · <b class="bounty">💰 Recompensa ${money(bountyOf(r))}</b> <button class="link" data-act="recompensa" data-id="${r.id}">Subir recompensa</button></li>`).join('')}</ul>
+          <button class="btn bad" data-act="capturar">🚔 Capturado: procesar arresto</button> <small class="muted">Carga los cargos de la orden; puedes agregar más antes de registrar. La recompensa la paga el presupuesto de la Policía al oficial que lo captura.</small></div>` : ''; })()}</div></div>
         <h3>Documentos</h3><ul class="list">${lic.map(r => `<li><span class="li-ico">${ico(r.type)}</span><span class="grow">${esc(TRAMITES[r.type].name)} ${esc(r.data.clase || r.data.tipo || r.data.arma || r.data.placa || '')}</span><button class="btn sm bad" data-act="cancelarDoc" data-id="${r.id}" data-n="${esc(TRAMITES[r.type].name)}">Cancelar</button></li>`).join('') || '<li class="muted">Sin documentos</li>'}</ul>
         <h3>Vehículos</h3><ul class="list">${vehs.map(v => { const m = models.find(x => x.id === v.model_id); const exp = new Date(v.registered_at || v.created_at); exp.setFullYear(exp.getFullYear() + 1); return `<li><div class="grow"><b>${esc(m?.brand)} ${esc(m?.model)}</b> · ${esc(v.plate || 'sin placa')}<div class="muted">VIN ${esc(v.vin || '—')} · Registro ${exp < new Date() ? '<b class="neg">VENCIDO</b>' : 'vigente hasta ' + fdate(exp.toISOString())}</div></div></li>`; }).join('') || '<li class="muted">Ninguno</li>'}</ul>
         <h3>Inventario</h3>${inv.some(i => SHOPI[i.item]?.gun) ? '<button class="btn sm bad" data-act="decomisarArmas">Decomisar todas las armas y munición</button>' : ''}<ul class="list">
@@ -1382,7 +1392,7 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
           <button class="btn" type="submit">Registrar</button></form>`;
     } else if (st.tab === 'buscados') {
       const o = await db.list('records', { eq: { kind: 'orden', paid: false } });
-      body = `<div class="grid-cards">${o.map(r => `<div class="card prop wanted" data-act="ver" data-id="${r.character_id}"><b>SE BUSCA</b>${av(skin(r.character_id), 'big-av')}<b>${esc(cname(r.character_id))}</b><small>${esc(r.description)}</small></div>`).join('') || '<p class="empty">Nadie buscado.</p>'}</div>`;
+      body = `<div class="grid-cards">${o.map(r => `<div class="card prop wanted" data-act="ver" data-id="${r.character_id}"><b>SE BUSCA</b>${av(skin(r.character_id), 'big-av')}<b>${esc(cname(r.character_id))}</b><small>${esc(r.description)}</small><b class="bounty">💰 ${money(bountyOf(r))}</b></div>`).join('') || '<p class="empty">Nadie buscado.</p>'}</div>`;
     }
     view(el, `${tabs([['buscar', 'Consultar'], ['buscados', 'Buscados'], ['pend', 'Trámites']], st.tab === 'ver' ? 'buscar' : st.tab)}<div class="tabbody">${body}</div>`, {
       tab: d => go({ tab: d.t, q: '' }), buscar: d => go({ q: d.q }), ver: d => go({ tab: 'ver', id: d.id, f: 'todos' }), f: d => go({ f: d.f }),
@@ -1400,6 +1410,8 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
         toast('Reporte enviado al staff');
       },
       zoom,
+      recompensa: d => modal('💰 Subir recompensa', form('go', [{ k: 'amount', label: 'Agregar a la recompensa (USD)', type: 'number', min: 1, req: 1 }], {}, 'Subir'), {
+        async go(v, _, close) { await db.rpc('raise_bounty', { rec: d.id, amount: +v.amount }); close(); toast('Recompensa actualizada'); go({}); } }),
       async capturar() { // pasa la orden al formulario de arresto con sus cargos marcados
         const fm = el.querySelector('form[data-form=procesar]'), codes = (await db.list('records', { eq: { character_id: st.id, kind: 'orden', paid: false } })).flatMap(r => (r.charges || []).map(x => x.code));
         fm.kind.value = 'arresto'; fm.querySelectorAll('[name=cargo]').forEach(i => { if (codes.includes(i.value)) { i.checked = true; i.closest('details').open = true; } });
@@ -1430,7 +1442,8 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
           return toast(`Son ${pena(years)}: requiere juicio. Se envió el caso a los jueces y quedó con orden de arresto (si ya lo tienes, usa Arresto).`), go({});
         }
         const ords = v.kind === 'arresto' ? await db.list('records', { eq: { character_id: st.id, kind: 'orden', paid: false } }) : [];
-        for (const o of ords) await db.remove('records', o.id); // capturado: la orden se vuelve este arresto (un solo registro, sin cargos repetidos)
+        const reward = ords.length ? await db.rpc('capture_orders', { c: st.id, officer: S.char?.id || null }) : 0; // la orden se vuelve este arresto y paga la recompensa
+        if (reward > 0) toast(`💰 Recompensa cobrada: ${money(reward)}`);
         await db.insert('records', { kind: v.kind === 'advertencia' ? 'advertencia' : v.kind, character_id: st.id, officer_id: S.char?.id || null, amount: v.kind === 'multa' || v.kind === 'arresto' ? Math.round(fine) : null, description: (ords.length ? 'Capturado por orden de arresto · ' : '') + desc, charges });
         if (v.kind === 'arresto' && years > 0) {
           const minutes = years * Number(set('prison_min_per_year'));

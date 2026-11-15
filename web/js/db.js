@@ -423,6 +423,26 @@ const RPC = {
     const x = T(kind === 'property' ? 'properties' : 'vehicles').find(r => r.id === item);
     if (kind === 'property') { x.for_sale = price != null; x.sale_price = price; } else x.sale_price = price;
   },
+  budget_move({ d, amount }) {
+    guard(lvlLocal() >= 3 || myChars().some(c => c.status === 'active' && (c.roles || []).some(r => r === 'Presidente' || r === 'Gobernador')), 'Solo el Presidente, el Gobernador o un admin manejan los presupuestos');
+    let a = T('accounts').find(x => x.kind === 'dept' && x.dept === d);
+    if (!a) T('accounts').push(a = { id: crypto.randomUUID(), kind: 'dept', dept: d, name: 'Presupuesto · ' + d, owners: [], balance: 0, number: String(Math.floor(Math.random() * 1e10)).padStart(10, '0'), created_at: now() });
+    if (amount > 0) move(gov(), a, amount, 'Presupuesto asignado · ' + d); else if (amount < 0) move(a, gov(), -amount, 'Presupuesto retirado · ' + d);
+    return a.balance;
+  },
+  dept_spend({ d, dest, amount, concept }) {
+    guard(isMgr(d), 'Solo el jefe de ' + d + ' puede gastar su presupuesto');
+    const a = T('accounts').find(x => x.kind === 'dept' && x.dept === d), t = T('accounts').find(x => x.number === String(dest).replace(/\s/g, ''));
+    guard(a, d + ' todavía no tiene presupuesto'); guard(t, 'Esa cuenta no existe'); move(a, t, amount, (concept || 'Gasto') + ' · ' + d);
+  },
+  raise_bounty({ rec, amount }) { const r = T('records').find(x => x.id === rec && x.kind === 'orden' && !x.paid); guard(r, 'Esa orden ya no está activa'); guard(amount > 0, 'Monto inválido'); r.bounty_extra = (r.bounty_extra || 0) + amount; },
+  capture_orders({ c, officer }) { // shortcut: el demo cuenta la recompensa por días reales del juego igual que el cliente
+    const os = T('records').filter(x => x.character_id === c && x.kind === 'orden' && !x.paid), day = t => Math.floor((new Date(t) - Date.parse('2026-11-15T06:00:00Z')) / 72e5);
+    const total = os.reduce((s, r) => s + Math.max(0, day(Date.now()) - day(r.created_at)) + (r.bounty_extra || 0), 0);
+    mem.t.records = T('records').filter(x => !os.includes(x));
+    const to = T('accounts').find(a => a.kind === 'personal' && a.owners[0] === officer), src = T('accounts').find(x => x.kind === 'dept' && x.dept === 'Policía') || gov();
+    if (total > 0 && to && src.balance >= total) { move(src, to, total, 'Recompensa por captura'); return total; } return 0;
+  },
   pay_fine({ record, acc: id }) {
     const r = T('records').find(x => x.id === record);
     if (!r || r.paid || !['multa', 'arresto'].includes(r.kind)) throw new Error('Multa no válida');
