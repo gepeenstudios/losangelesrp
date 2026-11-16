@@ -1369,21 +1369,42 @@ const corte = { id: 'corte', name: 'LA Courts', icon: '⚖️', bg: '#5b3a1e,#8c
 async function juzgado(el, again) {
   const [trials, code, prev] = await Promise.all([db.list('requests', { eq: { status: 'pending', type: 'juicio' } }),
     db.list('penal_code', { order: 'code', asc: true }).then(c => c.sort((a, b) => a.code.localeCompare(b.code, 'es', { numeric: true }))), db.list('inmates', { eq: { status: 'preventiva' } }).catch(() => [])]);
+  const presos = (await db.list('inmates', { eq: { status: 'en_prision' } }).catch(() => [])).filter(i => new Date(i.ends_at) > Date.now()), mpy = Number(set('prison_min_per_year'));
   const sum = card => { const p = [...card.querySelectorAll('[name=cargo]:checked')].map(i => code.find(x => x.code === i.value)).filter(Boolean);
-    return { p, years: Math.min(99, p.reduce((s, x) => s + Number(x.years || 0), 0)), fine: p.reduce((s, x) => s + Number(x.fine || 0), 0) * cpi() }; };
+    const ry = 1 - Math.min(100, Math.max(0, +card.querySelector('[data-red=y]').value || 0)) / 100, rf = 1 - Math.min(100, Math.max(0, +card.querySelector('[data-red=f]').value || 0)) / 100; // rebaja que decide el juez
+    return { p, years: Math.min(99, p.reduce((s, x) => s + Number(x.years || 0), 0)) * ry, fine: p.reduce((s, x) => s + Number(x.fine || 0), 0) * cpi() * rf }; };
   el.innerHTML = `<h3>⚖️ Juicios penales</h3>${trials.map(r => { const pv = prev.find(i => i.character_id === r.character_id);
     return `<div class="card trial" data-trial="${r.id}"><div class="trial-h"><small>TRIBUNAL SUPERIOR DE LOS ÁNGELES · CASO ${r.id.slice(0, 8).toUpperCase()}</small>
       <b>El Pueblo de California vs. ${esc(r.data.acusado || cname(r.character_id))}</b>
       <span class="muted">Presentado por ${esc(r.data.oficial || 'LAPD')} · ${fdate(r.created_at)} · ${pv ? `🔒 En prisión preventiva desde ${fdate(pv.started_at)}` : '🚨 No está detenido (orden de arresto)'}</span></div>
       <p class="muted">La fiscalía pide ${pena(r.data.anos) || 'multa'}${r.data.multa ? ' y ' + money(r.data.multa) : ''}. Los cargos de la fiscalía ya están marcados: quita los que no se probaron y agrega los que sí.</p>
       <div class="charges">${chargesHTML(code, (r.data.charges || []).map(x => x.code))}</div>
+      <div class="row gap trial-red"><label class="fld"><span>Reducir prisión (%)</span><input type="number" min="0" max="100" value="0" data-red="y"></label><label class="fld"><span>Reducir multa (%)</span><input type="number" min="0" max="100" value="0" data-red="f"></label>
+        <small class="muted">Atenuantes: cooperó, confesó, primera vez, etc.</small></div>
       <div class="trial-sum" data-sum></div>
       <textarea data-fund rows="2" placeholder="Fundamentos de la sentencia (se publican en LA Times)"></textarea>
       <div class="row gap"><button class="btn ok" data-act="culpable" data-id="${r.id}">⚖️ Culpable de los cargos marcados</button><button class="btn bad" data-act="inocente" data-id="${r.id}">🕊️ Inocente</button></div></div>`; }).join('') || '<p class="empty">No hay juicios pendientes.</p>'}
+    <h3>⛓️ Presos cumpliendo condena</h3><p class="muted">Puedes reducir la condena de quien ya está en la cárcel (buena conducta, apelación, etc.) o dejarlo libre.</p>
+    ${presos.map(i => { const tot = Math.round(i.minutes / mpy * 12), left = Math.max(0, Math.round((new Date(i.ends_at) - Date.now()) / 6e4));
+      return `<div class="card trial" data-preso="${i.id}"><div class="row"><b class="grow">${esc(cname(i.character_id))}</b><span class="tag">Condena ${pena(i.years)}</span><span class="tag">faltan ${left} min reales</span></div>
+        <p class="muted">${esc((i.charges || []).map(x => x.code + ' ' + x.title).join(', '))}</p>
+        <div class="row gap"><label class="fld"><span>Nueva condena total (meses)</span><input type="number" min="0" max="${tot}" value="${tot}" data-newm></label>
+        <button class="btn" data-act="reducir" data-id="${i.id}">Reducir condena</button><button class="btn ok" data-act="liberar" data-id="${i.id}">Dejar libre</button></div></div>`; }).join('') || '<p class="muted">Nadie está cumpliendo condena.</p>'}
     <div class="dem"></div>`;
   const paint = card => { const { p, years, fine } = sum(card); card.querySelector('[data-sum]').innerHTML = `Sentencia: <b>${pena(years) || 'sin prisión'}</b> · multa <b>${money(fine)}</b> · ${p.length} cargo(s)`; };
-  el.querySelectorAll('.trial').forEach(c => { paint(c); c.addEventListener('change', () => paint(c)); });
-  const act = { async culpable(d) {
+  el.querySelectorAll('[data-trial]').forEach(c => { paint(c); c.addEventListener('change', () => paint(c)); c.addEventListener('input', () => paint(c)); });
+  const act = {
+    async reducir(d) { const i = presos.find(x => x.id === d.id), m = Math.max(0, Math.round(+el.querySelector(`[data-preso="${d.id}"] [data-newm]`).value || 0)), mins = m / 12 * mpy;
+      if (!await ask(`¿Dejar la condena de ${cname(i.character_id)} en ${pena(m / 12) || '0 meses'}? El tiempo que ya cumplió cuenta.`)) return;
+      const ends = new Date(new Date(i.started_at).getTime() + mins * 6e4);
+      await db.update('inmates', i.id, { years: m / 12, minutes: mins, ends_at: (ends < new Date() ? new Date() : ends).toISOString(), status: ends < new Date() ? 'liberado' : 'en_prision', note: `Condena reducida por el juez ${cname(S.char?.id)}` });
+      await db.insert('posts', { app: 'news', section: 'Policía', anonimo: true, character_id: S.char?.id || null, title: `Juez reduce la condena de ${cname(i.character_id)}`, body: `TRIBUNAL SUPERIOR DE LOS ÁNGELES — El juez ${cname(S.char?.id)} redujo la condena de ${cname(i.character_id)} de ${pena(i.years)} a ${pena(m / 12) || 'tiempo cumplido'}.` }).catch(() => {});
+      toast(ends < new Date() ? 'Ya cumplió su nueva condena: queda libre' : 'Condena reducida ⚖️'); again(); },
+    async liberar(d) { const i = presos.find(x => x.id === d.id); if (!await ask(`¿Dejar libre a ${cname(i.character_id)} ahora?`)) return;
+      await db.update('inmates', i.id, { status: 'liberado', ends_at: new Date().toISOString(), note: `Liberado por el juez ${cname(S.char?.id)}` });
+      await db.insert('posts', { app: 'news', section: 'Policía', anonimo: true, character_id: S.char?.id || null, title: `${cname(i.character_id)} sale libre por orden judicial`, body: `TRIBUNAL SUPERIOR DE LOS ÁNGELES — El juez ${cname(S.char?.id)} ordenó la liberación de ${cname(i.character_id)}.` }).catch(() => {});
+      toast('Liberado'); again(); },
+    async culpable(d) {
       const r = trials.find(x => x.id === d.id), card = el.querySelector(`[data-trial="${d.id}"]`), { p, years, fine } = sum(card), fund = card.querySelector('[data-fund]').value.trim();
       if (!p.length) throw new Error('Marca al menos un cargo, o declara inocente');
       if (!await ask(`¿Culpable de ${p.length} cargo(s)? ${pena(years) || 'Sin prisión'} y multa de ${money(fine)}.`)) return;
