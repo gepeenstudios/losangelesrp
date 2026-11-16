@@ -239,6 +239,7 @@ async function shell() {
   myAccounts().then(a => { const p = a.find(x => x.kind === 'personal'); if (p) { root.querySelector('.cash').textContent = money(p.balance); root.querySelector('.wb-bal').textContent = money(p.balance); } });
   for (const a of apps.filter(a => a.badge)) a.badge().then(n => { const b = root.querySelector(`[data-b="${a.id}"]`); if (b && n) { b.hidden = false; b.textContent = n; } });
   dutyLoop(); jobLoop(); payCheck(); setInterval(payCheck, 60000);
+  jailCheck(); clearInterval(window._jail); window._jail = setInterval(jailCheck, 15000);
 }
 // nómina al momento: mientras estás en turno (empleo o servicio de staff) revisa cada minuto si ya cumpliste y te paga ese mismo día
 async function payCheck() {
@@ -374,11 +375,33 @@ async function check911(first) {
     else if (mine(k) && k.status === 'cerrada') notify({ icon: ic, title: '911 · Llamada atendida', body: k.note || 'Tu emergencia fue atendida.', onclick: () => openApp('e911') });
   }
 }
+// preso: pantalla de prisión encima de todo mientras dure su condena (o la preventiva). Puede cambiar de vida o salir.
+async function jailCheck() {
+  const ov = document.querySelector('.jail-ov'), c = S.char;
+  const i = c && (await db.list('inmates', { eq: { character_id: c.id } }).catch(() => [])).find(x => x.status === 'preventiva' || (x.status === 'en_prision' && new Date(x.ends_at) > Date.now()));
+  if (!i || (ov && ov.dataset.skip)) { if (ov && !ov.dataset.skip) ov.remove(); return; }
+  const t = ms => { const m = Math.floor(ms / 6e4), h = Math.floor(m / 60); return (h ? h + ' h ' : '') + (m % 60) + ' min'; };
+  const pre = i.status === 'preventiva', others = S.chars.filter(x => x.status === 'active' && x.id !== c.id);
+  const html = `<div class="jail-box"><div class="jail-bars"></div><h1>🔒 ESTÁS EN PRISIÓN</h1><p class="jail-name">${esc(c.first_name)} ${esc(c.last_name)} · Recluso #${i.id.slice(0, 6).toUpperCase()}</p>
+    ${pre ? `<p>Prisión preventiva: esperas tu juicio. Llevas <b>${t(Date.now() - new Date(i.started_at))}</b> aquí.</p>` : `<p>Te faltan <b>${t(new Date(i.ends_at) - Date.now())}</b> para salir.</p>`}
+    <p class="jail-ch">${esc((i.charges || []).map(x => x.code + ' ' + x.title).join(' · '))}</p>
+    <p class="muted">Mientras estás preso no puedes usar la ciudad: banco, tiendas, casino, cripto ni apps. ${pre ? 'Un juez decidirá tu sentencia.' : 'Cuando se cumpla el tiempo se abre sola.'}</p>
+    <div class="row gap">${others.map(x => `<button class="btn" data-life="${x.id}">Usar a ${esc(x.first_name)}</button>`).join('')}${lvl() >= 2 ? '<button class="btn ghost" data-staff>Entrar como staff</button>' : ''}<button class="btn ghost" data-out>Cerrar sesión</button></div></div>`;
+  const box = ov || Object.assign(document.createElement('div'), { className: 'jail-ov' });
+  if (box.innerHTML !== html) box.innerHTML = html;
+  if (!ov) { document.body.append(box);
+    box.onclick = async e => { const b = e.target.closest('button'); if (!b) return;
+      if (b.dataset.life) { localStorage.setItem('rp_char', b.dataset.life); box.remove(); window.refreshShell?.(); }
+      else if ('staff' in b.dataset) { box.dataset.skip = 1; box.remove(); }
+      else if ('out' in b.dataset) { await db.signOut(); location.reload(); } }; }
+}
+window.jailCheck = jailCheck;
 const liveRefresh = async () => {
   if (!S.me || !root.querySelector('#os')) return;
   await loadMe();
   checkMessages().catch(() => {}); check911().catch(() => {});
   myAccounts().then(a => { const p = a.find(x => x.kind === 'personal'); if (p) root.querySelectorAll('.cash,.wb-bal').forEach(x => x.textContent = money(p.balance)); });
+  jailCheck().catch(() => {});
   for (const a of APPS.filter(a => a.show() && a.badge)) a.badge().then(n => { const b = root.querySelector(`[data-b="${a.id}"]`); if (b) { b.hidden = !n; b.textContent = n; } });
   // vuelve a pintar las ventanas abiertas, salvo donde el usuario está escribiendo
   document.querySelectorAll('#wins .win').forEach(w => { if (!w.dataset.dirty && !w.contains(document.activeElement) && !document.querySelector('.modal')) w._silent?.(); });
