@@ -435,6 +435,21 @@ const RPC = {
     if (kind === 'property') { x.for_sale = price != null; x.sale_price = price; } else x.sale_price = price;
   },
   // casino con gente (igual que pvp_* en SQL)
+  // mercado negro (igual que bm_* en SQL)
+  bm_list({ c, kind, ref, price, note }) {
+    const tbl = { item: 'items', vehicle: 'vehicles', property: 'properties' }[kind], x = T(tbl).find(r => r.id === ref); guard(x && x.owner_char === c, 'Eso no es tuyo');
+    guard(!T('bm_listings').some(l => l.ref === ref && l.status === 'open'), 'Eso ya está a la venta');
+    const m = kind === 'vehicle' ? T('vehicle_models').find(v => v.id === x.model_id) || {} : {}, si = kind === 'item' ? T('shop_items').find(i => i.id === x.item) || {} : {};
+    const l = { id: crypto.randomUUID(), seller: c, kind, ref, price: +price, note: note || null, status: 'open', created_at: now(),
+      title: kind === 'item' ? si.name || x.item : kind === 'vehicle' ? `${m.brand} ${m.model}` : x.name, img: kind === 'item' ? `img/tienda/${x.item}.jpg` : kind === 'vehicle' ? m.img : x.img,
+      cat: kind === 'item' ? (si.gun_class ? 'Armas' : 'Objetos') : kind === 'vehicle' ? 'Vehículos' : 'Casas y locales' };
+    T('bm_listings').push(l); return l.id;
+  },
+  bm_cancel({ l }) { const x = T('bm_listings').find(r => r.id === l && r.status === 'open'); guard(x, 'No puedes quitar esa publicación'); x.status = 'cancelled'; },
+  bm_buy({ l, c }) { const x = T('bm_listings').find(r => r.id === l && r.status === 'open'); guard(x, 'Ya no está a la venta'); guard(x.seller !== c, 'Es tuyo');
+    const acc2 = id => T('accounts').find(a => a.kind === 'encrypted' && a.owners[0] === id) || T('accounts').find(a => a.kind === 'personal' && a.owners[0] === id);
+    move(acc2(c), acc2(x.seller), x.price, 'Mercado negro'); const tbl = { item: 'items', vehicle: 'vehicles', property: 'properties' }[x.kind];
+    Object.assign(T(tbl).find(r => r.id === x.ref), { owner_char: c, sale_price: null, for_sale: false }); Object.assign(x, { status: 'sold', buyer: c, sold_at: now() }); },
   crypto_addr({ c, s }) { let h = 0; for (const ch of c + s) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return ({ BTC: 'bc1q', ETH: '0x', SOL: 'So1', XRP: 'r' }[s] || s.toLowerCase() + '1') + (h.toString(16) + c.replace(/-/g, '')).slice(0, 34); },
   crypto_send({ c, addr, s, amount }) {
     const to_char = T('characters').find(x => x.status === 'active' && RPC.crypto_addr({ c: x.id, s }) === addr)?.id; guard(to_char, `Esa dirección de ${s} no existe`);

@@ -356,6 +356,7 @@ const toolstore = { id: 'toolstore', name: 'Tool Store', icon: '🧰', bg: '#ff7
   async render(el, tab = 'herramientas') {
     if (typeof tab === 'object') tab = 'herramientas';
     if (!needChar(el)) return;
+    if (await wantedWall(el)) return;
     const [mine, reqs, accs] = await Promise.all([db.list('items', { eq: { owner_char: S.char.id }, limit: 1000 }), myRequests(), myAccounts()]);
     const lic = Math.max(0, ...approvedOf(reqs, 'licencia_armas').map(r => gunRank(r.data.tipo))), have = id => mine.filter(i => i.item === id).length;
     const why = it => !it.gun ? '' : !lic ? 'Necesitas licencia de armas' : it.gun !== 'any' && lic < gunRank(it.gun) ? `Tu licencia no cubre ${it.gun}` : '';
@@ -584,6 +585,7 @@ const casino = { id: 'casino', name: 'Casino', icon: '🎰', bg: '#0f212e,#1a2c3
   async render(el, game = 'dice', bet = 10) {
     if (typeof game !== 'string') game = 'dice';
     if (!needChar(el)) return;
+    if (await wantedWall(el)) return;
     const win = el.closest('.win'); if (win) { if (game === 'mesas') delete win.dataset.dirty; else win.dataset.dirty = '1'; } // el refresco automático borraría la jugada en curso (las mesas sí se refrescan solas)
     const accs = await myAccounts(), bal = Number(accs.find(a => a.kind === 'personal')?.balance || 0);
     const hand = CAS_TABLE.includes(game) ? await db.rpc('casino_open', { c: S.char.id, game }) : null;
@@ -1220,6 +1222,7 @@ const bolsa = { id: 'bolsa', name: 'GBM+', icon: '📈', bg: '#0b1f3a,#1c4f8f', 
 const casas = { id: 'casas', name: 'Zillow', icon: '🏠', bg: '#006aff,#0041a8', url: 'zillow.rp', show: () => true,
   async render(el) {
     if (!needChar(el)) return;
+    if (await wantedWall(el)) return;
     const [props, accs, cos] = await Promise.all([db.list('properties', { order: 'price', asc: true }), myAccounts(), db.list('companies')]);
     const myCos = cos.filter(c => c.owners.includes(S.char.id)).map(c => c.id);
     const mine = p => p.owner_char === S.char.id || myCos.includes(p.owner_company);
@@ -1255,6 +1258,7 @@ const autos = { id: 'autos', name: 'CarMax', icon: '🚘', bg: '#053361,#1660b8'
   async render(el, tab = 'catalogo', cat = '') {
     if (typeof tab === 'object') tab = 'catalogo';
     if (!needChar(el)) return;
+    if (await wantedWall(el)) return;
     const [allModels, vehs, accs, cos] = await Promise.all([db.list('vehicle_models', { order: 'brand', asc: true }), db.list('vehicles'), myAccounts(), db.list('companies')]);
     const models = allModels.filter(m => !cat || m.category === cat), cats = [...new Set(allModels.map(m => m.category).filter(Boolean))];
     const M = Object.fromEntries(allModels.map(m => [m.id, m])), myCos = cos.filter(c => c.owners.includes(S.char.id)).map(c => c.id);
@@ -1420,6 +1424,42 @@ const sebusca = { id: 'sebusca', name: 'Se Busca', icon: '🤠', bg: '#8b5a2b,#3
     });
   } };
 
+// ============ MERCADO NEGRO ============
+const BM_CATS = ['Todo', 'Armas', 'Objetos', 'Vehículos', 'Casas y locales'];
+const alias = id => 'vendedor_' + [...String(id)].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7).toString(36).slice(0, 5); // anónimo pero constante
+const mercado = { id: 'mercado', name: 'Mercado Negro', icon: '🕶️', bg: '#0a0a0a,#1f3b2b', show: () => true,
+  async render(el, tab = 'comprar', cat = 'Todo') {
+    if (typeof tab !== 'string') tab = 'comprar';
+    if (!needChar(el)) return;
+    el.classList.add('deep');
+    const ls = await db.list('bm_listings', { limit: 300 }), open = ls.filter(l => l.status === 'open'), me = S.char.id;
+    let body = '';
+    if (tab === 'comprar') { const list = open.filter(l => l.seller !== me && (cat === 'Todo' || l.cat === cat));
+      body = `<div class="chips">${BM_CATS.map(c => `<button data-act="cat" data-c="${c}" class="${c === cat ? 'on' : ''}">${c}</button>`).join('')}</div>
+        <div class="bm-grid">${list.map(l => `<div class="bm-card"><div class="bm-img">${l.img ? `<img src="${esc(l.img)}" alt="" loading="lazy">` : '📦'}</div><b>${esc(l.title || 'Producto')}</b><small class="muted">${esc(l.cat || '')} · ${alias(l.seller)}</small>
+          ${l.note ? `<small>${esc(l.note)}</small>` : ''}<div class="row"><b class="bm-price">${money(l.price)}</b><span class="grow"></span><button class="btn sm" data-act="buy" data-id="${l.id}">Comprar</button></div></div>`).join('') || '<p class="empty">> no hay nada a la venta en esta categoría_</p>'}</div>`;
+    } else if (tab === 'vender') {
+      const [items, cat0, vehs, models, props] = await Promise.all([db.list('items', { eq: { owner_char: me }, limit: 500 }), db.list('shop_items', { order: null }), db.list('vehicles', { eq: { owner_char: me } }), db.list('vehicle_models', { order: null }), db.list('properties', { eq: { owner_char: me } })]);
+      const listed = new Set(open.map(l => l.ref)), mdl = v => models.find(m => m.id === v.model_id) || {};
+      const mine = [...items.map(i => { const si = cat0.find(x => x.id === i.item) || {}; return { kind: 'item', id: i.id, title: si.name || i.item, img: `img/tienda/${i.item}.jpg`, sub: si.gun_class ? `Arma · serie ${i.serial || '—'}` : 'Objeto' }; }),
+        ...vehs.map(v => ({ kind: 'vehicle', id: v.id, title: `${mdl(v).brand || ''} ${mdl(v).model || ''}`, img: mdl(v).img || CAR_PHOTOS[mdl(v).brand] || '', sub: 'Vehículo · placa ' + (v.plate || '—') })),
+        ...props.map(p => ({ kind: 'property', id: p.id, title: p.name, img: p.img || '', sub: 'Propiedad · ' + (p.zone || '') }))].filter(x => !listed.has(x.id));
+      body = `<p class="muted">> Vende lo que es tuyo sin registro ni impuestos. La foto y el nombre se ponen solos. Cobras en tu Cuenta encriptada 🔐 (o en la personal si no tienes).</p>
+        <div class="bm-grid">${mine.map(x => `<form class="bm-card form" data-form="sell" data-kind="${x.kind}" data-id="${x.id}"><div class="bm-img">${x.img ? `<img src="${esc(x.img)}" alt="" loading="lazy">` : '📦'}</div><b>${esc(x.title)}</b><small class="muted">${esc(x.sub)}</small>
+          <input name="price" type="number" min="1" step="0.01" placeholder="Precio USD" required><input name="note" placeholder="Nota (opcional)"><button class="btn sm">Publicar</button></form>`).join('') || '<p class="empty">> no tienes nada que vender_</p>'}</div>`;
+    } else { const mineL = ls.filter(l => l.seller === me || l.buyer === me);
+      body = `<ul class="list">${mineL.map(l => `<li><span class="grow"><b>${esc(l.title || '')}</b> · ${money(l.price)} <small class="muted">${l.buyer === me ? 'compraste' : { open: 'a la venta', sold: 'vendido', cancelled: 'retirado' }[l.status]}</small></span>
+        ${l.status === 'open' && l.seller === me ? `<button class="btn sm ghost" data-act="cancel" data-id="${l.id}">Quitar</button>` : ''}</li>`).join('') || '<li class="muted">> sin movimientos_</li>'}</ul>`; }
+    view(el, `<div class="bm"><header class="bm-h"><b>🕶️ MERCADO NEGRO</b><small>conexión cifrada · sin registro · sin impuestos</small></header>
+      ${tabs([['comprar', 'Comprar'], ['vender', 'Vender'], ['mios', 'Mis movimientos']], tab)}${body}</div>`, {
+      tab: d => mercado.render(el, d.t), cat: d => mercado.render(el, 'comprar', d.c),
+      async buy(d) { const l = open.find(x => x.id === d.id); if (!await ask(`¿Comprar ${l.title} por ${money(l.price)}? Se paga desde tu Cuenta encriptada 🔐 si tienes, si no desde la personal.`)) return;
+        await db.rpc('bm_buy', { l: d.id, c: me }); toast('Compra hecha. Ya es tuyo 🕶️'); window.liveRefresh?.(); mercado.render(el, 'mios'); },
+      async sell(v, f) { await db.rpc('bm_list', { c: me, kind: f.dataset.kind, ref: f.dataset.id, price: +v.price, note: v.note }); toast('Publicado en el mercado negro'); mercado.render(el, 'mios'); },
+      async cancel(d) { await db.rpc('bm_cancel', { l: d.id }); toast('Publicación retirada'); mercado.render(el, 'mios'); },
+    });
+  } };
+
 // ============ POLICÍA (MDT) + PRISIÓN ============
 const REC = { arresto: 'Arresto', multa: 'Multa', orden: 'Orden de arresto', advertencia: 'Advertencia', cancelacion: 'Documento cancelado', decomiso: 'Decomiso' };
 const KIND = { advertencia: 'Advertencias', infraccion: 'Infracciones (solo multa)', menor: 'Delitos menores (hasta 1 año)', grave: 'Delitos graves (más de 1 año)' };
@@ -1436,6 +1476,15 @@ const posterHTML = (r, act = '') => `<div class="poster" ${act}><div class="post
   <div class="poster-ph">${av(skin(r.character_id), 'poster-img')}</div><b class="poster-name">${esc(cname(r.character_id)).toUpperCase()}</b>
   <p class="poster-ch">${esc((r.description || '').replace(/^En espera de juicio: /, ''))}</p><div class="poster-rw"><small>RECOMPENSA</small><b>${money(bountyOf(r))}</b></div>
   <small class="poster-f">Sube $1 por cada día que sigue libre · desde ${fdate(r.created_at)}</small></div>`;
+// tiendas del gobierno: un buscado no puede comprar → boletín de búsqueda en vez del catálogo
+async function wantedWall(el) {
+  const o = await db.list('records', { eq: { character_id: S.char.id, kind: 'orden', paid: false } }).catch(() => []);
+  if (!o.length) return false;
+  el.innerHTML = `<div class="ww"><div class="ww-h">🚫 CUENTA BLOQUEADA</div><p>Tienes una <b>orden de arresto activa</b>. Las tiendas oficiales y del gobierno no te pueden vender nada.</p>
+    <div class="ww-poster">${posterHTML(o[0])}</div><p class="muted">Solo puedes comprarle a otros jugadores (transferencia o 🕶️ Mercado Negro) con tu Cuenta encriptada 🔐.</p>
+    <button class="btn" onclick="window.openApp('mercado')">Abrir Mercado Negro</button></div>`;
+  return true;
+}
 const isGuard = () => isPolice() || has('Custodio');
 const left = i => Math.max(0, new Date(i.ends_at) - Date.now()), since = i => Date.now() - new Date(i.started_at);
 const clockTxt = ms => { const m = Math.ceil(ms / 6e4); return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`; };
@@ -2232,4 +2281,4 @@ export async function seed() {
 
 export const APPS = [vida, banco, gobierno, safari, docs, documentos, licencias, archivos, spotify, trabajo, mensajes,
   social('x', 'X', '𝕏', '#000000,#1c1c1c'), social('insta', 'Instagram', '📸', '#833ab4,#fd1d1d,#fcb045'),
-  news, buscar, empleos, bolsa, casas, autos, toolstore, casino, bitso, fec, corte, e911, sebusca, policia, expedientes, prision, taxi, soporte, resenas, robstore, staffApp, ajustes];
+  news, buscar, empleos, bolsa, casas, autos, toolstore, casino, bitso, mercado, fec, corte, e911, sebusca, policia, expedientes, prision, taxi, soporte, resenas, robstore, staffApp, ajustes];
