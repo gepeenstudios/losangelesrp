@@ -1426,6 +1426,8 @@ const sebusca = { id: 'sebusca', name: 'Se Busca', icon: '🤠', bg: '#8b5a2b,#3
 
 // ============ MERCADO NEGRO ============
 const BM_CATS = ['Todo', 'Armas', 'Objetos', 'Vehículos', 'Casas y locales'];
+// foto del producto: la que guardó la publicación o, si no tiene, la de su marca / una genérica
+const bmImg = l => l.img || (l.kind === 'vehicle' ? CAR_PHOTOS[String(l.title || '').trim().split(' ')[0]] || CAR_PHOTOS.default : '');
 const alias = id => 'vendedor_' + [...String(id)].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7).toString(36).slice(0, 5); // anónimo pero constante
 const mercado = { id: 'mercado', name: 'Mercado Negro', icon: '🕶️', bg: '#0a0a0a,#1f3b2b', show: () => true,
   async render(el, tab = 'comprar', cat = 'Todo') {
@@ -1434,21 +1436,21 @@ const mercado = { id: 'mercado', name: 'Mercado Negro', icon: '🕶️', bg: '#0
     el.classList.add('deep');
     const ls = await db.list('bm_listings', { limit: 300 }), open = ls.filter(l => l.status === 'open'), me = S.char.id;
     let body = '';
-    if (tab === 'comprar') { const list = open.filter(l => l.seller !== me && (cat === 'Todo' || l.cat === cat));
+    if (tab === 'comprar') { const list = open.filter(l => cat === 'Todo' || l.cat === cat); // también salen las tuyas (marcadas)
       body = `<div class="chips">${BM_CATS.map(c => `<button data-act="cat" data-c="${c}" class="${c === cat ? 'on' : ''}">${c}</button>`).join('')}</div>
-        <div class="bm-grid">${list.map(l => `<div class="bm-card"><div class="bm-img">${l.img ? `<img src="${esc(l.img)}" alt="" loading="lazy">` : '📦'}</div><b>${esc(l.title || 'Producto')}</b><small class="muted">${esc(l.cat || '')} · ${alias(l.seller)}</small>
-          ${l.note ? `<small>${esc(l.note)}</small>` : ''}<div class="row"><b class="bm-price">${money(l.price)}</b><span class="grow"></span><button class="btn sm" data-act="buy" data-id="${l.id}">Comprar</button></div></div>`).join('') || '<p class="empty">> no hay nada a la venta en esta categoría_</p>'}</div>`;
+        <div class="bm-grid">${list.map(l => `<div class="bm-card ${l.seller === me ? 'bm-mine' : ''}"><div class="bm-img">${bmImg(l) ? `<img src="${esc(bmImg(l))}" alt="" loading="lazy" onerror="this.replaceWith('${l.kind === 'property' ? '🏠' : '📦'}')">` : l.kind === 'property' ? '🏠' : '📦'}${l.seller === me ? '<span class="bm-tag">TUYO</span>' : ''}</div><b>${esc(l.title || 'Producto')}</b><small class="muted">${esc(l.cat || '')} · ${l.seller === me ? 'tú' : alias(l.seller)}</small>
+          ${l.note ? `<small>${esc(l.note)}</small>` : ''}<div class="row"><b class="bm-price">${money(l.price)}</b><span class="grow"></span>${l.seller === me ? `<button class="btn sm ghost" data-act="cancel" data-id="${l.id}">Quitar</button>` : `<button class="btn sm" data-act="buy" data-id="${l.id}">Comprar</button>`}</div></div>`).join('') || '<p class="empty">> no hay nada a la venta en esta categoría_</p>'}</div>`;
     } else if (tab === 'vender') {
       const [items, cat0, vehs, models, props] = await Promise.all([db.list('items', { eq: { owner_char: me }, limit: 500 }), db.list('shop_items', { order: null }), db.list('vehicles', { eq: { owner_char: me } }), db.list('vehicle_models', { order: null }), db.list('properties', { eq: { owner_char: me } })]);
       const listed = new Set(open.map(l => l.ref)), mdl = v => models.find(m => m.id === v.model_id) || {};
       const mine = [...items.map(i => { const si = cat0.find(x => x.id === i.item) || {}; return { kind: 'item', id: i.id, title: si.name || i.item, img: `img/tienda/${i.item}.jpg`, sub: si.gun_class ? `Arma · serie ${i.serial || '—'}` : 'Objeto' }; }),
-        ...vehs.map(v => ({ kind: 'vehicle', id: v.id, title: `${mdl(v).brand || ''} ${mdl(v).model || ''}`, img: mdl(v).img || CAR_PHOTOS[mdl(v).brand] || '', sub: 'Vehículo · placa ' + (v.plate || '—') })),
+        ...vehs.map(v => ({ kind: 'vehicle', id: v.id, title: `${mdl(v).brand || ''} ${mdl(v).model || ''}`, img: mdl(v).img || CAR_PHOTOS[mdl(v).brand] || CAR_PHOTOS.default, sub: 'Vehículo · placa ' + (v.plate || '—') })),
         ...props.map(p => ({ kind: 'property', id: p.id, title: p.name, img: p.img || '', sub: 'Propiedad · ' + (p.zone || '') }))].filter(x => !listed.has(x.id));
       body = `<p class="muted">> Vende lo que es tuyo sin registro ni impuestos. La foto y el nombre se ponen solos. Cobras en tu Cuenta encriptada 🔐 (o en la personal si no tienes).</p>
         <div class="bm-grid">${mine.map(x => `<form class="bm-card form" data-form="sell" data-kind="${x.kind}" data-id="${x.id}"><div class="bm-img">${x.img ? `<img src="${esc(x.img)}" alt="" loading="lazy">` : '📦'}</div><b>${esc(x.title)}</b><small class="muted">${esc(x.sub)}</small>
           <input name="price" type="number" min="1" step="0.01" placeholder="Precio USD" required><input name="note" placeholder="Nota (opcional)"><button class="btn sm">Publicar</button></form>`).join('') || '<p class="empty">> no tienes nada que vender_</p>'}</div>`;
     } else { const mineL = ls.filter(l => l.seller === me || l.buyer === me);
-      body = `<ul class="list">${mineL.map(l => `<li><span class="grow"><b>${esc(l.title || '')}</b> · ${money(l.price)} <small class="muted">${l.buyer === me ? 'compraste' : { open: 'a la venta', sold: 'vendido', cancelled: 'retirado' }[l.status]}</small></span>
+      body = `<ul class="list">${mineL.map(l => `<li><img class="bm-thumb" src="${esc(bmImg(l))}" alt="" onerror="this.style.display='none'"><span class="grow"><b>${esc(l.title || '')}</b> · ${money(l.price)} <small class="muted">${l.buyer === me ? 'compraste' : { open: 'a la venta', sold: 'vendido', cancelled: 'retirado' }[l.status]}</small></span>
         ${l.status === 'open' && l.seller === me ? `<button class="btn sm ghost" data-act="cancel" data-id="${l.id}">Quitar</button>` : ''}</li>`).join('') || '<li class="muted">> sin movimientos_</li>'}</ul>`; }
     view(el, `<div class="bm"><header class="bm-h"><b>🕶️ MERCADO NEGRO</b><small>conexión cifrada · sin registro · sin impuestos</small></header>
       ${tabs([['comprar', 'Comprar'], ['vender', 'Vender'], ['mios', 'Mis movimientos']], tab)}${body}</div>`, {
