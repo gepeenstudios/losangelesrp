@@ -101,7 +101,7 @@ const banco = { id: 'banco', name: 'RRVA', icon: '🏦', bg: '#004481,#1464a5', 
       body = `<div class="notice frz"><b>🔒 Esta cuenta está congelada.</b> ${jailed ? 'Estás en prisión: no puedes mover tu dinero hasta que salgas.' : 'Tienes una orden de arresto activa. Usa tu <b>Cuenta encriptada 🔐</b> para transferir.'}</div>`;
     } else if (st.tab === 'send') {
       const tx = st.tx || {}, step = st.step || 'dest';
-      if (step === 'dest') body = `<div class="tx"><h3>Nueva transferencia</h3><p class="muted">Desde ${esc(accLabel(cur))} ${last4(cur.number)}</p>
+      if (step === 'dest') body = `<div class="tx"><h3>Nueva transferencia</h3><p class="muted">Desde ${esc(accLabel(cur))} ${last4(cur.number)}</p>${cur.kind === 'encrypted' ? `<p class="muted">🔐 Entre cuentas encriptadas no hay impuestos. Si lo pasas a una cuenta normal pagas ${(set('impuestos')?.encrypted ?? 25)}% de impuesto.</p>` : ''}
         <form data-form="dest" class="form">${fieldsHTML([{ k: 'number', label: 'Número de cuenta RRVA o nombre del beneficiario', req: 1, ph: '10 dígitos o nombre y apellido', help: 'Puedes pegar el número con espacios o escribir el nombre de la persona.' }])}
         <button class="btn big" type="submit">Continuar</button></form></div>
         ${favs.length ? `<h4 class="sub-h">Cuentas frecuentes</h4><ul class="list">${favs.map(f => `<li class="fav" data-act="fav" data-n="${f.number}"><span class="ini">${esc((f.alias || f.name).split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase())}</span>
@@ -265,7 +265,7 @@ const gobierno = { id: 'gobierno', name: 'LA City', icon: '🏛️', bg: '#1d3b6
         <form data-form="ley" class="form">${fieldsHTML([{ k: 'title', label: 'Nombre de la ley', req: 1 }, { k: 'body', label: 'Texto de la ley', type: 'textarea', req: 1 },
           { k: 'effect', label: '¿Qué cambia?', type: 'select', options: [['ninguno', 'Solo texto (sin efecto automático)'], ['impuesto', 'Un impuesto'], ['ahorro', 'Interés de las cuentas de ahorro'], ['dinero_inicial', 'Dinero inicial de cada vida'],
             ['servicio_militar', 'Empleos que piden servicio militar'], ['casino_max', 'Apuesta máxima del casino'], ['visa_dias', 'Días para sacar visa (extranjeros)'], ['delito', 'Agregar un delito al código penal']] }])}
-          <div data-eff="impuesto" hidden>${fieldsHTML([{ k: 'tipo', label: 'Impuesto', type: 'select', options: [['sales', `Ventas (hoy ${tax('sales')}%)`], ['property', `Predial (hoy ${tax('property')}%)`], ['corp', `Corporativo (hoy ${tax('corp')}%)`], ['transfer', `Transferencias (hoy ${tax('transfer')}%)`], ['crypto', `Ganancias cripto al vender (hoy ${tax('crypto')}%)`]] }])}</div>
+          <div data-eff="impuesto" hidden>${fieldsHTML([{ k: 'tipo', label: 'Impuesto', type: 'select', options: [['sales', `Ventas (hoy ${tax('sales')}%)`], ['property', `Predial (hoy ${tax('property')}%)`], ['corp', `Corporativo (hoy ${tax('corp')}%)`], ['transfer', `Transferencias (hoy ${tax('transfer')}%)`], ['crypto', `Ganancias cripto al vender (hoy ${tax('crypto')}%)`], ['encrypted', `Sacar dinero de cuenta encriptada (hoy ${tax('encrypted')}%)`]] }])}</div>
           <div data-eff="impuesto ahorro dinero_inicial casino_max visa_dias" hidden>${fieldsHTML([{ k: 'valor', label: 'Nuevo valor', type: 'number', min: 0, step: 0.01 }])}</div>
           <div data-eff="servicio_militar" hidden><div class="g-pick">${Object.keys(set('payroll') || {}).map(d => `<label class="chk"><input type="checkbox" name="dep" value="${esc(d)}" ${set('military_required').includes(d) ? 'checked' : ''}> ${esc(d)}</label>`).join('')}</div></div>
           <div data-eff="delito" hidden>${fieldsHTML([{ k: 'code', label: 'Artículo', ph: 'Art. 120' }, { k: 'dtitle', label: 'Nombre del delito' }, { k: 'kind', label: 'Tipo', type: 'select', options: [['infraccion', 'Infracción'], ['delito', 'Delito'], ['grave', 'Delito grave']] },
@@ -1412,7 +1412,7 @@ const sebusca = { id: 'sebusca', name: 'Se Busca', icon: '🤠', bg: '#8b5a2b,#3
   async render(el) {
     const o = await db.list('records', { eq: { kind: 'orden', paid: false } }).catch(() => []), tot = o.reduce((n, r) => n + bountyOf(r), 0);
     view(el, `<div class="sb"><header class="sb-h"><b>🤠 SE BUSCA · Recompensas de la LAPD</b><span>${o.length} buscado(s) · ${money(tot)} en recompensas</span></header>
-      <p class="muted">Cada orden de arresto empieza en $0 y sube $1 por cada día del juego (2 horas reales) que la persona sigue libre; la policía también puede subirla, hasta un máximo de $1,000,000,000. Si ves a alguien, manda un aviso: le llega a la policía como llamada al 911. Si tu información lleva a su captura, <b>tú cobras la recompensa</b> (cuenta el último aviso antes de la captura; los policías no pueden cobrarla).</p>
+      <p class="muted">Cada orden de arresto empieza en $0 y sube $1 por cada día del juego (2 horas reales) que la persona sigue libre; la policía también puede subirla, hasta un máximo de $1,000,000,000. Si ves a alguien, manda un aviso: le llega a la policía como llamada al 911. Si la policía confirma que <b>tu aviso sirvió para capturarlo</b>, tú cobras la recompensa. Los policías no pueden cobrarla.</p>
       <div class="posters">${o.map(r => `<div>${posterHTML(r)}<button class="btn sm" data-act="aviso" data-id="${r.id}">📞 Dar un aviso</button></div>`).join('') || '<p class="empty">Nadie buscado por ahora. 🌴</p>'}</div></div>`, {
       aviso: d => { const r = o.find(x => x.id === d.id); if (!S.char) throw new Error('Necesitas una vida activa');
         modal('📞 Aviso sobre ' + esc(cname(r.character_id)), form('go', [{ k: 'location', label: '¿Dónde lo viste?', req: 1 }, { k: 'detalle', label: 'Detalles (ropa, auto, hacia dónde iba)', type: 'textarea', req: 1 }, { k: 'anonymous', label: 'Enviar como anónimo', type: 'checkbox' }], {}, 'Enviar aviso'), {
@@ -1490,7 +1490,7 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
         ${jail ? `<div class="alert">EN PRISIÓN · ${jail.status === 'preventiva' ? 'preventiva (espera juicio), lleva ' + clockTxt(since(jail)) : 'le faltan ' + clockTxt(left(jail))}. Si está en la calle sin fuga aprobada, repórtalo al staff (warn administrativo).
           <button class="btn sm bad" data-act="reportar" data-id="${jail.id}">Reportar al staff</button></div>` : ''}
         ${(() => { const o = recs.filter(r => r.kind === 'orden' && !r.paid); return o.length && !jail ? `<div class="alert wanted-alert"><b>🚨 SE BUSCA · ORDEN DE ARRESTO ACTIVA</b><ul>${o.map(r => `<li>${esc(r.description)} · <b class="bounty">💰 Recompensa ${money(bountyOf(r))}</b> <button class="link" data-act="recompensa" data-id="${r.id}">Subir recompensa</button></li>`).join('')}</ul>
-          <button class="btn bad" data-act="capturar">🚔 Capturado: procesar arresto</button> <small class="muted">Carga los cargos de la orden; puedes agregar más antes de registrar. La recompensa la cobra el ciudadano cuyo aviso llevó a la captura (los policías no cuentan).</small></div>` : ''; })()}</div></div>
+          <button class="btn bad" data-act="capturar">🚔 Capturado: procesar arresto</button> <small class="muted">Carga los cargos de la orden; puedes agregar más antes de registrar. Al capturarlo, la recompensa queda pendiente en la pestaña 💰 Recompensas para que decidas qué aviso sirvió.</small></div>` : ''; })()}</div></div>
         <h3>Documentos</h3><ul class="list">${lic.map(r => `<li><span class="li-ico">${ico(r.type)}</span><span class="grow">${esc(TRAMITES[r.type].name)} ${esc(r.data.clase || r.data.tipo || r.data.arma || r.data.placa || '')}</span><button class="btn sm bad" data-act="cancelarDoc" data-id="${r.id}" data-n="${esc(TRAMITES[r.type].name)}">Cancelar</button></li>`).join('') || '<li class="muted">Sin documentos</li>'}</ul>
         <h3>Vehículos</h3><ul class="list">${vehs.map(v => { const m = models.find(x => x.id === v.model_id); const exp = new Date(v.registered_at || v.created_at); exp.setFullYear(exp.getFullYear() + 1); return `<li><div class="grow"><b>${esc(m?.brand)} ${esc(m?.model)}</b> · ${esc(v.plate || 'sin placa')}<div class="muted">VIN ${esc(v.vin || '—')} · Registro ${exp < new Date() ? '<b class="neg">VENCIDO</b>' : 'vigente hasta ' + fdate(exp.toISOString())}</div></div></li>`; }).join('') || '<li class="muted">Ninguno</li>'}</ul>
         <h3>Inventario</h3>${inv.some(i => SHOPI[i.item]?.gun) ? '<button class="btn sm bad" data-act="decomisarArmas">Decomisar todas las armas y munición</button>' : ''}<ul class="list">
@@ -1514,11 +1514,21 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
           <div data-mug hidden><h4>📸 Fotos de ficha (obligatorias para encarcelar)</h4><p class="muted">Toma una foto del personaje por cada lado.</p><div class="mug-grid">${fieldsHTML(MUG.map(([k, l]) => ({ k: 'mug_' + k, label: l, type: 'file', accept: 'image/*' })))}</div></div>
           ${fieldsHTML([{ k: 'description', label: 'Narrativa / detalles', type: 'textarea', req: 1 }])}
           <button class="btn" type="submit">Registrar</button></form>`;
+    } else if (st.tab === 'recomp') { // la policía decide qué aviso llevó a la captura; solo ese cobra
+      const [cl, calls] = await Promise.all([db.list('bounty_claims', { limit: 50 }).catch(() => []), db.list('calls911', { limit: 300 }).catch(() => [])]);
+      const pend = cl.filter(b => b.status === 'pending'), done = cl.filter(b => b.status !== 'pending').slice(0, 15);
+      body = `<p class="muted">Cuando capturan a un buscado, su recompensa queda pendiente aquí. Revisa los avisos que dieron los ciudadanos y marca el que sí sirvió para capturarlo: a esa persona se le paga. Los policías no cobran.</p>
+        ${pend.map(b => { const tips = calls.filter(k => k.wanted_char === b.wanted_char && new Date(k.created_at) <= new Date(b.created_at));
+          return `<div class="card"><div class="row"><b class="grow">Captura de ${esc(cname(b.wanted_char))}</b><b class="cas-g">${money(b.amount)}</b></div>
+            <ul class="list">${tips.map(k => `<li><span class="grow"><b>${k.anonymous ? 'Anónimo' : esc(cname(k.caller_char))}</b> · ${esc(k.location)} <small class="muted">${fdate(k.created_at)}</small><div class="muted">${esc(k.description)}</div></span>
+              <button class="btn sm ok" data-act="bpay" data-id="${b.id}" data-k="${k.id}">✅ Sirvió · pagar</button></li>`).join('') || '<li class="muted">Sin avisos.</li>'}</ul>
+            <button class="btn sm ghost bad" data-act="bnone" data-id="${b.id}">❌ Ningún aviso sirvió</button></div>`; }).join('') || '<p class="empty">No hay recompensas pendientes.</p>'}
+        ${done.length ? `<h3>Resueltas</h3><ul class="list">${done.map(b => `<li><span class="grow">${esc(cname(b.wanted_char))} · ${money(b.amount)}</span>${b.status === 'paid' ? `<span class="tag">Pagada a ${esc(cname(b.paid_to))}</span>` : '<span class="tag">Sin pago</span>'}</li>`).join('')}</ul>` : ''}`;
     } else if (st.tab === 'buscados') {
       const o = await db.list('records', { eq: { kind: 'orden', paid: false } });
       body = `<div class="posters">${o.map(r => posterHTML(r, `data-act="ver" data-id="${r.character_id}"`)).join('') || '<p class="empty">Nadie buscado.</p>'}</div>`;
     }
-    view(el, `${tabs([['buscar', 'Consultar'], ['buscados', 'Buscados'], ['pend', 'Trámites']], st.tab === 'ver' ? 'buscar' : st.tab)}<div class="tabbody">${body}</div>`, {
+    view(el, `${tabs([['buscar', 'Consultar'], ['buscados', 'Buscados'], ['recomp', '💰 Recompensas'], ['pend', 'Trámites']], st.tab === 'ver' ? 'buscar' : st.tab)}<div class="tabbody">${body}</div>`, {
       tab: d => go({ tab: d.t, q: '' }), buscar: d => go({ q: d.q }), ver: d => go({ tab: 'ver', id: d.id, f: 'todos' }), f: d => go({ f: d.f }),
       cumplir: async d => { await db.update('records', d.id, { paid: true }); go({}); },
       decomisar: d => modal('Decomisar ' + esc(d.n), form('go', [{ k: 'motivo', label: 'Motivo', type: 'textarea', req: 1, ph: 'Ej. portaba el arma durante un asalto (Art. 45)' }], {}, 'Decomisar'), {
@@ -1536,6 +1546,8 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
       zoom,
       recompensa: d => modal('💰 Subir recompensa', form('go', [{ k: 'amount', label: 'Agregar a la recompensa (USD · máximo total $1,000,000,000)', type: 'number', min: 1, max: 1e9, req: 1 }], {}, 'Subir'), {
         async go(v, _, close) { await db.rpc('raise_bounty', { rec: d.id, amount: +v.amount }); close(); toast('Recompensa actualizada'); go({}); } }),
+      async bpay(d) { if (!await ask('¿Este aviso sirvió para capturarlo? Se le paga la recompensa a esa persona.')) return; const n = await db.rpc('bounty_pay', { claim: d.id, call: d.k }); toast(`Recompensa de ${money(n)} pagada 💰`); go({ tab: 'recomp' }); },
+      async bnone(d) { if (!await ask('¿Ningún aviso sirvió? La recompensa no se paga.')) return; await db.rpc('bounty_reject', { claim: d.id }); toast('Recompensa cerrada sin pago'); go({ tab: 'recomp' }); },
       async capturar() { // pasa la orden al formulario de arresto con sus cargos marcados
         const fm = el.querySelector('form[data-form=procesar]'), codes = (await db.list('records', { eq: { character_id: st.id, kind: 'orden', paid: false } })).flatMap(r => (r.charges || []).map(x => x.code));
         fm.kind.value = 'arresto'; fm.querySelectorAll('[name=cargo]').forEach(i => { if (codes.includes(i.value)) { i.checked = true; i.closest('details').open = true; } });
@@ -1567,7 +1579,7 @@ const policia = { id: 'policia', name: 'LAPD MDT', icon: '🚓', bg: '#141e30,#2
         }
         const ords = v.kind === 'arresto' ? await db.list('records', { eq: { character_id: st.id, kind: 'orden', paid: false } }) : [];
         const reward = ords.length ? await db.rpc('capture_orders', { c: st.id, officer: S.char?.id || null }) : null; // la orden se vuelve este arresto; la recompensa va a quien dio la información
-        if (reward?.paid > 0) toast(`💰 Recompensa de ${money(reward.paid)} para ${cname(reward.to)} por su información`);
+        if (reward?.pending > 0) toast(`💰 Recompensa de ${money(reward.pending)} pendiente: revisa los avisos en la pestaña Recompensas`);
         await db.insert('records', { kind: v.kind === 'advertencia' ? 'advertencia' : v.kind, character_id: st.id, officer_id: S.char?.id || null, amount: v.kind === 'multa' || (v.kind === 'arresto' && !juicio) ? Math.round(fine) : null, description: (juicio ? '[Pendiente de juicio: multa y sentencia las fija el juez] ' : '') + (ords.length ? 'Capturado por orden de arresto · ' : '') + desc, charges });
         if (v.kind === 'orden') await db.insert('posts', { app: 'news', section: 'Policía', anonimo: true, character_id: S.char?.id || null, media_url: skin(st.id) || null,
           title: `SE BUSCA: ${cname(st.id)}`, body: `La LAPD emitió una orden de arresto contra ${cname(st.id)}.\n\nCargos: ${desc}\n\nRecompensa: empieza en $0 y sube $1 por cada día que siga libre. Si lo ves, avisa al 911 o desde la app Se Busca. No intentes detenerlo tú mismo.` }).catch(() => {});

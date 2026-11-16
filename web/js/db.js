@@ -480,9 +480,14 @@ const RPC = {
     const total = os.reduce((s, r) => s + Math.min(1e9, Math.max(0, day(Date.now()) - day(r.created_at)) + (r.bounty_extra || 0)), 0);
     mem.t.records = T('records').filter(x => !os.includes(x));
     const to = T('accounts').find(a => a.kind === 'personal' && a.owners[0] === officer), src = T('accounts').find(x => x.kind === 'dept' && x.dept === 'Policía') || gov();
-    const tip = T('calls911').filter(k => k.wanted_char === c && k.caller_char !== c && !(T('characters').find(x => x.id === k.caller_char)?.roles || []).some(r => ['Policía', 'SWAT', 'FBI', 'DEA', 'CIA'].includes(r))).at(-1)?.caller_char;
-    const tipAcc = tip && T('accounts').find(a => a.kind === 'personal' && a.owners[0] === tip);
-    if (total > 0 && tipAcc && src.balance >= total) { move(src, tipAcc, total, 'Recompensa: tu información llevó a la captura'); return { paid: total, to: tip }; } return { paid: 0, to: null };
+    const tips = T('calls911').filter(k => k.wanted_char === c).length; if (total > 0 && tips) T('bounty_claims').push({ id: crypto.randomUUID(), wanted_char: c, amount: total, status: 'pending', created_at: now() });
+    return { pending: tips ? total : 0, tips };
+  },
+  bounty_pay({ claim, call }) { const b = T('bounty_claims').find(x => x.id === claim && x.status === 'pending'); guard(b, 'Esa recompensa ya se resolvió'); const k = T('calls911').find(x => x.id === call);
+    guard(k && k.caller_char !== b.wanted_char, 'Ese aviso no sirve'); const to = T('accounts').find(a => a.kind === 'personal' && a.owners[0] === k.caller_char), src = T('accounts').find(x => x.kind === 'dept' && x.dept === 'Policía') || gov();
+    move(src, to, b.amount, 'Recompensa: tu información llevó a la captura'); Object.assign(b, { status: 'paid', paid_to: k.caller_char }); return b.amount; },
+  bounty_reject({ claim }) { const b = T('bounty_claims').find(x => x.id === claim); if (b) b.status = 'none'; },
+  _noop() {
   },
   pay_fine({ record, acc: id }) {
     const r = T('records').find(x => x.id === record);

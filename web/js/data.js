@@ -242,7 +242,7 @@ export const DEFAULT_SETTINGS = {
   influencer_like_pay: 15, spotify_play_pay: 2,
   staff_salary: { helper: 38000, mod: 52000, admin: 70000, coowner: 95000, owner: 120000 }, // USD al año, se paga ÷365 cada día con servicio
   staff_min_minutes: 30,
-  impuestos: { sales: 10.25, transfer: 0.56, property: 1.2, corp: 29.84, crypto: 25 }, // % reales de Los Ángeles (sales tax desde oct-2026) // USD por like recibido (paga el Tesoro)
+  impuestos: { sales: 10.25, transfer: 0.56, property: 1.2, corp: 29.84, crypto: 25, encrypted: 25 }, // % reales de Los Ángeles (sales tax desde oct-2026) // USD por like recibido (paga el Tesoro)
   biz_income: { 'Concesionaria':1200,'Bienes Raíces':1000,'Restaurante / Bar':600,'Tienda / Retail':500,'Taller mecánico':550,'Seguridad privada':700,
     'Transporte / Taxi':450,'Armería':800,'Construcción':900,'Banca / Finanzas':1100,'Medios / Noticiero':500,'Otro':400 }, // USD diarios del Tesoro
   payroll: { 'Policía':1500,'SWAT':2000,'FBI':2200,'Bomberos':1400,'Servicios Médicos':1400,'DOT':1100,'Ejército':1600,
